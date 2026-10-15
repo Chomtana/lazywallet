@@ -17,14 +17,20 @@ import { TopBar } from '@/components/TopBar'
 import { Button } from '@/components/ui/button'
 import { WalletMenu } from '@/components/WalletMenu'
 import { KEYS } from '@/lib/storage'
+import { formatUsd, uid } from '@/lib/format'
 import { useStored } from '@/lib/useStored'
 import { say } from '@/mock/agent'
 import { DEFAULT_CONTACTS } from '@/mock/fixtures'
 import { dappRequest } from '@/mock/walletconnect'
+import { playChime } from '@/premium/chime'
+import { PlanSheet } from '@/premium/PlanSheet'
+import { planOf, type PlanId, type Subscription } from '@/premium/plans'
+import { PremiumPane } from '@/premium/PremiumPane'
+import { ResultsSheet } from '@/premium/ResultsSheet'
 import { useWallet } from '@/state/wallet-context'
 import type { Contact, DappInfo, Task } from '@/types'
 
-type Panel = 'qr' | 'contacts' | 'tasks' | 'seed' | 'delete' | null
+type Panel = 'qr' | 'contacts' | 'tasks' | 'seed' | 'delete' | 'plans' | 'results' | null
 
 const DAPP_REQUEST_DELAY_MS = 3000
 // Matches the wallet selector pill in the centre of the top bar.
@@ -35,6 +41,7 @@ export default function WalletPage() {
   const [contacts, setContacts] = useStored<Contact[]>(KEYS.contacts, DEFAULT_CONTACTS)
   const [tasks, setTasks] = useStored<Task[]>(KEYS.tasks, [])
   const [speakEnabled, setSpeakEnabled] = useStored<boolean>(KEYS.speak, true)
+  const [subscription, setSubscription] = useStored<Subscription | null>(KEYS.premium, null)
   const [panel, setPanel] = useState<Panel>(null)
   const [session, setSession] = useState<DappInfo | null>(null)
   const requestTimer = useRef<number | undefined>(undefined)
@@ -65,6 +72,28 @@ export default function WalletPage() {
     window.clearTimeout(requestTimer.current)
     if (session) chat.deliver({ messages: [say(`Disconnected from ${session.name}.`)] })
     setSession(null)
+  }
+
+  // Demo only: nothing is charged on chain — the card and the chime show the flow.
+  function subscribe(plan: PlanId) {
+    const p = planOf(plan)
+    const now = new Date()
+    const renews = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate())
+    setSubscription({ plan, since: now.toISOString() })
+    playChime()
+    chat.deliver({
+      messages: [
+        {
+          id: uid(),
+          role: 'assistant',
+          kind: 'subscription',
+          plan,
+          chargedUsd: p.priceUsd,
+          renews: renews.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }),
+        },
+        say(`You're on ${p.name}. I paid the first month, ${formatUsd(p.priceUsd)}, and started hunting. Tap Hunting Results any time to see how it's going.`),
+      ],
+    })
   }
 
   if (!active) return null
@@ -128,12 +157,15 @@ export default function WalletPage() {
         )}
         <QuickActionBar onPick={(t) => chat.send(t)} disabled={!chat.online} />
         <InputBar onSend={chat.send} speakEnabled={speakEnabled} onToggleSpeak={() => setSpeakEnabled((v) => !v)} />
+        <PremiumPane subscription={subscription} onChoosePlan={() => setPanel('plans')} onResults={() => setPanel('results')} />
       </div>
       <QrSheet {...panelProps('qr')} address={active.address} onConnect={connect} onAddFunds={chat.online ? () => chat.send(FUND_PROMPT) : undefined} />
       <AddressBookSheet {...panelProps('contacts')} contacts={contacts} onChange={setContacts} />
       <TasksSheet {...panelProps('tasks')} tasks={tasks} onChange={setTasks} />
       <ShowSeedDialog {...panelProps('seed')} />
       <DeleteWalletDialog {...panelProps('delete')} />
+      <PlanSheet {...panelProps('plans')} current={subscription?.plan ?? null} onSubscribe={subscribe} />
+      {subscription && <ResultsSheet {...panelProps('results')} plan={subscription.plan} speakEnabled={speakEnabled} />}
     </div>
   )
 }
