@@ -14,7 +14,7 @@ def test_no_unofficial_tokens():
 
 
 def test_avalanche_tokens():
-    assert [t.symbol for t in AVAX_TOKENS] == ["AVAX", "USDC", "USDT", "BTC.b", "WETH.e"]
+    assert [t.symbol for t in AVAX_TOKENS] == ["AVAX", "USDC", "USDT", "BTC.b", "WETH.e", "WAVAX"]
     assert AVAX.address is None and AVAX.price_feed == "0x0A77230d17318075983913bC2145DB16C7366156"
     assert find_token("btc.b", AVAX_TOKENS).decimals == 8
     assert find_token("usdt", AVAX_TOKENS).address == "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7"
