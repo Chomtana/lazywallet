@@ -1,0 +1,11 @@
+{
+  "name": "lazywallet",
+  "private": true,
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel --if-present run dev",
+    "build": "pnpm -r --if-present run build",
+    "lint": "pnpm -r --if-present run lint",
+    "test": "pnpm -r --if-present run test"
+  }
+}
