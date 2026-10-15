@@ -14,7 +14,7 @@ dependencies = [
 sandbox = "lazysandbox.sandbox:main"
 
 [dependency-groups]
-dev = ["pytest>=9.1", "pytest-asyncio>=1.4", "httpx>=0.28"]
+dev = ["pytest>=9.1", "pytest-asyncio>=1.4", "httpx2>=2.13"]
 
 [build-system]
 requires = ["hatchling"]
