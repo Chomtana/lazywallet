@@ -20,7 +20,9 @@ Let the user swap tokens by voice or text — "Swap 100 USDC to ETH" — through
 | Topic | Decision |
 |---|---|
 | Swap type | Exact input only |
-| Tokens | Existing six: ETH, USDC, USDT, DAI, WBTC, WETH |
+| Tokens | ETH, USDC, USDT, DAI, WBTC, WETH, plus **LIT (Lighter)** `0x232CE3bd40fCd6f80f3d55A522d03f25Df784Ee2` (18 decimals). HYPE and ZEC skipped: no official Ethereum mainnet token (HYPE is Hyperliquid-native; WZEC is an unofficial third-party wrapper) |
+| LIT price | No Chainlink feed → USD price = best v4 quote of 1 LIT → ETH × ETH/USD (deepest pool: ETH/LIT 0.3%) |
+| LIT faucet | 1,000 LIT; balance mapping at storage slot 0 |
 | Pools | Uniswap v4, hookless (`hooks = 0`) only, native ETH = `address(0)` |
 | Routing | Quote every fee tier (100/1, 500/10, 3000/60, 10000/200) for the direct pair; when neither side is ETH also every 2-hop route via ETH (16 tier combos); pick the highest output |
 | ETH↔WETH | WETH `deposit()` / `withdraw(uint256)`, no pool |
@@ -93,4 +95,4 @@ apps/wallet/src/agent/*        steps-aware protocol, status progress
 - Live: demo script swap prompt; browser walkthrough of ETH→USDC and USDC→ETH.
 
 ## 8. Out of scope
-Exact-output swaps, hook pools, v2/v3 pools, tokens beyond the six, limit/scheduled orders, unlimited approvals, MEV protection.
+Exact-output swaps, hook pools, v2/v3 pools, tokens beyond these seven (HYPE/ZEC until an official Ethereum token exists), limit/scheduled orders, unlimited approvals, MEV protection.

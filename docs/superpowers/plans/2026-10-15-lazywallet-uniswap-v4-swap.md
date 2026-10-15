@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add exact-input Uniswap v4 swaps (best hookless route, 1-hop or 2-hop via ETH, ETH↔WETH wrap) that the agent proposes as one multi-step confirm card and the browser executes in order.
+**Goal:** Add the Lighter (LIT) token and exact-input Uniswap v4 swaps (best hookless route, 1-hop or 2-hop via ETH, ETH↔WETH wrap) that the agent proposes as one multi-step confirm card and the browser executes in order.
 
 **Architecture:** `agent/lazyagent/uniswap.py` holds verified addresses, calldata encoders and route search over a `Quoter`; `swaps.py` holds pure swap rules (slippage, minimum, price impact, approval planning, gas reserve, card rows). A new `propose_swap` tool builds `steps` and waits for the browser like transfers do. The confirm protocol changes from one `request` to `steps: [{label, request}]` everywhere; the browser runs steps sequentially with progress.
 
@@ -16,6 +16,7 @@
 - Fee tiers (fee, tickSpacing): (100,1), (500,10), (3000,60), (10000,200); hooks always zero.
 - Action bytes: V4_SWAP 0x10; SWAP_EXACT_IN_SINGLE 0x06, SWAP_EXACT_IN 0x07, SETTLE_ALL 0x0c, TAKE_ALL 0x0f.
 - Slippage default 1% (100 bps), allowed 0.01–5%. Price impact limit 15%. Deadline = fork block timestamp + 1200 s. Permit2 approval expiry = block timestamp + 1800 s.
+- Tokens: ETH, USDC, USDT, DAI, WBTC, WETH, LIT (`0x232CE3bd40fCd6f80f3d55A522d03f25Df784Ee2`, 18 decimals, no Chainlink feed, balance slot 0, faucet 1,000). HYPE and ZEC are out (no official Ethereum mainnet token).
 - Approvals sized to the swap amount, never unlimited. USDT: approve-to-0 step before changing a nonzero allowance.
 - Gas reserve per step kind: approve 60k, permit2 60k, wrap 60k, 1-hop swap 170k, 2-hop swap 220k; reserve = sum × gas price × `FEE_HEADROOM` (2).
 - The model never writes calldata; Python builds every request.
@@ -1604,7 +1605,112 @@ git commit -m "feat(wallet): run multi-step confirm cards with progress"
 
 ---
 
-### Task 8: Docs and live verification
+### Task 8: LIT (Lighter) token
+
+**Files:**
+- Modify: `agent/lazyagent/tokens.py`, `agent/lazyagent/chain.py`, `anvil/lazysandbox/tokens.py`, `anvil/README.md`
+- Test: `agent/tests/test_chain.py` (append), `agent/tests/test_swap_fork.py` (append), `agent/tests/test_tokens.py`
+
+**Interfaces:**
+- Consumes: Task 1 `best_route`, `ChainQuoter`, `currency_of`, `ZERO`
+- Produces: `find_token("LIT")`; `RpcChain.price_usd` falls back to a v4 pool price for tokens with neither `fixed_price` nor `price_feed`; faucet funds 1,000 LIT.
+
+- [ ] **Step 1: Write failing tests**
+
+`agent/tests/test_tokens.py`:
+```python
+from lazyagent.tokens import TOKENS, find_token
+
+
+def test_lit_is_lighter_token_with_no_feed():
+    lit = find_token("lit")
+    assert lit is not None
+    assert lit.address == "0x232CE3bd40fCd6f80f3d55A522d03f25Df784Ee2"
+    assert lit.decimals == 18
+    assert lit.price_feed is None and lit.fixed_price is None
+
+
+def test_no_unofficial_tokens():
+    assert {t.symbol for t in TOKENS} == {"ETH", "USDC", "USDT", "DAI", "WBTC", "WETH", "LIT"}
+```
+
+Append to `agent/tests/test_chain.py`:
+```python
+async def test_lit_price_comes_from_v4_pool(fork_rpc):
+    price = await RpcChain(fork_rpc).price_usd(find_token("LIT"))
+    assert 0.01 < price < 1_000
+```
+
+Append to `agent/tests/test_swap_fork.py`:
+```python
+LIT = find_token("LIT")
+
+
+async def test_eth_to_lit(fork_rpc):
+    w3, account = await funded_account(fork_rpc)
+    text, _ = await swap(fork_rpc, w3, account, {"token_in": "ETH", "token_out": "LIT", "amount": "0.01"})
+    assert "Swapped 0.01 ETH for" in text, text
+    assert await RpcChain(fork_rpc).token_balance(LIT, account.address) > 0
+```
+
+The anvil faucet fork test (`test_fund_sets_eth_and_token_balances`) loops over `TOKENS`, so adding LIT there covers the slot.
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `uv run --directory agent pytest -q tests/test_tokens.py tests/test_chain.py tests/test_swap_fork.py`
+Expected: FAIL — `find_token("lit")` is None.
+
+- [ ] **Step 3: Implement**
+
+`agent/lazyagent/tokens.py`: append to `TOKENS`:
+```python
+    # Lighter (LIT) — no Chainlink feed; priced from its Uniswap v4 pool.
+    Token("LIT", "0x232CE3bd40fCd6f80f3d55A522d03f25Df784Ee2", 18),
+```
+
+`agent/lazyagent/chain.py`:
+- Imports: `from .tokens import ETH, Token` and `from .uniswap import ZERO, ChainQuoter, best_route, currency_of`.
+- Replace `price_usd` with:
+```python
+    async def price_usd(self, token: Token) -> float:
+        if token.fixed_price is not None:
+            return token.fixed_price
+        if token.price_feed is None:
+            return await self._pool_price(token)
+        feed = self.w3.eth.contract(address=Web3.to_checksum_address(token.price_feed), abi=AGGREGATOR_ABI)
+        _, answer, _, _, _ = await feed.functions.latestRoundData().call()
+        return answer / 10**FEED_DECIMALS
+
+    async def _pool_price(self, token: Token) -> float:
+        """Tokens without a Chainlink feed: 1 token → ETH on the best v4 route, times ETH/USD."""
+        found = await best_route(ChainQuoter(self), currency_of(token), ZERO, 10**token.decimals)
+        if found is None:
+            return 0.0
+        return found[1] / 10**18 * await self.price_usd(ETH)
+```
+
+`anvil/lazysandbox/tokens.py`: append to `TOKENS`:
+```python
+    Token("LIT", "0x232CE3bd40fCd6f80f3d55A522d03f25Df784Ee2", 18, 0, 1_000),
+```
+
+`anvil/README.md`: faucet line → `… 10,000 USDC/USDT/DAI, 1 WBTC, 5 WETH, 1,000 LIT …`.
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `pnpm test:py`
+Expected: PASS, including the anvil faucet fork test (LIT slot 0) and the agent LIT price/swap fork tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add agent anvil
+git commit -m "feat: add Lighter (LIT) token with pool-based price and faucet"
+```
+
+---
+
+### Task 9: Docs and live verification
 
 **Files:**
 - Modify: `README.md`, `CLAUDE.md`, `agent/README.md`
@@ -1613,7 +1719,7 @@ git commit -m "feat(wallet): run multi-step confirm cards with progress"
 
 `README.md`:
 - Status line → `> **Status: Phase 3 — Uniswap v4 swaps.** The chat runs on a real Claude agent. Balances, ETH/ERC-20 sends and Uniswap v4 swaps are real on "Sandbox" (an Anvil fork of Ethereum mainnet). Bridges, scheduled tasks and WalletConnect are still mocked or "coming soon".`
-- "Try it" list: add `- "Swap 0.5 ETH to USDC"` and `- "Swap 100 USDC to ETH with 0.5% slippage"` after the send examples.
+- "Try it" list: add `- "Swap 0.5 ETH to USDC"` and `- "Swap 100 USDC to ETH with 0.5% slippage"` and `- "Swap 0.01 ETH to LIT"` after the send examples.
 - Roadmap: mark 2 ✅, add `3. **Uniswap v4 swaps** (current) — best hookless route, approvals in one card.` and renumber "Next".
 
 `CLAUDE.md`:
