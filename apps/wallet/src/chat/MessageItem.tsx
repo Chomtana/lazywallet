@@ -9,7 +9,7 @@ import { TextBubble } from './cards/TextBubble'
 export type MessageActions = {
   onApprove: (id: string) => void
   onReject: (id: string) => void
-  onSimulate: (task: Task) => void
+  onSimulate?: (task: Task) => void
 }
 
 function AssistantBody({ message, onApprove, onReject, onSimulate }: { message: AssistantMessage } & MessageActions) {

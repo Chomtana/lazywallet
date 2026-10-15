@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BookUser, QrCode, Zap } from 'lucide-react'
 import { ChatView } from '@/chat/ChatView'
 import { InputBar } from '@/chat/InputBar'
-import { useChat } from '@/chat/useChat'
+import { useAgentChat } from '@/agent/useAgentChat'
 import { AddressBookSheet } from '@/components/AddressBookSheet'
 import { ConnectedBar } from '@/components/ConnectedBar'
 import { DeleteWalletDialog } from '@/components/DeleteWalletDialog'
@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { WalletMenu } from '@/components/WalletMenu'
 import { KEYS } from '@/lib/storage'
 import { useStored } from '@/lib/useStored'
-import { say, simulateTrigger } from '@/mock/agent'
+import { say } from '@/mock/agent'
 import { DEFAULT_CONTACTS } from '@/mock/fixtures'
 import { dappRequest } from '@/mock/walletconnect'
 import { useWallet } from '@/state/wallet-context'
@@ -34,7 +34,7 @@ export default function WalletPage() {
   const [panel, setPanel] = useState<Panel>(null)
   const [session, setSession] = useState<DappInfo | null>(null)
   const requestTimer = useRef<number | undefined>(undefined)
-  const chat = useChat({ contacts, speakEnabled, onTask: (t) => setTasks((prev) => [...prev, t]) })
+  const chat = useAgentChat({ address: active?.address, mnemonic: active?.mnemonic, contacts, speakEnabled })
   const activeTasks = tasks.filter((t) => t.status === 'active').length
   const panelProps = (p: Exclude<Panel, null>) => ({
     open: panel === p,
@@ -101,7 +101,6 @@ export default function WalletPage() {
           onPick={(t) => chat.send(t)}
           onApprove={chat.approve}
           onReject={chat.reject}
-          onSimulate={(t) => chat.deliver(simulateTrigger(t))}
         />
       </main>
       <div className="mx-auto w-full max-w-[720px] space-y-2 px-4 pb-4">

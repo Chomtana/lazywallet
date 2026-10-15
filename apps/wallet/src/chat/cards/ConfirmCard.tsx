@@ -6,6 +6,12 @@ import type { ConfirmState, TxDraft } from '@/types'
 
 type Props = { tx: TxDraft; state: ConfirmState; onApprove: () => void; onReject: () => void }
 
+const BADGE: Record<Exclude<ConfirmState, 'waiting'>, string> = {
+  approved: 'Approved',
+  rejected: 'Rejected',
+  expired: 'Expired — ask again',
+}
+
 export function ConfirmCard({ tx, state, onApprove, onReject }: Props) {
   return (
     <div className="rounded-2xl border bg-card p-4">
@@ -42,7 +48,7 @@ export function ConfirmCard({ tx, state, onApprove, onReject }: Props) {
         </div>
       ) : (
         <Badge variant={state === 'approved' ? 'default' : 'secondary'} className="mt-4">
-          {state === 'approved' ? 'Approved' : 'Rejected'}
+          {BADGE[state]}
         </Badge>
       )}
     </div>

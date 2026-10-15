@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react'
-import { Camera, ClipboardPaste, Copy } from 'lucide-react'
+import { Camera, ClipboardPaste, Copy, Droplets } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { toast } from 'sonner'
+import { requestFunds } from '@/chain/faucet'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -24,6 +25,18 @@ export function QrSheet({ open, onOpenChange, address, onConnect }: Props) {
   const [uri, setUri] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [proposal, setProposal] = useState<Proposal | null>(null)
+  const [funding, setFunding] = useState(false)
+
+  async function fund() {
+    setFunding(true)
+    try {
+      toast.success(`Added ${await requestFunds(address)}`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Faucet failed')
+    } finally {
+      setFunding(false)
+    }
+  }
 
   async function copyAddress() {
     try {
@@ -78,6 +91,9 @@ export function QrSheet({ open, onOpenChange, address, onConnect }: Props) {
               <p className="break-all text-center font-mono text-sm">{address}</p>
               <Button variant="secondary" className="w-full" onClick={copyAddress}>
                 <Copy /> Copy address
+              </Button>
+              <Button className="w-full" onClick={fund} disabled={funding}>
+                <Droplets /> {funding ? 'Adding test funds…' : 'Get test funds'}
               </Button>
               <p className="text-center text-xs text-muted-foreground">
                 Sandbox · Ethereum mainnet fork. Don't send real funds here.
