@@ -1,0 +1,27 @@
+[project]
+name = "lazysandbox"
+version = "0.1.0"
+description = "LazyWallet Anvil mainnet-fork sandbox and faucet"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.143",
+  "uvicorn[standard]>=0.54",
+  "web3>=8.0",
+  "python-dotenv>=1.2",
+]
+
+[project.scripts]
+sandbox = "lazysandbox.sandbox:main"
+
+[dependency-groups]
+dev = ["pytest>=9.1", "pytest-asyncio>=1.4", "httpx>=0.28"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lazysandbox"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

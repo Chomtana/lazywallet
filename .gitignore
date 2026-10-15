@@ -5,3 +5,7 @@ dist
 .DS_Store
 *.log
 .superpowers/
+.venv
+__pycache__
+.pytest_cache
+anvil/.test-wallet.json

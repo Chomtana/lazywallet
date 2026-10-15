@@ -6,6 +6,9 @@
     "dev": "pnpm -r --parallel --if-present run dev",
     "build": "pnpm -r --if-present run build",
     "lint": "pnpm -r --if-present run lint",
-    "test": "pnpm -r --if-present run test"
+    "test": "pnpm -r --if-present run test",
+    "dev:sandbox": "uv run --directory anvil sandbox",
+    "dev:agent": "uv run --directory agent agent",
+    "test:py": "uv run --directory anvil pytest -q && uv run --directory agent pytest -q"
   }
 }
