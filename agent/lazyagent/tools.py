@@ -237,6 +237,7 @@ class WalletTools:
             validate(token, amount, balance, native_balance, gas_cost, native=net.native.symbol)
             price = await chain.price_usd(token)
             native_price = await chain.price_usd(net.native)
+            before = await self._snapshot(net, [token])
         except TransferError as e:
             return err(str(e))
         except Exception as e:
@@ -261,18 +262,38 @@ class WalletTools:
         result = await self.proposals.wait(pid, fut, self.approval_timeout)
         success = ""
         if _succeeded(result):
-            success = f"Sent {human} to {label}. Confirmed on {net.label}, tx {result.get('hash')}." + await self._fresh_balances()
+            _, change = await self._show_change(net, [token], before)
+            success = f"Sent {human} to {label}. Confirmed on {net.label}, tx {result.get('hash')}.{change}"
         return ok(outcome_text(result, steps, "transfer", success))
 
-    async def _fresh_balances(self) -> str:
-        """After a confirmed transaction: show an updated balance card and return its summary (empty if unreadable)."""
+    async def _snapshot(self, net: Network, tokens) -> dict[str, int]:
+        return {t.symbol: await self._balance_on(net, t) for t in tokens}
+
+    async def _show_change(self, net: Network, tokens, before: dict[str, int]) -> tuple[dict[str, int] | None, str]:
+        """After a confirmed tx: a card with only these tokens' new balances and +/- change.
+        Returns (balances after, summary for the model), or (None, "") if balances can't be read."""
         try:
-            res = await self.get_balances({})
+            after = await self._snapshot(net, tokens)
+            changes, parts = [], []
+            for t in {t.symbol: t for t in tokens}.values():
+                was, now = before[t.symbol], after[t.symbol]
+                delta = now - was
+                changes.append(
+                    {
+                        "network": net.name,
+                        "symbol": t.symbol,
+                        "before": float(Decimal(was).scaleb(-t.decimals)),
+                        "after": float(Decimal(now).scaleb(-t.decimals)),
+                        "delta": float(Decimal(delta).scaleb(-t.decimals)),
+                        "usdPrice": await self.chains[net.key].price_usd(t),
+                    }
+                )
+                sign = "+" if delta >= 0 else "-"
+                parts.append(f"{t.symbol} {sign}{display_units(abs(delta), t.decimals)} (now {display_units(now, t.decimals)})")
         except Exception:
-            return ""
-        if res.get("is_error"):
-            return ""
-        return " Updated balances (shown as a card): " + res["content"][0]["text"].removeprefix("Balances shown to the user as a card: ")
+            return None, ""
+        await self.send({"type": "balance_change", "changes": changes})
+        return after, f" Balance change (shown as a card): {', '.join(parts)}."
 
     async def _uniswap_plan(self, tin, tout, amount: int, bps: int):
         now = await self.chain.block_timestamp()
@@ -363,7 +384,7 @@ class WalletTools:
             reserve = gas_reserve(steps, await chain.gas_price())
             check_swap_funds(tin, amount, balance, native_balance, reserve, native=net.native.symbol)
             fee_usd = float(Decimal(reserve // FEE_HEADROOM).scaleb(-18)) * await chain.price_usd(net.native)
-            out_before = await self._balance_on(net, tout)
+            before = await self._snapshot(net, [tin, tout])
         except TransferError as e:
             return err(str(e))
         except Exception as e:
@@ -382,19 +403,17 @@ class WalletTools:
         result = await self.proposals.wait(pid, fut, self.approval_timeout)
         success = ""
         if _succeeded(result):
+            after, change = await self._show_change(net, [tin, tout], before)
             if exact is not None:  # a signed RFQ order pays exactly its makerAmount
                 received = exact
             else:
-                try:
-                    received = max(await self._balance_on(net, tout) - out_before, 0)
-                except Exception:
-                    received = None
+                received = max(after[tout.symbol] - before[tout.symbol], 0) if after else None
             if received is None:
                 got = f"{tout.symbol} (I couldn't read the received amount right now — don't swap again; check the balance instead)"
             else:
                 got = f"{display_units(received, tout.decimals)} {tout.symbol}"
                 got = f"about {got} (after network fees)" if tout.address is None and exact is None else got
-            success = f"Swapped {human_in} for {got}. Confirmed on {net.label}, tx {result.get('hash')}." + await self._fresh_balances()
+            success = f"Swapped {human_in} for {got}. Confirmed on {net.label}, tx {result.get('hash')}.{change}"
         return ok(outcome_text(result, steps_json, "swap", success, revert_hint=hint))
 
     async def request_test_funds(self, args: dict) -> dict:

@@ -64,7 +64,7 @@ def test_transfer_round_trip():
         assert confirm["type"] == "confirm"
         assert confirm["tx"]["steps"][0]["request"]["to"] == ALICE
         ws.send_json({"type": "tx_result", "id": confirm["id"], "outcome": "approved", "hash": "0xabc", "status": "success"})
-        assert ws.receive_json()["type"] == "balances"  # updated balance card after a confirmed transfer
+        assert ws.receive_json()["type"] == "balance_change"  # changed tokens after a confirmed transfer
         delta = ws.receive_json()
         assert delta["type"] == "text_delta"
         assert "Sent 0.1 ETH to Alice" in delta["text"]
@@ -120,7 +120,7 @@ def test_tx_started_keeps_the_proposal_alive_past_the_approval_timeout():
         ws.send_json({"type": "tx_started", "id": confirm["id"]})
         time.sleep(0.4)
         ws.send_json({"type": "tx_result", "id": confirm["id"], "outcome": "approved", "hash": "0xabc", "status": "success"})
-        assert ws.receive_json()["type"] == "balances"
+        assert ws.receive_json()["type"] == "balance_change"
         assert "Sent 0.1 ETH to Alice" in ws.receive_json()["text"]
 
 

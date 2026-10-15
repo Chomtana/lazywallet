@@ -158,22 +158,27 @@ async def test_success_is_reported_even_if_the_balance_read_fails():
     assert "couldn't read" in result
 
 
-async def test_confirmed_swap_shows_updated_balances():
+async def test_confirmed_swap_shows_in_and_out_changes():
     tools, out, proposals, chain = make()
     task = asyncio.create_task(tools.propose_swap({"token_in": "ETH", "token_out": "USDC", "amount": "1"}))
     confirm = await confirm_of(out)
     chain.tokens["USDC"] += 2_358 * 10**6
+    chain.eth -= 10**18
     proposals.resolve(confirm["id"], {"outcome": "approved", "status": "success", "hash": "0xs"})
     result = text(await task)
-    [card] = out.of_type("balances")
-    assert {"network": "Ethereum", "symbol": "USDC", "amount": 7_358.0, "usdPrice": 1.0} in card["holdings"]
-    assert "Updated balances" in result and "USDC 7358" in result
+    [card] = out.of_type("balance_change")
+    assert card["changes"] == [
+        {"network": "Ethereum", "symbol": "ETH", "before": 10.0, "after": 9.0, "delta": -1.0, "usdPrice": 3200.0},
+        {"network": "Ethereum", "symbol": "USDC", "before": 5000.0, "after": 7358.0, "delta": 2358.0, "usdPrice": 1.0},
+    ]
+    assert not out.of_type("balances")
+    assert "ETH -1 (now 9)" in result and "USDC +2358 (now 7358)" in result
 
 
-async def test_failed_swap_shows_no_balances():
+async def test_failed_swap_shows_no_balance_change():
     tools, out, proposals, _ = make()
     task = asyncio.create_task(tools.propose_swap({"token_in": "USDC", "token_out": "ETH", "amount": "100"}))
     confirm = await confirm_of(out)
     proposals.resolve(confirm["id"], {"outcome": "approved", "error": "execution reverted", "failed_step": 2})
     await task
-    assert not out.of_type("balances")
+    assert not out.of_type("balance_change")

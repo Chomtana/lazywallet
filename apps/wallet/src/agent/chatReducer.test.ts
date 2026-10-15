@@ -90,4 +90,10 @@ describe('chatReducer', () => {
     const s = run([choiceMsg, server({ type: 'turn_end' }), { type: 'online', online: false }])
     expect(s.messages[0]).toMatchObject({ kind: 'choice', closed: true })
   })
+
+  it('adds a balance change card', () => {
+    const change = { network: 'Ethereum', symbol: 'USDC', before: 500, after: 400, delta: -100, usdPrice: 1 }
+    const s = run([server({ type: 'balance_change', changes: [change] })])
+    expect(s.messages[0]).toMatchObject({ role: 'assistant', kind: 'balance_change', changes: [change] })
+  })
 })

@@ -52,6 +52,13 @@ function onServer(s: ChatState, msg: ServerMsg): ChatState {
         streamingId: null,
         messages: [...s.messages, { id: nextId, role: 'assistant', kind: 'balance', holdings: msg.holdings }],
       }
+    case 'balance_change':
+      return {
+        ...s,
+        seq: s.seq + 1,
+        streamingId: null,
+        messages: [...s.messages, { id: nextId, role: 'assistant', kind: 'balance_change', changes: msg.changes }],
+      }
     case 'confirm':
       return {
         ...s,

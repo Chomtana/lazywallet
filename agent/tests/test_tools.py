@@ -186,21 +186,26 @@ def test_mcp_server_and_names():
     ]
 
 
-async def test_confirmed_transfer_shows_updated_balances():
+async def test_confirmed_transfer_shows_only_the_sent_token_change():
     tools, out, proposals = make()
-    task = asyncio.create_task(tools.propose_transfer({"token": "ETH", "amount": "0.1", "to": "Alice"}))
+    task = asyncio.create_task(tools.propose_transfer({"token": "USDC", "amount": "100", "to": "Alice"}))
     confirm = await wait_for_confirm(out)
-    assert not out.of_type("balances")
+    tools.chain.tokens["USDC"] -= 100 * 10**6
+    tools.chain.eth -= 10**14  # gas only — not shown
     proposals.resolve(confirm["id"], {"outcome": "approved", "hash": "0xabc", "status": "success"})
     result = text(await task)
-    assert len(out.of_type("balances")) == 1
-    assert "Updated balances" in result
+    [card] = out.of_type("balance_change")
+    assert card["changes"] == [
+        {"network": "Ethereum", "symbol": "USDC", "before": 500.0, "after": 400.0, "delta": -100.0, "usdPrice": 1.0}
+    ]
+    assert not out.of_type("balances")
+    assert "USDC -100 (now 400)" in result
 
 
-async def test_rejected_transfer_shows_no_balances():
+async def test_rejected_transfer_shows_no_balance_change():
     tools, out, proposals = make()
     task = asyncio.create_task(tools.propose_transfer({"token": "ETH", "amount": "0.1", "to": "Alice"}))
     confirm = await wait_for_confirm(out)
     proposals.resolve(confirm["id"], {"outcome": "rejected"})
     await task
-    assert not out.of_type("balances")
+    assert not out.of_type("balance_change")

@@ -1,6 +1,7 @@
 import { Mic } from 'lucide-react'
 import type { AssistantMessage, ChoiceOption, Message, Task } from '@/types'
 import { BalanceCard } from './cards/BalanceCard'
+import { BalanceChangeCard } from './cards/BalanceChangeCard'
 import { ChoiceCard } from './cards/ChoiceCard'
 import { ConfirmCard } from './cards/ConfirmCard'
 import { StatusCard } from './cards/StatusCard'
@@ -21,6 +22,8 @@ function AssistantBody({ message, onApprove, onReject, onSimulate, onChoose, cho
       return <TextBubble text={message.text} />
     case 'balance':
       return <BalanceCard holdings={message.holdings} />
+    case 'balance_change':
+      return <BalanceChangeCard changes={message.changes} />
     case 'confirm':
       return (
         <ConfirmCard
