@@ -171,6 +171,9 @@ export function useAgentChat(options: Options) {
   function choose(id: string, option: ChoiceOption) {
     const m = stateRef.current.messages.find((x) => x.id === id)
     if (!m || m.kind !== 'choice' || m.closed) return
+    // Only act if the reply can really be sent; otherwise leave the card open to retry.
+    const ws = wsRef.current
+    if (stateRef.current.busy || !optsRef.current.address || !ws || ws.readyState !== WebSocket.OPEN) return
     dispatch({ type: 'update', id, patch: { chosen: option.label } })
     send(option.reply)
   }

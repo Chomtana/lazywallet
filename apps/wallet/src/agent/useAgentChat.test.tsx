@@ -136,4 +136,35 @@ describe('useAgentChat', () => {
     act(() => result.current.choose('c1', option))
     expect(live.sent).toHaveLength(1) // a closed card can't send twice
   })
+
+  const CHOICE = { label: 'Avalanche', detail: '20 USDC', reply: 'Use Avalanche for that.' }
+  const choiceFrame = JSON.stringify({ type: 'choice', id: 'c1', question: 'Which network?', options: [CHOICE] })
+
+  it('choose() while busy leaves the card open and sends nothing', async () => {
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    act(() => result.current.send('swap usdc'))
+    act(() => live.onmessage?.({ data: choiceFrame }))
+    const before = result.current.messages.length
+    act(() => result.current.choose('c1', CHOICE))
+    expect(live.sent).toHaveLength(1)
+    expect(result.current.messages).toHaveLength(before)
+    expect(result.current.messages.at(-1)).not.toHaveProperty('chosen')
+    expect(result.current.messages.at(-1)).not.toHaveProperty('closed', true)
+  })
+
+  it('choose() while offline leaves the card open and sends nothing', async () => {
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    act(() => live.onmessage?.({ data: choiceFrame }))
+    act(() => result.current.choose('c1', CHOICE))
+    expect(live.sent).toHaveLength(0)
+    expect(result.current.messages).toHaveLength(1)
+    expect(result.current.messages[0]).not.toHaveProperty('chosen')
+    expect(result.current.messages[0]).not.toHaveProperty('closed', true)
+  })
 })
