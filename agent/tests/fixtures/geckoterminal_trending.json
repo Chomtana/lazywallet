@@ -1,0 +1,12 @@
+{
+  "data": [
+    {"id": "avax_0x5ca009013f6b898d134b6798b336a4592f3b4af2", "type": "pool", "attributes": {"address": "0x5ca009013f6b898d134b6798b336a4592f3b4af2", "name": "BTC.b / WAVAX 0.05%", "base_token_price_usd": "81343.7253854092", "price_change_percentage": {"h24": "-2.474"}, "volume_usd": {"h24": "5147349.74684319"}, "reserve_in_usd": "3157451.7132"}, "relationships": {"base_token": {"data": {"id": "avax_0x152b9d0fdc40c096757f570a51e494bd4b943e50", "type": "token"}}, "dex": {"data": {"id": "pharaoh-exchange-v3", "type": "dex"}}}},
+    {"id": "avax_0x41ab86eecbd110a82ca602d032a461f453066f1e", "type": "pool", "attributes": {"address": "0x41ab86eecbd110a82ca602d032a461f453066f1e", "name": "COQ / WAVAX", "base_token_price_usd": "0.000000121646674452088", "price_change_percentage": {"h24": "-5.1"}, "volume_usd": {"h24": "16937.5461895205"}, "reserve_in_usd": "623823.6468"}, "relationships": {"base_token": {"data": {"id": "avax_0x420fca0121dc28039145009570975747295f2329", "type": "token"}}, "dex": {"data": {"id": "traderjoe", "type": "dex"}}}}
+  ],
+  "included": [
+    {"id": "pharaoh-exchange-v3", "type": "dex", "attributes": {"name": "Pharaoh Exchange V3"}},
+    {"id": "avax_0x152b9d0fdc40c096757f570a51e494bd4b943e50", "type": "token", "attributes": {"address": "0x152b9d0fdc40c096757f570a51e494bd4b943e50", "name": "Bitcoin", "symbol": "BTC.b"}},
+    {"id": "traderjoe", "type": "dex", "attributes": {"name": "LFJ"}},
+    {"id": "avax_0x420fca0121dc28039145009570975747295f2329", "type": "token", "attributes": {"address": "0x420fca0121dc28039145009570975747295f2329", "name": "COQINU", "symbol": "COQ"}}
+  ]
+}
