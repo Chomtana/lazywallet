@@ -10,6 +10,7 @@ from lazyagent.kyber import (
     SANDBOX_KYBER_SLIPPAGE_BPS,
     SIMPLE_SELECTOR,
     SWAP_SELECTOR,
+    MAX_BUILD_SHORTFALL_BPS,
     KyberClient,
     SwapRequest,
     Verified,
@@ -48,14 +49,14 @@ def test_selectors_match_the_verified_router_abi():
 
 
 def test_verify_accepts_an_honest_native_swap():
-    v = verify(native_build(), NATIVE_REQ)
+    v = verify(native_build(), NATIVE_REQ, OUT)
     assert v == Verified(native_build()["data"], 10**18, OUT, OUT // 2)
 
 
 def test_verify_accepts_swap_simple_mode_for_erc20_input():
     d = kyber_desc(COQ_ADDR, USDC.address, ME, 10**24, 59_509)
     build = {"routerAddress": ROUTER, "data": simple_data(d), "transactionValue": "0", "amountOut": "119018"}
-    v = verify(build, SwapRequest(COQ_ADDR, USDC.address, 10**24, ME, 5000))
+    v = verify(build, SwapRequest(COQ_ADDR, USDC.address, 10**24, ME, 5000), 119018)
     assert v.value == 0 and v.minimum == 59_509 and v.data.startswith("0x8af033fb")
 
 
@@ -76,14 +77,25 @@ def test_verify_accepts_swap_simple_mode_for_erc20_input():
 )
 def test_verify_refuses(build, why):
     with pytest.raises(TransferError, match=why):
-        verify(build, NATIVE_REQ)
+        verify(build, NATIVE_REQ, OUT)
+
+
+def test_verify_cross_checks_the_build_against_the_route_quote():
+    assert MAX_BUILD_SHORTFALL_BPS == 100
+    close = {**native_build(), "amountOut": str(OUT * 995 // 1000)}  # 0.5% below the /routes quote
+    assert verify(close, NATIVE_REQ, OUT).expected == OUT * 995 // 1000
+    low = {**native_build(), "amountOut": str(OUT * 98 // 100)}  # 2% below
+    with pytest.raises(TransferError, match="build quote below the route quote"):
+        verify(low, NATIVE_REQ, OUT)
+    with pytest.raises(TransferError, match="build quote below the route quote"):
+        verify(native_build(), NATIVE_REQ, 0)  # no usable route quote
 
 
 def test_verify_refuses_simple_mode_with_native_input():
     d = kyber_desc(NATIVE, COQ_ADDR, ME, 10**18, OUT // 2)
     build = {"routerAddress": ROUTER, "data": simple_data(d), "transactionValue": str(10**18), "amountOut": str(OUT)}
     with pytest.raises(TransferError, match="unknown router function"):
-        verify(build, NATIVE_REQ)
+        verify(build, NATIVE_REQ, OUT)
 
 
 def test_kyber_slippage_defaults_to_the_sandbox_value():

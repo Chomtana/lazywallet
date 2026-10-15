@@ -111,6 +111,7 @@ async def test_kyber_failures_send_no_card():
     cases = [
         (dict(kyber=FakeKyber(no_route=True)), "no route"),
         (dict(kyber=FakeKyber(tamper=receiver_alice)), "wrong recipient"),
+        (dict(kyber=FakeKyber(out=OUT, build_out=OUT * 98 // 100)), "build quote below the route quote"),
         (dict(avax=reverting), "fails on the Sandbox fork"),
         (dict(avax=off), "doesn't match"),
     ]

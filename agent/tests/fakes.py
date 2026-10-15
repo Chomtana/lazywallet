@@ -100,8 +100,9 @@ def simple_data(desc) -> str:
 class FakeKyber:
     """Kyber API stand-in: a 2-hop LFJ route paying `out`, built honestly unless `tamper` edits the description."""
 
-    def __init__(self, out: int = 8_000_000 * 10**18, tamper=None, no_route: bool = False):
+    def __init__(self, out: int = 8_000_000 * 10**18, tamper=None, no_route: bool = False, build_out: int | None = None):
         self.out, self.tamper, self.no_route = out, tamper, no_route
+        self.build_out = out if build_out is None else build_out  # what /route/build claims (normally = the route quote)
         self.routes: list[tuple] = []
         self.builds: list[tuple] = []
 
@@ -117,12 +118,12 @@ class FakeKyber:
     async def build(self, network, summary, sender, slippage_bps):
         self.builds.append((network, sender, slippage_bps))
         amount = int(summary["amountIn"])
-        desc = kyber_desc(summary["tokenIn"], summary["tokenOut"], sender, amount, min_out(self.out, slippage_bps))
+        desc = kyber_desc(summary["tokenIn"], summary["tokenOut"], sender, amount, min_out(self.build_out, slippage_bps))
         if self.tamper:
             desc = self.tamper(desc)
         native = summary["tokenIn"].lower() == NATIVE.lower()
         return {"routerAddress": ROUTER, "data": swap_data(desc), "transactionValue": str(amount if native else 0),
-                "amountOut": str(self.out), "gas": "180000"}
+                "amountOut": str(self.build_out), "gas": "180000"}
 
 
 class FakeSearch:

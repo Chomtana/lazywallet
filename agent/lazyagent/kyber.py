@@ -38,6 +38,9 @@ SIMPLE_SELECTOR = Web3.keccak(text=f"swapSimpleMode(address,{DESC},bytes,bytes)"
 # below is what catches a wrong amount.
 SANDBOX_KYBER_SLIPPAGE_BPS = 5000
 SIM_TOLERANCE_PCT = 5
+# The build's amountOut (which the minimum and the simulation check are measured against) may not be more than
+# 1% below the separate /routes quote — a build response can't quietly lower the bar.
+MAX_BUILD_SHORTFALL_BPS = 100
 SWAP_GAS_FLOOR = 250_000
 DEX_NAMES = {
     "traderjoe": "LFJ", "traderjoe-v21": "LFJ", "traderjoe-v22": "LFJ", "pangolin": "Pangolin", "pharaoh": "Pharaoh",
@@ -138,8 +141,8 @@ def _desc(selector: str, args: bytes, native: bool) -> tuple | None:
     return None
 
 
-def verify(build: dict, req: SwapRequest) -> Verified:
-    """Refuse Kyber's built swap unless it does exactly what the user asked."""
+def verify(build: dict, req: SwapRequest, quoted: int) -> Verified:
+    """Refuse Kyber's built swap unless it does exactly what the user asked. `quoted` = the /routes amountOut."""
 
     def refuse(why: str) -> TransferError:
         return TransferError(f"KyberSwap's transaction didn't match your request ({why}), so I didn't show it. Try again.")
@@ -169,6 +172,8 @@ def verify(build: dict, req: SwapRequest) -> Verified:
     expected = _int(build.get("amountOut"))
     if expected <= 0 or min_return < min_out(expected, req.slippage_bps):
         raise refuse("minimum too low")
+    if quoted <= 0 or expected * 10_000 < quoted * (10_000 - MAX_BUILD_SHORTFALL_BPS):
+        raise refuse("build quote below the route quote")
     return Verified("0x" + raw.hex(), value, expected, min_return)
 
 
@@ -234,7 +239,7 @@ async def kyber_plan(
     req = SwapRequest(kyber_asset(tin), kyber_asset(tout), amount, user, bps)
     route = await client.route(net.key, req.token_in, req.token_out, amount)
     summary = route["routeSummary"]
-    v = verify(await client.build(net.key, summary, user, bps), req)
+    v = verify(await client.build(net.key, summary, user, bps), req, _int(summary.get("amountOut")))
     allowance, override = 0, None
     if tin.address is not None:
         allowance = int.from_bytes((await chain.call(tin.address, encode_erc20_allowance(user, ROUTER)))[:32], "big")
