@@ -1,6 +1,7 @@
 import type { Address, Holding, TxDraft, TxStep } from '@/types'
 
 export type ClientMsg =
+  | { type: 'tx_started'; id: string }
   | {
       type: 'user'
       text: string

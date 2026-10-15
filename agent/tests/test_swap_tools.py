@@ -145,3 +145,14 @@ async def test_swap_refusals_send_no_card():
         assert result.get("is_error") is True, args
         assert fragment in text(result), (args, text(result))
         assert not out.of_type("confirm")
+
+
+async def test_success_is_reported_even_if_the_balance_read_fails():
+    tools, out, proposals, chain = make()
+    task = asyncio.create_task(tools.propose_swap({"token_in": "ETH", "token_out": "USDC", "amount": "1"}))
+    confirm = await confirm_of(out)
+    chain.fail_balance_reads = True
+    proposals.resolve(confirm["id"], {"outcome": "approved", "status": "success", "hash": "0xs"})
+    result = text(await task)
+    assert "Swapped 1 ETH" in result and "0xs" in result
+    assert "couldn't read" in result

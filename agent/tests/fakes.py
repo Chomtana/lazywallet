@@ -10,6 +10,7 @@ class FakeChain:
         self.gp = gas_price
         self.fail = False
         self.sandbox = True
+        self.fail_balance_reads = False
         self.call_responses: dict[str, bytes] = {}
         self.now = 1_700_000_000
 
@@ -19,6 +20,8 @@ class FakeChain:
         return self.eth
 
     async def token_balance(self, token: Token, address: str) -> int:
+        if self.fail_balance_reads:
+            raise ConnectionError("rpc hiccup")
         return self.tokens.get(token.symbol, 0)
 
     async def price_usd(self, token: Token) -> float:

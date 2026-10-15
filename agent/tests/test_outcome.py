@@ -32,3 +32,15 @@ def test_first_step_failure_has_no_harmless_note():
     text = outcome_text({"outcome": "approved", "error": "denied", "failed_step": 0}, THREE, "swap", "ok")
     assert "step 1 (Allow USDC)" in text
     assert "did go through" not in text
+
+
+def test_swap_failing_at_estimation_still_gets_slippage_hint():
+    # viem/devsigner estimate gas first, so a min-out failure arrives as an error, not a mined revert.
+    result = {"outcome": "approved", "error": "execution reverted", "failed_step": 2}
+    text = outcome_text(result, THREE, "swap", "ok", revert_hint=" HINT")
+    assert "step 3 (Swap USDC → ETH)" in text and "HINT" in text
+
+
+def test_approval_step_error_gets_no_slippage_hint():
+    result = {"outcome": "approved", "error": "user denied", "failed_step": 1}
+    assert "HINT" not in outcome_text(result, THREE, "swap", "ok", revert_hint=" HINT")

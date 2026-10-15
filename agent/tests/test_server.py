@@ -108,3 +108,14 @@ def test_disconnect_cancels_pending_and_closes_client():
 
 def test_health():
     assert client().get("/health").json() == {"ok": True}
+
+
+def test_tx_started_keeps_the_proposal_alive_past_the_approval_timeout():
+    app = create_app(FakeChain(), scripted_factory, (ORIGIN,), approval_timeout=0.2)
+    with TestClient(app).websocket_connect("/ws", headers={"origin": ORIGIN}) as ws:
+        ws.send_json(USER)
+        confirm = ws.receive_json()
+        ws.send_json({"type": "tx_started", "id": confirm["id"]})
+        time.sleep(0.4)
+        ws.send_json({"type": "tx_result", "id": confirm["id"], "outcome": "approved", "hash": "0xabc", "status": "success"})
+        assert "Sent 0.1 ETH to Alice" in ws.receive_json()["text"]

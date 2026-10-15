@@ -7,13 +7,15 @@ def outcome_text(result: dict | None, steps: list[dict], what: str, success: str
     idx = result.get("failed_step")
     at = f" at step {idx + 1} ({steps[idx]['label']})" if isinstance(idx, int) and 0 <= idx < len(steps) and len(steps) > 1 else ""
     earlier = " The earlier approval steps did go through, which is harmless." if isinstance(idx, int) and idx > 0 else ""
+    # Wallets estimate gas before sending, so a swap that would miss its minimum usually fails here, unsent.
+    last_step_hint = revert_hint if isinstance(idx, int) and idx == len(steps) - 1 else ""
     if result.get("error") and result.get("hash"):
         return (
             f"The {what} was broadcast{at} (tx {result['hash']}) but its confirmation couldn't be read "
             f"({result['error']}). Don't resend — ask the user to check their balance first."
         )
     if result.get("error"):
-        return f"The {what} failed before it was sent{at}: {result['error']}.{earlier}"
+        return f"The {what} failed before it was sent{at}: {result['error']}.{earlier}{last_step_hint}"
     if result.get("status") == "reverted":
         return f"The {what} reverted{at}. Tx {result.get('hash')}.{earlier}{revert_hint}"
     return success

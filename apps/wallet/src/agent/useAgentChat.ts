@@ -136,6 +136,8 @@ export function useAgentChat(options: Options) {
       )
       return
     }
+    // Tell the agent the user approved, so its approval timeout doesn't fire mid-execution.
+    sendJson({ type: 'tx_started', id })
     const outcome = mnemonic
       ? await executeSteps(steps, txDepsFor(mnemonic), (i) => dispatch({ type: 'update', id: statusId, patch: { text: progressText(i, steps) } }))
       : { hashes: [], error: 'No wallet is unlocked.', failedStep: 0 }

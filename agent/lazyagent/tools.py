@@ -242,9 +242,15 @@ class WalletTools:
         result = await self.proposals.wait(pid, fut, self.approval_timeout)
         success = ""
         if result and result.get("status") == "success" and not result.get("error"):
-            received = max(await self._balance(tout) - out_before, 0)
-            got = f"{display_units(received, tout.decimals)} {tout.symbol}"
-            got = f"about {got} (after network fees)" if tout.address is None else got
+            try:
+                received = max(await self._balance(tout) - out_before, 0)
+            except Exception:
+                received = None
+            if received is None:
+                got = f"{tout.symbol} (I couldn't read the received amount right now — don't swap again; check the balance instead)"
+            else:
+                got = f"{display_units(received, tout.decimals)} {tout.symbol}"
+                got = f"about {got} (after network fees)" if tout.address is None else got
             success = f"Swapped {human_in} for {got}. Confirmed on Sandbox, tx {result.get('hash')}."
         hint = f" The price probably moved more than the {bps / 100:g}% slippage — ask again for a fresh quote."
         return ok(outcome_text(result, steps_json, "swap", success, revert_hint=hint))

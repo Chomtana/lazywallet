@@ -36,3 +36,18 @@ async def test_cancel_all_cancels_waiters():
     p.cancel_all()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+async def test_started_proposals_wait_past_the_approval_timeout():
+    p = Proposals()
+    pid, fut = p.new()
+    p.start(pid)
+    asyncio.get_running_loop().call_later(0.05, p.resolve, pid, {"outcome": "approved"})
+    assert await p.wait(pid, fut, 0.01, execution_timeout=1) == {"outcome": "approved"}
+
+
+async def test_unstarted_proposals_still_time_out():
+    p = Proposals()
+    pid, fut = p.new()
+    asyncio.get_running_loop().call_later(0.05, p.resolve, pid, {"outcome": "approved"})
+    assert await p.wait(pid, fut, 0.01, execution_timeout=1) is None

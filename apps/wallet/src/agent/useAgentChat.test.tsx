@@ -2,6 +2,10 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAgentChat } from './useAgentChat'
 
+vi.mock('@/chain/client', () => ({
+  txDepsFor: () => ({ send: async () => '0x1', wait: async () => 'success' }),
+}))
+
 class FakeWebSocket {
   static OPEN = 1
   static instances: FakeWebSocket[] = []
@@ -91,5 +95,27 @@ describe('useAgentChat', () => {
     await act(() => result.current.approve('pabc'))
     expect(result.current.messages.find((m) => m.id === 'pabc')).toMatchObject({ state: 'waiting' })
     expect(live.sent).toHaveLength(0)
+  })
+
+  it('tells the agent the user started approving before running the steps', async () => {
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    const me = OPTIONS.address
+    act(() =>
+      live.onmessage?.({
+        data: JSON.stringify({
+          type: 'confirm',
+          id: 'pmine',
+          tx: { title: 'Send 1 ETH', from: me, rows: [], steps: [{ label: 'Send', request: { to: me, value: '1', data: '0x' } }] },
+        }),
+      }),
+    )
+    await act(() => result.current.approve('pmine'))
+    expect(live.sent.map((s) => JSON.parse(s).type)).toEqual(['tx_started', 'tx_result'])
+    expect(JSON.parse(live.sent[1])).toMatchObject({ id: 'pmine', status: 'success', hashes: ['0x1'] })
   })
 })

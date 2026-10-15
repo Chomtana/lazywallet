@@ -50,6 +50,8 @@ class Session:
             self.ctx.address = msg.get("address")
             self.ctx.contacts = list(msg.get("contacts") or [])
             self._turn = asyncio.create_task(self._run(str(msg.get("text", ""))))
+        elif kind == "tx_started":
+            self.proposals.start(str(msg.get("id", "")))
         elif kind == "tx_result":
             self.proposals.resolve(str(msg.get("id", "")), msg)
         else:
