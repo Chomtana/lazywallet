@@ -10,7 +10,7 @@ Let the user swap tokens by voice or text — "Swap 100 USDC to ETH" — through
 
 **Success criteria**
 - "Swap 1 ETH to USDC", "Swap 1000 USDC to ETH" and "Swap 500 USDC to WBTC" each produce one confirm card; one Approve executes all steps in the browser and the agent reports the actual amount received.
-- ERC-20 inputs add only the approval steps actually needed (sized to the swap amount); a repeat swap within the approval window skips them.
+- ERC-20 inputs add only the approval steps actually needed (sized to the swap amount). Sized approvals are consumed by the swap, so a later swap normally needs them again; any allowance that is still sufficient and unexpired is skipped.
 - "Swap 1 ETH to WETH" / "WETH to ETH" wrap/unwrap via the WETH contract.
 - Invalid or unroutable swaps never produce a card.
 - `pnpm test`, `pnpm test:py` pass; fork integration tests execute real v4 swaps.
