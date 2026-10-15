@@ -59,7 +59,7 @@ New `agent/lazyagent/trending.py`:
 
 ## 5. Testing
 
-- pytest with fixture JSON captured from GeckoTerminal and CoinGecko, kept small (1–2 tokens per case): meme parse/filter/rank, `NOT_MEMES`, low liquidity dropped; RWA project-token extraction on both chains (asset sub-category ids excluded), `NOT_RWA`, `PINNED` first, network filter, `buyable` true/false, ranking; top-10 cap; both caches (60 s / 24 h) with a fake clock; HTTP error/429/non-JSON → friendly message; bad `category` → error.
+- pytest with fixture JSON captured from GeckoTerminal and CoinGecko, kept small (1–2 tokens per case): meme parse/filter/rank, `NOT_MEMES`, low liquidity dropped; RWA project-token extraction on both chains (asset sub-category ids excluded), `NOT_RWA`, `PINNED` first, network filter, `buyable` true/false, ranking; top-10 cap; the 60 s cache with a fake clock; the shipped RWA snapshot loads; HTTP error/429/non-JSON → friendly message; bad `category` → error.
 - Manual: "what's trending on Avalanche?" and "what RWA tokens are hot?" in the wallet app.
 
 ## 6. Merge plan
