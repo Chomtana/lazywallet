@@ -65,7 +65,7 @@ export function MessageItem({ message, queued, ...actions }: { message: Message;
     return (
       <div className="flex flex-col items-end gap-1">
         <div
-          className={`max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground ${tag ? 'opacity-50' : ''}`}
+          className={`max-w-[85%] min-w-0 rounded-2xl rounded-br-md bg-primary px-4 py-2.5 wrap-anywhere text-primary-foreground ${tag ? 'opacity-50' : ''}`}
         >
           {message.spoken && <Mic className="mr-1.5 inline size-3.5 align-[-2px]" />}
           {message.text}
@@ -76,7 +76,7 @@ export function MessageItem({ message, queued, ...actions }: { message: Message;
   }
   return (
     <div className="flex justify-start">
-      <div className="w-full max-w-[85%]">
+      <div className="w-full min-w-0 max-w-[85%]">
         <AssistantBody message={message} {...actions} />
       </div>
     </div>
