@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .networks import find_network
-from .tokens import AVAX_TOKENS
+from .tokens import AVAX_TOKENS, logo_url
 
 GT_API = "https://api.geckoterminal.com/api/v2/networks"
 GT_NETWORKS = {"ethereum": "eth", "avalanche": "avax"}
@@ -99,9 +99,7 @@ def _num(value) -> float:
 
 
 def _image(value) -> str | None:
-    """GeckoTerminal's logo URL, or None when it's missing or its "missing.png" placeholder."""
-    url = str(value or "")
-    return url if url.startswith("https://") and not url.endswith("missing.png") else None
+    return logo_url(value)
 
 
 def _rel_id(obj: dict, name: str) -> str | None:

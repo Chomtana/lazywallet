@@ -6,6 +6,7 @@ from lazyagent.networks import AVALANCHE, ETHEREUM
 from lazyagent.tokens import Token, find_token
 
 COQ_ADDR = "0x420FcA0121DC28039145009570975747295f2329"
+COQ_LOGO = "https://coin-images.coingecko.com/coins/images/33511/large/Coin_CoqInu_1200px.png"
 COQ_SAVED = {"chainId": 43114, "address": COQ_ADDR.lower(), "symbol": "COQ", "decimals": 18}
 
 # Trimmed real GeckoTerminal response: GET /search/pools?query=COQ&network=avax&include=base_token (2026-10-15).
@@ -26,9 +27,10 @@ GT_COQ = {
     ],
     "included": [
         {"id": "avax_0x420fca0121dc28039145009570975747295f2329", "type": "token",
-         "attributes": {"address": "0x420fca0121dc28039145009570975747295f2329", "name": "COQINU", "symbol": "COQ", "decimals": 18}},
+         "attributes": {"address": "0x420fca0121dc28039145009570975747295f2329", "name": "COQINU", "symbol": "COQ", "decimals": 18,
+                        "image_url": "https://coin-images.coingecko.com/coins/images/33511/large/Coin_CoqInu_1200px.png"}},
         {"id": "avax_0xe7d69acbc00d0ec5d9c02162310ee21daa77f69c", "type": "token",
-         "attributes": {"address": "0xe7d69acbc00d0ec5d9c02162310ee21daa77f69c", "name": "COQ AI", "symbol": "COQAI", "decimals": 18}},
+         "attributes": {"address": "0xe7d69acbc00d0ec5d9c02162310ee21daa77f69c", "name": "COQ AI", "symbol": "COQAI", "decimals": 18, "image_url": "missing.png"}},
         {"id": "avax_0x1111111111111111111111111111111111111111", "type": "token",
          "attributes": {"address": "0x1111111111111111111111111111111111111111", "name": "Tiny", "symbol": "TINY", "decimals": 18}},
     ],
@@ -73,8 +75,8 @@ def test_find_token_matches_contract_addresses():
 
 
 def test_pick_pool_takes_the_deepest_exact_symbol_match():
-    assert pick_pool(GT_COQ, "coq") == ("0x420fca0121dc28039145009570975747295f2329", "COQ")
-    assert pick_pool(GT_COQ, "COQAI") == ("0xe7d69acbc00d0ec5d9c02162310ee21daa77f69c", "COQAI")
+    assert pick_pool(GT_COQ, "coq") == ("0x420fca0121dc28039145009570975747295f2329", "COQ", COQ_LOGO)
+    assert pick_pool(GT_COQ, "COQAI") == ("0xe7d69acbc00d0ec5d9c02162310ee21daa77f69c", "COQAI", None)
     assert pick_pool(GT_COQ, "TINY") is None  # below $10,000
     assert pick_pool(GT_COQ, "CO") is None
     assert pick_pool({"data": [{"broken": True}]}, "COQ") is None
@@ -109,7 +111,7 @@ async def test_discover_by_symbol_marks_the_match():
     chain = erc20_chain(encode(["string"], ["COQ"]))
     search = FakeSearch(GT_COQ)
     token = await discover("coq", AVALANCHE, chain, search)
-    assert token == Token("COQ", COQ_ADDR, 18, custom=True, matched_by_symbol=True)
+    assert token == Token("COQ", COQ_ADDR, 18, custom=True, matched_by_symbol=True, logo=COQ_LOGO)
     assert search.calls == [("avalanche", "coq")]
     assert await discover("TINY", AVALANCHE, chain, search) is None
     assert await discover("coq", AVALANCHE, chain, None) is None
@@ -141,3 +143,10 @@ async def test_discover_refuses_a_token_posing_as_a_builtin():
     for symbol in ("USDC", "usdc"):
         with pytest.raises(TransferError, match=f"calls itself {symbol} but isn't the real {symbol} on Avalanche"):
             await discover(FAKE_USDC, AVALANCHE, erc20_chain(encode(["string"], [symbol])), None)
+
+
+def test_merge_keeps_a_saved_https_logo_only():
+    [coq] = merge(AVALANCHE, [{**COQ_SAVED, "logo": COQ_LOGO}]).tokens[-1:]
+    assert coq.logo == COQ_LOGO
+    assert merge(AVALANCHE, [{**COQ_SAVED, "logo": "javascript:alert(1)"}]).tokens[-1].logo is None
+    assert merge(AVALANCHE, [COQ_SAVED]).tokens[-1].logo is None

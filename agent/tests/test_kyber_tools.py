@@ -176,7 +176,7 @@ async def test_balances_list_saved_tokens_and_unknown_prices():
     tools, out, _, _, _ = make(avax=avax, saved=[COQ_SAVED])
     result = await tools.get_balances({})
     [card] = out.of_type("balances")
-    assert {"network": "Avalanche", "symbol": "COQ", "amount": 1_000_000.0, "usdPrice": None} in card["holdings"]
+    assert {"network": "Avalanche", "symbol": "COQ", "amount": 1_000_000.0, "usdPrice": None, "logo": None} in card["holdings"]
     assert "COQ 1000000 (price unknown)" in text(result)
     assert "Total $32,010.00" in text(result)  # 10 ETH at $3,200 + 10 AVAX at the fake's $1; COQ excluded
 

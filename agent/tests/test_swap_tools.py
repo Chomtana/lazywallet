@@ -4,6 +4,7 @@ from eth_abi import encode
 from fakes import FakeChain, FakeQuoter, Outbox
 
 from lazyagent.proposals import Proposals
+from lazyagent.tokens import ETH, find_token
 from lazyagent.tools import WalletContext, WalletTools
 from lazyagent.uniswap import PERMIT2, UNIVERSAL_ROUTER, WETH_DEPOSIT, Hop
 
@@ -168,8 +169,8 @@ async def test_confirmed_swap_shows_in_and_out_changes():
     result = text(await task)
     [card] = out.of_type("balance_change")
     assert card["changes"] == [
-        {"network": "Ethereum", "symbol": "ETH", "before": 10.0, "after": 9.0, "delta": -1.0, "usdPrice": 3200.0},
-        {"network": "Ethereum", "symbol": "USDC", "before": 5000.0, "after": 7358.0, "delta": 2358.0, "usdPrice": 1.0},
+        {"network": "Ethereum", "symbol": "ETH", "before": 10.0, "after": 9.0, "delta": -1.0, "usdPrice": 3200.0, "logo": ETH.logo},
+        {"network": "Ethereum", "symbol": "USDC", "before": 5000.0, "after": 7358.0, "delta": 2358.0, "usdPrice": 1.0, "logo": find_token("USDC").logo},
     ]
     assert not out.of_type("balances")
     assert "ETH -1 (now 9)" in result and "USDC +2358 (now 7358)" in result

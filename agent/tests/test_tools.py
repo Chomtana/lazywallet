@@ -3,6 +3,7 @@ import asyncio
 from fakes import FakeChain, Outbox
 
 from lazyagent.proposals import Proposals
+from lazyagent.tokens import ETH, find_token
 from lazyagent.tools import TOOL_NAMES, WalletContext, WalletTools, build_mcp_server
 
 ME = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
@@ -42,8 +43,8 @@ async def test_get_balances_emits_card_and_summary():
     result = await tools.get_balances({})
     [card] = out.of_type("balances")
     assert card["holdings"] == [
-        {"network": "Ethereum", "symbol": "ETH", "amount": 10.0, "usdPrice": 3200.0},
-        {"network": "Ethereum", "symbol": "USDC", "amount": 500.0, "usdPrice": 1.0},
+        {"network": "Ethereum", "symbol": "ETH", "amount": 10.0, "usdPrice": 3200.0, "logo": ETH.logo},
+        {"network": "Ethereum", "symbol": "USDC", "amount": 500.0, "usdPrice": 1.0, "logo": find_token("USDC").logo},
     ]
     assert "ETH 10 ($32,000.00)" in text(result)
     assert "Total $32,500.00" in text(result)
@@ -199,7 +200,7 @@ async def test_confirmed_transfer_shows_only_the_sent_token_change():
     result = text(await task)
     [card] = out.of_type("balance_change")
     assert card["changes"] == [
-        {"network": "Ethereum", "symbol": "USDC", "before": 500.0, "after": 400.0, "delta": -100.0, "usdPrice": 1.0}
+        {"network": "Ethereum", "symbol": "USDC", "before": 500.0, "after": 400.0, "delta": -100.0, "usdPrice": 1.0, "logo": find_token("USDC").logo}
     ]
     assert not out.of_type("balances")
     assert "USDC -100 (now 400)" in result

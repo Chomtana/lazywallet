@@ -158,7 +158,9 @@ class WalletTools:
             if raw == 0 and t is not net.native:
                 continue
             amount = float(Decimal(raw).scaleb(-t.decimals))
-            holdings.append({"network": net.name, "symbol": t.symbol, "amount": amount, "usdPrice": await chain.price_usd(t), "raw": raw, "decimals": t.decimals})
+            holdings.append(
+                {"network": net.name, "symbol": t.symbol, "amount": amount, "usdPrice": await chain.price_usd(t), "logo": t.logo, "raw": raw, "decimals": t.decimals}
+            )
         return holdings
 
     async def get_balances(self, args: dict) -> dict:
@@ -175,7 +177,7 @@ class WalletTools:
                 holdings += r
         if not holdings:
             return err(f"The Sandbox chain isn't reachable right now ({'; '.join(down)}).")
-        await self.send({"type": "balances", "holdings": [{k: h[k] for k in ("network", "symbol", "amount", "usdPrice")} for h in holdings]})
+        await self.send({"type": "balances", "holdings": [{k: h[k] for k in ("network", "symbol", "amount", "usdPrice", "logo")} for h in holdings]})
         parts = []
         for net in nets:
             mine = [h for h in holdings if h["network"] == net.name]
@@ -358,6 +360,7 @@ class WalletTools:
                         "after": float(Decimal(now).scaleb(-t.decimals)),
                         "delta": float(Decimal(delta).scaleb(-t.decimals)),
                         "usdPrice": await self.chains[net.key].price_usd(t),
+                        "logo": t.logo,
                     }
                 )
                 sign = "+" if delta >= 0 else "-"
