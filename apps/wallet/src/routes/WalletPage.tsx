@@ -70,7 +70,6 @@ export default function WalletPage() {
   if (!active) return null
 
   const offerFunds = needsFunds(portfolio.usd)
-  const emptyChat = chat.messages.length === 0
 
   return (
     <div className="flex h-dvh flex-col">
@@ -115,7 +114,6 @@ export default function WalletPage() {
           progress={chat.progress}
           queue={chat.queue}
           onPick={(t) => chat.send(t)}
-          action={offerFunds && <GetFundsButton address={active.address} onFunded={refreshBalance} agentOnline={chat.online} busy={chat.busy} onAsk={(t) => chat.send(t)} />}
           onApprove={chat.approve}
           onReject={chat.reject}
           onChoose={chat.choose}
@@ -125,7 +123,7 @@ export default function WalletPage() {
       </main>
       <div className="mx-auto w-full max-w-[720px] space-y-2 px-4 pb-4">
         {session && <ConnectedBar dapp={session} onDisconnect={disconnect} />}
-        {offerFunds && !emptyChat && (
+        {offerFunds && (
           <GetFundsButton address={active.address} onFunded={refreshBalance} className="w-full" agentOnline={chat.online} busy={chat.busy} onAsk={(t) => chat.send(t)} />
         )}
         <QuickActionBar onPick={(t) => chat.send(t)} disabled={!chat.online} />
