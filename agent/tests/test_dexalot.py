@@ -4,7 +4,7 @@ from web3 import Web3
 
 from lazyagent.dexalot import NATIVE, SandboxQuotes, asset_of, dexalot_rows, dexalot_steps, encode_simple_swap
 from lazyagent.tokens import AVAX, AVAX_TOKENS, find_token
-from lazyagent.transfers import TransferError
+from lazyagent.transfers import NoRoute, TransferError
 
 USDC = find_token("USDC", AVAX_TOKENS)
 MAKER = "0x1FDb2b265d2A5C4302A75cAd682222E4e7bCc313"
@@ -68,7 +68,7 @@ async def test_sandbox_quotes_posts_and_surfaces_errors():
         server.shutdown()
     server, _ = serve(404, {"detail": "Dexalot doesn't offer that pair. Available: AVAX/USDC."})
     try:
-        with pytest.raises(TransferError, match="Available: AVAX/USDC"):
+        with pytest.raises(NoRoute, match="Available: AVAX/USDC"):  # 404 lets KyberSwap try the pair
             await SandboxQuotes(f"http://127.0.0.1:{server.server_port}").quote(NATIVE, USDC.address, 1, TAKER)
     finally:
         server.shutdown()

@@ -70,15 +70,22 @@ def route_label(route: Route) -> str:
 def approval_steps(
     token: Token, erc20_allowance: int, permit2_amount: int, permit2_expiration: int, amount: int, now: int
 ) -> list[Step]:
-    steps: list[Step] = []
-    if erc20_allowance < amount:
-        if token.symbol == "USDT" and erc20_allowance > 0:
-            # USDT reverts when changing one nonzero allowance to another.
-            steps.append(Step("Reset USDT allowance", _tx(token.address, encode_erc20_approve(PERMIT2, 0)), GAS["approve"]))
-        steps.append(Step(f"Allow {token.symbol}", _tx(token.address, encode_erc20_approve(PERMIT2, amount)), GAS["approve"]))
+    steps = erc20_approval(token, erc20_allowance, amount, PERMIT2)
     if permit2_amount < amount or permit2_expiration <= now + 60:
         data = encode_permit2_approve(token.address, UNIVERSAL_ROUTER, amount, now + PERMIT2_EXPIRY_S)
         steps.append(Step("Allow Uniswap router", _tx(PERMIT2, data), GAS["permit2"]))
+    return steps
+
+
+def erc20_approval(token: Token, allowance: int, amount: int, spender: str) -> list[Step]:
+    """approve(spender, amount) steps for an ERC-20 input, or none if the allowance already covers it."""
+    if allowance >= amount:
+        return []
+    steps: list[Step] = []
+    if token.symbol == "USDT" and allowance > 0:
+        # USDT reverts when changing one nonzero allowance to another.
+        steps.append(Step("Reset USDT allowance", _tx(token.address, encode_erc20_approve(spender, 0)), GAS["approve"]))
+    steps.append(Step(f"Allow {token.symbol}", _tx(token.address, encode_erc20_approve(spender, amount)), GAS["approve"]))
     return steps
 
 
@@ -108,7 +115,7 @@ def swap_rows(
     expected: int,
     minimum: int,
     label: str,
-    impact: float,
+    impact: float | None,
     fee_usd: float,
     network: str = "Sandbox",
 ) -> list[dict]:
@@ -118,7 +125,7 @@ def swap_rows(
         {"label": "Expected", "value": f"≈ {display_units(expected, token_out.decimals)} {token_out.symbol}"},
         {"label": "Minimum received", "value": f"{display_units(minimum, token_out.decimals)} {token_out.symbol}"},
         {"label": "Route", "value": label},
-        {"label": "Price impact", "value": f"{impact * 100:.2f}%"},
+        {"label": "Price impact", "value": "unknown" if impact is None else f"{impact * 100:.2f}%"},
         {"label": "Network fee", "value": f"~{format_usd(fee_usd)}"},
         {"label": "Network", "value": network},
     ]
