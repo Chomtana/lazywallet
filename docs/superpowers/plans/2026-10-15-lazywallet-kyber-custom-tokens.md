@@ -24,7 +24,8 @@
 - Every confirm card that touches a custom token has a `<SYMBOL> address` row with the full contract address, suffixed ` (matched by symbol — verify)` when step 4 found it.
 - Wallet store: `lw.tokens` = `{ [walletAddressLowercase]: CustomToken[] }`, add-only, deduplicated by `(chainId, address lowercase)`, non-secret. `CustomToken = { chainId, address, symbol, decimals }`.
 - HTTP uses stdlib `urllib` in `asyncio.to_thread`, so there are no new dependencies.
-- Tests must never use Anvil's dev account `0xf39F…2266` against the real Kyber API ("wallets invalid"); the fork test uses `Account.create()`.
+- Tests must never use Anvil's dev account `0xf39F…2266` against the real Kyber API ("wallets invalid"); the fork tests use `Account.create()`.
+- Live fork tests cover both chains with exactly one token each: COQ `0x420FcA0121DC28039145009570975747295f2329` on Avalanche (buy, balance, sell) and PEPE `0x6982508145454Ce325dDbE47a25d4ec3d2311933` on Ethereum (buy, balance: 2 live Kyber routes). Don't add other tokens to live tests.
 - Don't touch ports 8545–8547 (the user's dev servers). Fork tests use the existing conftest ports.
 - Parallel branch (`avax-trending`) also edits `agent/lazyagent/tools.py` and `prompt.py` to register one tool. Keep edits to those files to the hunks shown here; don't reformat or reorder anything else.
 
@@ -46,7 +47,7 @@
 - ERC-20 allowance override: `eth_createAccessList` of `allowance(user, router)` on the token, then try each storage key of the token address as a `stateDiff` override and keep the one where `allowance()` returns the amount. Verified on a fresh Avalanche fork for USDC (a proxy: 3 keys, the third worked) and COQ (1 key). Without the override the swap `eth_call` reverts `TransferHelper: TRANSFER_FROM_FAILED`; with it, the returned amount equals the quote. web3.py 8: `await w3.eth.call(tx, "latest", {addr: {"stateDiff": {slot: value}}})` and `await w3.eth.create_access_list(tx)`.
 - Kyber `GET /routes` for 1 COQ → USDC returns `amountOut: "1"` (useless). 1 USDC → COQ returns `8.2e24` raw, which is precise. Hence the inverted price.
 - GeckoTerminal: pool `relationships.base_token.data.id` = `"<slug>_<address lowercase>"`; `included[]` tokens carry `attributes.{address, symbol, decimals}`. Pool names aren't reliable ("pepecoin / WETH" has base symbol `pepecoin`).
-- The whole plan was prototyped in a scratch copy: all pytest (202 unit + the Kyber fork test against the real API) and Vitest (112), `tsc` and `oxlint` passed.
+- The whole plan was prototyped in a scratch copy: all pytest (202 unit + both Kyber fork tests against the real API: COQ on an Avalanche fork, PEPE on an Ethereum mainnet fork) and Vitest (112), `tsc` and `oxlint` passed.
 
 ## Deviations from the spec (record them in the spec in Task 11)
 
@@ -1810,23 +1811,29 @@ git commit -m "feat(agent): wire KyberSwap, GeckoTerminal and saved tokens into 
 
 ---
 
-### Task 7: Fork test — buy, hold and sell a memecoin through KyberSwap on Avalanche
+### Task 7: Fork tests — one memecoin per chain through KyberSwap (COQ on Avalanche, PEPE on Ethereum)
 
 **Files:**
 - Test: `agent/tests/test_kyber_swap_fork.py` (create)
 
 **Interfaces:**
-- Consumes: `avax_fork_rpc` fixture (conftest, port 8649, Avalanche public RPC or `AVAX_RPC_URL`); `KyberClient`, `usd_price`, `NATIVE` (Task 3); `WalletTools(kyber=)`, `WalletContext.tokens` (Task 5); `devsigner.execute_steps`.
+- Consumes: `avax_fork_rpc` fixture (conftest, port 8649, Avalanche public RPC or `AVAX_RPC_URL`); `fork_rpc` fixture (conftest, port 8646, `ETH_RPC_URL` from the root `.env`, optional `FORK_BLOCK`; skips without `ETH_RPC_URL`); `KyberClient`, `usd_price`, `NATIVE` (Task 3); `WalletTools(kyber=)`, `WalletContext.tokens` (Task 5); `devsigner.execute_steps`.
 - Produces: nothing for later tasks.
 
-This follows the existing fork-test convention: it uses the session-scoped fork fixture, as `test_dexalot_swap_fork.py` does. It also skips itself when the KyberSwap API isn't reachable. It needs `anvil` and internet access.
+This follows the existing fork-test convention: the Avalanche test uses the session-scoped `avax_fork_rpc` fixture (like `test_dexalot_swap_fork.py`), and the Ethereum test uses `fork_rpc` (like `test_swap_fork.py`), so it skips without `ETH_RPC_URL`. Both skip when the KyberSwap API isn't reachable. They need `anvil` and internet access. One token per chain only:
+
+- **Avalanche, COQ:** buy 1 AVAX by contract address, see it in balances with a USD price, then sell half for USDC. This is the ERC-20 path: approve + swap, simulated with the allowance override.
+- **Ethereum, PEPE:** buy 0.1 ETH by contract address, then see it in balances with a USD price. That is two live Kyber routes (the buy, and the 1 USDC → PEPE price) and one build. There is no sell: the ERC-20 path is already covered on Avalanche.
+
+No FORK_BLOCK pin is needed. If `FORK_BLOCK` is set to an old block, the Ethereum simulation can be off from Kyber's live quote, and the test will then fail with "doesn't match" or "fails on the Sandbox fork". That is the Review Focus stale-fork case, not a bug.
 
 - [ ] **Step 1: Write the test**
 
 Create `agent/tests/test_kyber_swap_fork.py`:
 
 ```python
-"""End to end on a fresh Avalanche fork with the real KyberSwap API: buy COQ by address, see it in balances, sell it."""
+"""End to end on fresh forks with the real KyberSwap API, one token per chain: COQ on Avalanche (buy by address,
+see it in balances, sell it) and PEPE on Ethereum (buy by address, see it in balances). Two live routes on Ethereum."""
 
 import asyncio
 
@@ -1839,13 +1846,14 @@ from fakes import FakeChain
 from lazyagent.chain import RpcChain
 from lazyagent.devsigner import execute_steps
 from lazyagent.kyber import NATIVE, KyberClient, usd_price
-from lazyagent.networks import AVALANCHE
+from lazyagent.networks import AVALANCHE, ETHEREUM
 from lazyagent.proposals import Proposals
 from lazyagent.tokens import Token, find_token
 from lazyagent.tools import WalletContext, WalletTools
 from lazyagent.transfers import TransferError
 
 COQ = "0x420FcA0121DC28039145009570975747295f2329"
+PEPE = "0x6982508145454Ce325dDbE47a25d4ec3d2311933"
 USDC = find_token("USDC", AVALANCHE.tokens)
 
 
@@ -1912,18 +1920,63 @@ async def test_buy_hold_and_sell_a_memecoin_through_kyberswap(avax_fork_rpc):
     assert "Swapped" in result["content"][0]["text"], result
     assert [s["label"] for s in seen[1]["tx"]["steps"]] == ["Allow COQ", "Swap COQ → USDC"]
     assert await chain.token_balance(USDC, account.address) > 0
+
+
+async def test_buy_a_memecoin_through_kyberswap_on_ethereum(fork_rpc):
+    kyber = RecordingKyber()
+    w3 = AsyncWeb3(AsyncHTTPProvider(fork_rpc))
+    account = Account.create()  # Kyber rejects Anvil's well-known dev accounts
+    await w3.provider.make_request("anvil_setBalance", [account.address, hex(10 * 10**18)])
+    proposals = Proposals()
+    seen: list[dict] = []
+    balances: list[dict] = []
+
+    async def send(msg: dict) -> None:
+        if msg["type"] == "balances":
+            balances.append(msg)
+        if msg["type"] == "confirm":
+            seen.append(msg)
+
+            async def approve() -> None:
+                proposals.resolve(msg["id"], await execute_steps(w3, account.key.to_0x_hex(), msg["tx"]["steps"]))
+
+            asyncio.create_task(approve())
+
+    chain = RpcChain(fork_rpc, custom_price=usd_price(kyber, ETHEREUM))
+    ctx = WalletContext(address=account.address)
+    tools = WalletTools(chain, send, ctx, proposals, approval_timeout=120, kyber=kyber)
+
+    # Live route 1 (+ build): buy PEPE by contract address.
+    result = await tools.propose_swap({"token_in": "ETH", "token_out": PEPE, "amount": "0.1"})
+    text = result["content"][0]["text"]
+    if "KyberSwap isn't reachable" in text:
+        pytest.skip(text)
+    assert "Swapped 0.1 ETH for" in text, text
+    buy = seen[0]["tx"]
+    assert [s["label"] for s in buy["steps"]] == ["Swap ETH → PEPE"]
+    assert buy["steps"][0]["request"]["chainId"] == 1
+    assert {"label": "PEPE address", "value": PEPE} in buy["rows"]
+    held = await chain.token_balance(Token("PEPE", PEPE, 18, custom=True), account.address)
+    quoted = int(kyber.built[0]["amountOut"])
+    assert abs(held - quoted) * 100 <= quoted * 5
+
+    # Live route 2: the USD price for the balance card (1 USDC → PEPE, inverted).
+    ctx.tokens = [buy["addToken"]]
+    await tools.get_balances({})
+    pepe = next(h for h in balances[-1]["holdings"] if h["symbol"] == "PEPE")
+    assert pepe["network"] == "Ethereum" and pepe["usdPrice"] and pepe["usdPrice"] > 0
 ```
 
 - [ ] **Step 2: Run it**
 
 Run: `uv run --directory agent pytest -q tests/test_kyber_swap_fork.py`
-Expected: PASS in about 30 s. This flow passed against the live API in prototyping on 2026-10-15. If it fails at the sell step with "couldn't simulate", the token's allowance slot wasn't in the access list. Debug `allowance_override` before you touch the tolerance.
+Expected: 2 PASS in about 30 s (1 PASS + 1 SKIP without `ETH_RPC_URL`). Both passed against the live API in prototyping on 2026-10-15. If the Avalanche test fails at the sell step with "couldn't simulate", the token's allowance slot wasn't in the access list. Debug `allowance_override` before you touch the tolerance.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add agent/tests/test_kyber_swap_fork.py
-git commit -m "test(agent): KyberSwap memecoin buy, balance and sell on an Avalanche fork"
+git commit -m "test(agent): KyberSwap fork tests on both chains (COQ on Avalanche, PEPE on Ethereum)"
 ```
 
 ---
@@ -2306,7 +2359,7 @@ git commit -m "feat(wallet): show price unknown for custom tokens and wrap long 
 Under "Wallet app conventions", after the `uniswap.py` bullet, add:
 
 ```markdown
-- Any other token or pair goes through KyberSwap (`agent/lazyagent/kyber.py`). Its calldata is untrusted: `verify()` decodes it against the request and it is simulated on the fork (within 5% of the quote) before a card is shown. Change the router address/ABI only with a fork test (`tests/test_kyber_swap_fork.py`).
+- Any other token or pair goes through KyberSwap (`agent/lazyagent/kyber.py`). Its calldata is untrusted: `verify()` decodes it against the request and it is simulated on the fork (within 5% of the quote) before a card is shown. Change the router address/ABI only with the fork tests (`tests/test_kyber_swap_fork.py`, one token per chain).
 - Custom tokens: the wallet keeps bought tokens in `lw.tokens` (non-secret, per wallet) and sends them with every `user` message; the agent stays stateless (`agent/lazyagent/custom_tokens.py`).
 ```
 
@@ -2325,6 +2378,7 @@ In the spec header, change `Status: Approved design — not yet implemented` to 
 6. `Chain` gains `simulate(tx, overrides)` and `storage_keys(to, data)`; ERC-20 simulations find the allowance slot via `eth_createAccessList` and verify it before overriding.
 7. Kyber needs a non-default `user-agent` header (403 otherwise); GeckoTerminal search adds `include=base_token`.
 8. Confirm-card values wrap (`wrap-anywhere`) so full contract addresses fit on phones.
+9. The opt-in fork tests cover both chains with one token each: COQ on Avalanche (buy, balance, sell) and PEPE on Ethereum (buy, balance).
 ```
 
 - [ ] **Step 3: Full verification**
@@ -2337,7 +2391,7 @@ pnpm test:py
 pnpm build && pnpm lint
 ```
 
-Expected: every Vitest test passes. pytest passes; Ethereum fork tests skip without `ETH_RPC_URL`, and the Avalanche fork tests, including `test_kyber_swap_fork.py`, run. Build succeeds, and lint has no errors.
+Expected: every Vitest test passes. pytest passes; with `ETH_RPC_URL` set, both Kyber fork tests in `test_kyber_swap_fork.py` run (without it, the Ethereum ones skip). Build succeeds, and lint has no errors.
 
 - [ ] **Step 4: Manual check (wallet app)**
 
