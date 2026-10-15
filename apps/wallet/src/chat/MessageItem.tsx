@@ -55,14 +55,19 @@ function AssistantBody({ message, onApprove, onReject, onSimulate, onChoose, onB
   }
 }
 
-export function MessageItem({ message, ...actions }: { message: Message } & MessageActions) {
+// queued: typed or spoken while the agent was busy; sent after the current turn.
+export function MessageItem({ message, queued, ...actions }: { message: Message; queued?: boolean } & MessageActions) {
   if (message.role === 'user') {
+    const tag = queued ? 'Queued' : message.unsent ? 'Not sent' : null
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground">
+      <div className="flex flex-col items-end gap-1">
+        <div
+          className={`max-w-[85%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground ${tag ? 'opacity-50' : ''}`}
+        >
           {message.spoken && <Mic className="mr-1.5 inline size-3.5 align-[-2px]" />}
           {message.text}
         </div>
+        {tag && <span className={`px-1 text-xs ${message.unsent ? 'text-destructive' : 'text-muted-foreground'}`}>{tag}</span>}
       </div>
     )
   }
