@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { ChainIcon } from '@/components/ChainIcon'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import type { AirdropItem } from '@/types'
 import { AMOUNTS_USDC, buyReply, farmReply, statusLabel, tvlLabel } from './airdrops'
 
@@ -27,15 +26,13 @@ export function AirdropCard({ title, items, enabled, onSend }: Props) {
                       <ChainIcon key={n} network={n} size={14} />
                     ))}
                   </span>
-                  <span className="block text-xs text-muted-foreground">
-                    <span className={cn(a.status === 'live' ? 'text-primary' : 'text-muted-foreground')}>{statusLabel(a.status)}</span>
-                  </span>
+                  {a.status !== 'live' && <span className="block text-xs text-muted-foreground">{statusLabel(a.status)}</span>}
                   <span className="mt-1 block text-sm">{a.action}</span>
                 </span>
                 <span className="shrink-0 text-right">
                   <span className="block font-mono text-xs text-muted-foreground">{tvlLabel(a.tvlUsd)}</span>
                   {action && (
-                    <Button size="sm" variant="secondary" className="mt-1.5" disabled={!enabled} onClick={() => setOpen(open === key ? null : key)}>
+                    <Button className="mt-1.5 h-9 px-5 font-semibold" disabled={!enabled} onClick={() => setOpen(open === key ? null : key)}>
                       {action === 'farm' ? 'Farm' : `Buy ${a.buy?.symbol}`}
                     </Button>
                   )}

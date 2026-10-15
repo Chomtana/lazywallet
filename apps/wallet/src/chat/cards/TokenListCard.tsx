@@ -46,8 +46,7 @@ export function TokenListCard({ title, items, enabled, onBuy }: Props) {
                 </div>
                 {options.length > 0 && (
                   <Button
-                    size="sm"
-                    variant={open === key ? 'default' : 'secondary'}
+                    className="h-9 px-5 font-semibold"
                     disabled={!enabled}
                     onClick={() => setOpen(open === key ? null : key)}
                   >

@@ -57,6 +57,12 @@ describe('AirdropCard', () => {
     expect(screen.queryByText(/sandbox/i)).toBeNull()
   })
 
+  it('shows no status for live programs, but keeps other statuses', () => {
+    render(<AirdropCard title="Airdrops" items={[THEO, SUZAKU]} enabled onSend={vi.fn()} />)
+    expect(screen.queryByText('live')).toBeNull()
+    expect(screen.getByText('may have ended')).toBeTruthy()
+  })
+
   it('buttons are disabled while the agent is busy or offline', () => {
     render(<AirdropCard title="Airdrops" items={[THEO]} enabled={false} onSend={vi.fn()} />)
     expect((screen.getByText('Farm') as HTMLButtonElement).disabled).toBe(true)
