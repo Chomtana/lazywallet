@@ -7,16 +7,18 @@ import { ConfirmCard } from './cards/ConfirmCard'
 import { StatusCard } from './cards/StatusCard'
 import { TaskCard } from './cards/TaskCard'
 import { TextBubble } from './cards/TextBubble'
+import { TokenListCard } from './cards/TokenListCard'
 
 export type MessageActions = {
   onApprove: (id: string) => void
   onReject: (id: string) => void
   onSimulate?: (task: Task) => void
   onChoose?: (id: string, option: ChoiceOption) => void
-  choicesEnabled?: boolean
+  onBuy?: (text: string) => void
+  choicesEnabled?: boolean // choice and Buy buttons (off while the agent is busy or offline)
 }
 
-function AssistantBody({ message, onApprove, onReject, onSimulate, onChoose, choicesEnabled = true }: { message: AssistantMessage } & MessageActions) {
+function AssistantBody({ message, onApprove, onReject, onSimulate, onChoose, onBuy, choicesEnabled = true }: { message: AssistantMessage } & MessageActions) {
   switch (message.kind) {
     case 'text':
       return <TextBubble text={message.text} />
@@ -24,6 +26,8 @@ function AssistantBody({ message, onApprove, onReject, onSimulate, onChoose, cho
       return <BalanceCard holdings={message.holdings} />
     case 'balance_change':
       return <BalanceChangeCard changes={message.changes} />
+    case 'tokens':
+      return <TokenListCard title={message.title} items={message.items} enabled={choicesEnabled} onBuy={(text) => onBuy?.(text)} />
     case 'confirm':
       return (
         <ConfirmCard
