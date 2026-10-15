@@ -5,6 +5,7 @@ export const KEYS = {
   tasks: 'lw.tasks',
   tokens: 'lw.tokens',
   speak: 'lw.speak',
+  premium: 'lw.premium',
 } as const
 
 export function readJSON<T>(key: string, fallback: T): T {

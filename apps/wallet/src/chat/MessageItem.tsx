@@ -6,6 +6,7 @@ import { BalanceChangeCard } from './cards/BalanceChangeCard'
 import { ChoiceCard } from './cards/ChoiceCard'
 import { ConfirmCard } from './cards/ConfirmCard'
 import { StatusCard } from './cards/StatusCard'
+import { SubscriptionCard } from './cards/SubscriptionCard'
 import { TaskCard } from './cards/TaskCard'
 import { TextBubble } from './cards/TextBubble'
 import { TokenListCard } from './cards/TokenListCard'
@@ -58,6 +59,8 @@ function AssistantBody({ message, onApprove, onReject, onSimulate, onChoose, onB
       return <AirdropCard title={message.title} items={message.items} enabled={choicesEnabled} onSend={(text) => onBuy?.(text)} />
     case 'unlocks':
       return <UnlockListCard title={message.title} items={message.items} enabled={choicesEnabled} onBuy={(text) => onBuy?.(text)} />
+    case 'subscription':
+      return <SubscriptionCard plan={message.plan} chargedUsd={message.chargedUsd} renews={message.renews} />
   }
 }
 

@@ -1,3 +1,5 @@
+import type { PlanId } from './premium/plans'
+
 export type Address = `0x${string}`
 export type StoredWallet = { id: string; name: string; mnemonic: string; address: Address }
 export type Vault = { wallets: StoredWallet[] }
@@ -102,5 +104,6 @@ export type Message =
   | { id: string; role: 'assistant'; kind: 'choice'; question: string; options: ChoiceOption[]; chosen?: string; closed?: boolean }
   | { id: string; role: 'assistant'; kind: 'airdrops'; title: string; items: AirdropItem[] }
   | { id: string; role: 'assistant'; kind: 'unlocks'; title: string; items: UnlockItem[] }
+  | { id: string; role: 'assistant'; kind: 'subscription'; plan: PlanId; chargedUsd: number; renews: string }
 export type AssistantMessage = Exclude<Message, { role: 'user' }>
 export type AgentReply = { messages: Message[]; newTask?: Task }
