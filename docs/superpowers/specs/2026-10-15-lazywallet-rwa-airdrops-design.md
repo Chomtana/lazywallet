@@ -1,7 +1,7 @@
 # LazyWallet — RWA Airdrops (list + farm) Spec
 
 Date: 2026-10-15
-Status: Draft design — not yet implemented
+Status: Draft design — not yet implemented (rev. 2: Avant savUSD farm on Avalanche, Season 1 assumed running for the demo)
 Builds on: `main` after the KyberSwap + custom tokens merge (`68d9f38`)
 Research: `docs/research/2026-10-15-rwa-airdrops.md` (`235f59c`)
 Branch: `feat-rwa-airdrops` (worktree, from `main`)
@@ -9,15 +9,16 @@ Sibling: `2026-10-15-lazywallet-avax-trending-design.md` (`list_trending_tokens`
 
 ## 1. Goal
 
-"What RWA airdrops can I farm?" → the agent names the live RWA points programs (and, after them, a few non-RWA Avalanche ones), each with what to do and whether LazyWallet can do it. "Farm Theo with $100" → one Approve card that swaps USDC → thUSD and stakes it into Theo's sthUSD vault. "Get me some reUSD" → the existing KyberSwap swap. Every answer and card says points only count on real mainnet; the Sandbox is a demo.
+"What RWA airdrops can I farm?" → the agent names the live RWA points programs (and, after them, a few non-RWA Avalanche ones), each with what to do and whether LazyWallet can do it. One farm per chain: "Farm Theo with $100" → one Approve card that swaps USDC → thUSD and stakes it into Theo's sthUSD vault (Ethereum); "Farm Avant with $100" → one Approve card that swaps USDC → avUSD and stakes it into Avant's savUSD vault (Avalanche). "Get me some reUSD" → the existing KyberSwap swap. Every answer and card says points only count on real mainnet; the Sandbox is a demo.
 
 **Success criteria**
 - New read-only tool `list_airdrops(category?, network?)` returns the curated programs, ranked RWA first, enriched live with TVL (DefiLlama) and farm-token liquidity (GeckoTerminal). A DefiLlama/GeckoTerminal outage degrades to the curated data, never to an error.
-- New tool `propose_deposit(farm, amount)` for curated ERC-4626 farms. For Theo it shows one confirm card with these steps, building only the approvals that are actually needed: [Allow USDC → Allow Uniswap router → Swap USDC → thUSD (Uniswap v4) → Allow thUSD → Stake thUSD → sthUSD]. Approve executes in the browser. The agent reports the sthUSD received and the leftover thUSD.
+- New tool `propose_deposit(farm, amount)` for curated ERC-4626 farms. For Theo it shows one confirm card with these steps, building only the approvals that are actually needed: [Allow USDC → Allow Uniswap router → Swap USDC → thUSD (Uniswap v4) → Allow thUSD → Stake thUSD → sthUSD]. Approve executes in the browser. The agent reports the sthUSD received and the leftover thUSD. For Avant it shows [Allow USDC → Swap USDC → avUSD (KyberSwap) → Allow avUSD → Stake avUSD → savUSD] on Avalanche and reports the savUSD received and the leftover avUSD.
 - All calldata is built by the agent backend from pinned addresses. The model only passes a farm id and an amount.
 - The confirm card and the agent's spoken reply both state that points only count on real mainnet and the Sandbox is a demo. They never promise a token.
+- Avant Season 1 is treated as running for the hackathon demo (§2 "Avant demo assumption"); the agent never states its real season or claim dates.
 - "Buy reUSD" style requests go through `propose_swap` with the contract address taken from `list_airdrops`. There is no new swap code.
-- `pnpm test:py`, `pnpm --filter wallet test`, `pnpm build && pnpm lint` pass. Unit tests never hit the network. An opt-in fork test runs the whole Theo farm on an Ethereum fork.
+- `pnpm test:py`, `pnpm --filter wallet test`, `pnpm build && pnpm lint` pass. Unit tests never hit the network. Opt-in fork tests run the whole Theo farm on an Ethereum fork and the whole Avant farm on an Avalanche fork.
 
 ## 2. Decisions
 
@@ -27,18 +28,23 @@ Sibling: `2026-10-15-lazywallet-avax-trending-design.md` (`list_trending_tokens`
 | Source of truth | Curated, checked-in `agent/lazyagent/data/airdrops.json`, refreshed by hand. Each entry carries `source_url` and `verified_at`. Alphadrops is only for discovery while curating, never at runtime |
 | Live enrichment | DefiLlama `GET https://api.llama.fi/protocol/{slug}`: `currentChainTvls` gives TVL, and `gecko_id` / `symbol` flag a token that launched after curation. GeckoTerminal `GET /networks/{eth\|avax}/tokens/{addr}/pools` gives the farm token's deepest pool, which sets `liquidity_usd` and `buyable` (≥ $10,000, same rule as custom tokens and `trending`). HTTP via stdlib `urllib` in `asyncio.to_thread`, reusing `kyber.http_json`. Cache 10 min per entry. Errors are never cached and never fatal |
 | Categories | `rwa` first, then `other`. Initial list (§3): **rwa** = Theo thUSD, Re. **other** = Tori, Avant, Suzaku S2, Aave V4 Avalanche incentives |
-| Executable farm | Only entries with a `deposit` block. Initially just **Theo** (Ethereum): USDC → thUSD on the pinned Uniswap v4 pool, then `sthUSD.deposit`. Re is hold-only: buy reUSD through `propose_swap` / KyberSwap by contract address |
+| Executable farms | Only entries with a `deposit` block — one per chain: **Theo** (Ethereum): USDC → thUSD on the pinned Uniswap v4 pool, then `sthUSD.deposit`; **Avant** (Avalanche): USDC → avUSD on KyberSwap, then `savUSD.deposit`. Re is hold-only: buy reUSD through `propose_swap` / KyberSwap by contract address |
+| Deposit venue | Each `deposit` block names its swap venue, one code path for both: `uniswap_v4_pinned_then_kyber` (needs `route`; Ethereum only) or `kyber`. Same on-chain vault checks (`asset()`, `maxDeposit`, `previewDeposit`), same "stake the minimum" rule, same card |
+| Avant demo assumption | For the hackathon, Avant Season 1 is treated as **running**: `status: "live"`, `action: "Stake avUSD into savUSD"`, `action_kind: "deposit"`, category stays `other` (avUSD is strategy-backed, not RWA), `season_ends: null`. The entry keeps its `source_url` and records reality in `demo_assumption`: "Season 1 treated as running for the hackathon demo; it actually ended 2026-05-15 and the AVANT claim is pending". The model must not state real season or claim dates for it; the Points notice still applies |
+| Avant swap venue | KyberSwap only (no Uniswap v4 on Avalanche here), USDC → avUSD with all of `kyber.py`'s checks and 1% slippage. Live 2026-10-15: 100 USDC → 100.005 avUSD via Pharaoh |
 | Theo swap venue | Uniswap v4 hookless pool USDC/thUSD, fee 100, tickSpacing 1, pool id `0xb30bf32e…594b5a0d`. The route is pinned in the JSON and tried **first** (same policy as `propose_swap`: built-in venue first). If it doesn't quote (`NoRoute`), fall back to KyberSwap for USDC → thUSD with all of `kyber.py`'s checks (pinned router, `verify()`, fork simulation, quote cross-check); the Route row says which venue was used. Only if both fail does the tool return an error. Kyber's thUSD route is unverified — the fork test covers the v4 path; a unit test with fakes covers the fallback |
 | Deposit amount | Stake the swap's **minimum** output (quote × (1 − slippage), default 1%), so the deposit can never exceed what the swap delivered. The rest (≤ ~1%) stays in the wallet as thUSD, and the card and reply say so |
-| Mainnet-only notice | A card row `Points` = "Only count on real Ethereum mainnet. This Sandbox is a demo and earns nothing." No UI change. The prompt requires the same sentence in replies |
-| Wallet | `tx.addTokens?: CustomToken[]` next to the existing `addToken`. The deposit card sends thUSD and sthUSD so balances show them afterwards. That is the only wallet change |
-| Network | Ethereum and Avalanche Sandbox forks. `propose_deposit` runs on the farm's own network (Theo = Ethereum); the model never picks the network for it |
-| Out of scope | Withdrawals/unstaking (sthUSD redemption is an async `initiateRedeem` → `redeem`), points dashboards, referrals, claiming airdrops, any KYC-gated mint, Re/Tori/Avant/Suzaku/Aave executable actions, auto-refresh of the curated list |
+| Mainnet-only notice | A card row `Points` = "Only count on real mainnet. This Sandbox is a demo and earns nothing." (no chain name — see the plan's decisions) No UI change. The prompt requires the same sentence in replies |
+| Wallet | `tx.addTokens?: CustomToken[]` next to the existing `addToken`. The deposit card sends thUSD + sthUSD (Theo) or avUSD + savUSD (Avant) so balances show them afterwards. That is the only wallet change |
+| Network | Ethereum and Avalanche Sandbox forks. `propose_deposit` runs on the farm's own network (Theo = Ethereum, Avant = Avalanche); the model never picks the network for it |
+| Out of scope | Withdrawals/unstaking (sthUSD redemption is an async `initiateRedeem` → `redeem`; savUSD has a 1-day cooldown), points dashboards, referrals, claiming airdrops, any KYC-gated mint, Re/Tori/Suzaku/Aave executable actions, auto-refresh of the curated list |
 
 Verified on 2026-10-15 (Ethereum fork, block 26197220, own port, with `lazyagent.uniswap` helpers):
 - The pool id above equals `pool_id((USDC, thUSD, 100, 1, 0x0))`.
 - V4Quoter quoted 100 USDC → 100.037 thUSD.
 - The run: USDC approve to Permit2 (55k gas), Permit2 approve (48k), `UniversalRouter.execute` (156k), thUSD approve (51k), then `sthUSD.deposit(100.037 thUSD)` (88k), which minted 98.197 sthUSD (`previewDeposit` matched).
+
+Avalanche (fork, own port, 2026-10-15): savUSD `0x06d47F3fb376649c3A9Dafe069B3D6E35572219E` is ERC-4626 with `asset()` = avUSD `0x24dE8771bC5DdB3362Db529Fc3358F2df3A0E346` (both 18 dec), `maxDeposit` = uint256 max for a fresh address, no `paused()` function, `cooldownDuration()` = 86400; `previewDeposit(100 avUSD)` = 82.73 savUSD. The full farm (Allow USDC → KyberSwap swap → Allow avUSD → `savUSD.deposit`) ran on the fork for a fresh address — no whitelist on deposit.
 
 KyberSwap's live API routes 100 USDC → reUSD on Ethereum via Curve (90.29 reUSD ≈ $100.12). On Avalanche the same route loses ~48% (output $52.5 for $100 in), so reUSD on Avalanche is listed but `buyable: false`.
 
@@ -62,7 +68,9 @@ A list of entries. All addresses are checksummed and were verified on-chain on 2
   "farm_tokens": [{"network": "ethereum", "symbol": "thUSD", "address": "0xa3fE5c7596024E6811E14F029937D5bd8Ae485b3", "decimals": 6}],
   "defillama_slug": "theo-network-thusd",
   "deposit": {
+    "name": "Theo",
     "network": "ethereum",
+    "venue": "uniswap_v4_pinned_then_kyber",
     "vault": {"symbol": "sthUSD", "address": "0xA808Bc9775cb41c52C7842f8b50427fE7A770326", "decimals": 6},
     "asset": "0xa3fE5c7596024E6811E14F029937D5bd8Ae485b3",
     "pay": "USDC",
@@ -80,7 +88,7 @@ Initial entries:
 | `theo-thusd` | rwa | ethereum | live | Stake thUSD → sthUSD (`deposit`) | thUSD `0xa3fE…85b3` | **yes** | none | theo.xyz/articles/thusd-points-program (2026-06-25) |
 | `re` | rwa | ethereum, avalanche | live — S2 from 2026-06-01, ~6 months (`season_ends: "~2026-12"`) | Hold reUSD (`hold`) | reUSD ETH `0x5086bf358635B81D8C47C66d1C8b9E567Db70c72`, AVAX `0x180aF87b47Bf272B2df59dccf2D76a6eaFa625Bf` (18 dec) | no (buy via `propose_swap`) | live: RE | docs.re.xyz/re-points/about-re-points |
 | `tori` | other (DefiLlama: Basis Trading) | ethereum | live — Cores S1 from 2026-06-23 | Hold trUSD or stake to strUSD (`hold`) | trUSD `0xd0580192E98eA6CEB9c7b6191Ed2E27560911697` (18 dec) | no (buy via `propose_swap`; ~$2.6M Fluid trUSD/USDC) | none | docs.tori.finance/resources/cores, …/contracts |
-| `avant` | other | avalanche | `claim_pending` — S1 ended 2026-05-15, AVANT TGE TBA | Nothing to farm; the claim isn't open yet | — | no | pending: AVANT | docs.avantprotocol.com …/avant-season-1-airdrop |
+| `avant` | other | avalanche | live — **demo assumption** (really: S1 ended 2026-05-15, AVANT TGE TBA; recorded in `demo_assumption`) | Stake avUSD → savUSD (`deposit`, venue `kyber`) | avUSD `0x24dE8771bC5DdB3362Db529Fc3358F2df3A0E346` (18 dec) | **yes** | pending: AVANT | docs.avantprotocol.com …/avant-season-1-airdrop |
 | `suzaku-s2` | other | avalanche | `unverified` — S2 from 2025-07-31, end TBD | Deposit into Suzaku restaking vaults (`deposit`) | — | no | live: SUZ | docs.suzaku.network …/suzaku-points |
 | `aave-v4-avax` | other | avalanche | live — weekly Merkl campaigns | Supply USDt/USDC on Aave V4 (WAVAX incentives, not points) (`deposit`) | — | no | n/a | api.merkl.xyz/v4/opportunities?chainId=43114&status=LIVE |
 
@@ -165,12 +173,16 @@ Add these bullets:
   - Unknown farm, non-executable farm, insufficient USDC, price impact too high.
   - The card contains the `Points` row and `addTokens`.
   - The success summary reads amounts from the balance change.
-- **Opt-in fork test** `test_deposit_fork.py` (uses the `fork_rpc` fixture; skips without `ETH_RPC_URL`): fund a random address with USDC by storage write, build the Theo farm with the real `WalletTools` pieces, execute every step on the fork, then assert sthUSD > 0, thUSD left ≤ 1.5% of the quote, and USDC spent = 100.
+- **Opt-in fork tests** `test_deposit_fork.py`, one token per chain: fund a random address with USDC by storage write, build the farm with the real `WalletTools` pieces, execute every step on the fork, then assert shares > 0, asset left ≤ 1.5%, and USDC spent = 100.
+  - Theo on `fork_rpc` (skips without `ETH_RPC_URL`): pinned v4 route.
+  - Avant on `avax_fork_rpc` with the real KyberSwap API (skips if Kyber has no USDC → avUSD route).
+- **Avant with fakes:** KyberSwap only (the v4 quoter is never called), steps on chain 43114, stake = Kyber's verified minimum, `addTokens` avUSD + savUSD, and "isn't set up" when the Avalanche Sandbox is missing.
 - **Wallet:** `executeTx.test.ts` for `addTokens`.
 - **Manual:**
   - "What RWA airdrops can I farm?"
   - "Farm Theo with 100 dollars" → Approve.
-  - "What's my balance" shows sthUSD.
+  - "Farm Avant with 50 dollars" (or the Avant row's Farm → $50 chip) → a 4-step card on Avalanche → Approve.
+  - "What's my balance" shows sthUSD and savUSD.
   - "Buy 100 dollars of reUSD" → a KyberSwap card on Ethereum.
   - "Any airdrops on Avalanche?"
 
@@ -192,5 +204,6 @@ Add these bullets:
 5. **Suzaku S2.** Still accruing in Oct 2026? Listed as `unverified`.
 6. **Re on Avalanche.** Liquidity is ~$6k; KyberSwap loses ~48%. Listed with `buyable: false`.
 7. **Classification.** Tori and Avant are filed as `other` (DefiLlama files them as Basis Trading / Onchain Capital Allocator, not RWA). Re and Theo are RWA.
-8. **Avant TGE date.** The docs say TBA; aggregators said Sept 2026.
+8. **Avant TGE date.** The docs say TBA; aggregators said Sept 2026. For the demo Avant Season 1 is assumed running (§2); revert `status`/`action` and drop the `deposit` block after the hackathon.
+10. **savUSD price.** Same as sthUSD (item 1): balances may show "price unknown".
 9. **Re S2 end date.** "Approximately six months" from 2026-06-01; stored as `~2026-12`.
