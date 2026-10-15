@@ -1,4 +1,4 @@
-import type { Address, BalanceChange, ChoiceOption, CustomToken, Holding, TxDraft, TxStep } from '@/types'
+import type { Address, BalanceChange, ChoiceOption, CustomToken, Holding, TrendingToken, TxDraft, TxStep } from '@/types'
 
 export type ClientMsg =
   | { type: 'tx_started'; id: string }
@@ -26,6 +26,7 @@ export type ServerMsg =
   | { type: 'text_done' }
   | { type: 'balances'; holdings: Holding[] }
   | { type: 'balance_change'; changes: BalanceChange[] }
+  | { type: 'tokens'; title: string; items: TrendingToken[] }
   | { type: 'confirm'; id: string; tx: TxDraft & { steps: TxStep[]; from: Address } }
   | { type: 'choice'; id: string; question: string; options: ChoiceOption[] }
   | { type: 'error'; message: string }

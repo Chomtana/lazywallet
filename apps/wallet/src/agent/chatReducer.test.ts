@@ -33,6 +33,26 @@ describe('chatReducer', () => {
     expect(new Set(s.messages.map((m) => m.id)).size).toBe(2)
   })
 
+  it('adds a token list card', () => {
+    const item = {
+      symbol: 'COQ',
+      name: 'COQINU',
+      network: 'Avalanche',
+      address: '0x420fca0121dc28039145009570975747295f2329' as const,
+      priceUsd: 1.2e-7,
+      change24h: -5.1,
+      liquidityUsd: 623_823.6,
+      dex: 'LFJ',
+      buyable: true,
+      note: null,
+      image: null,
+    }
+    const s = run([server({ type: 'text_delta', text: 'Hi' }), server({ type: 'tokens', title: 'Trending memecoins', items: [item] })])
+    expect(s.messages[1]).toMatchObject({ role: 'assistant', kind: 'tokens', title: 'Trending memecoins', items: [item] })
+    expect(new Set(s.messages.map((m) => m.id)).size).toBe(2)
+    expect(s.streamingId).toBeNull()
+  })
+
   it('adds balance and confirm cards', () => {
     const s = run([server({ type: 'balances', holdings: [{ symbol: 'ETH', amount: 1, usdPrice: 3000 }] }), confirmMsg])
     expect(s.messages[0].kind).toBe('balance')

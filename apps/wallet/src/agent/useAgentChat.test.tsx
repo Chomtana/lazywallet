@@ -169,6 +169,23 @@ describe('useAgentChat', () => {
     expect(result.current.messages[0]).not.toHaveProperty('closed', true)
   })
 
+  it('buy() sends the text as a user message, but not while busy or offline', async () => {
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    act(() => result.current.buy('Buy 0.1 AVAX of COQ (0x420FcA0121DC28039145009570975747295f2329)'))
+    expect(live.sent).toHaveLength(0) // offline
+    expect(result.current.messages).toHaveLength(0)
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    act(() => result.current.buy('Buy 0.1 AVAX of COQ (0x420FcA0121DC28039145009570975747295f2329)'))
+    expect(JSON.parse(live.sent.at(-1)!)).toMatchObject({ type: 'user', text: 'Buy 0.1 AVAX of COQ (0x420FcA0121DC28039145009570975747295f2329)' })
+    act(() => result.current.buy('Buy 1 AVAX of COQ (0x420FcA0121DC28039145009570975747295f2329)'))
+    expect(live.sent).toHaveLength(1) // busy with the first one
+    expect(result.current.messages).toHaveLength(1)
+  })
+
   it('saves a bought token after the swap succeeds and sends saved tokens with each message', async () => {
     localStorage.clear()
     const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })

@@ -172,15 +172,25 @@ export function useAgentChat(options: Options) {
     else deliver({ messages: [say('Cancelled — nothing was sent.')] })
   }
 
+  // A card button's reply can really be sent now (not busy, a wallet, a live socket).
+  function canReply(): boolean {
+    const ws = wsRef.current
+    return !stateRef.current.busy && !!optsRef.current.address && !!ws && ws.readyState === WebSocket.OPEN
+  }
+
   function choose(id: string, option: ChoiceOption) {
     const m = stateRef.current.messages.find((x) => x.id === id)
     if (!m || m.kind !== 'choice' || m.closed) return
     // Only act if the reply can really be sent; otherwise leave the card open to retry.
-    const ws = wsRef.current
-    if (stateRef.current.busy || !optsRef.current.address || !ws || ws.readyState !== WebSocket.OPEN) return
+    if (!canReply()) return
     dispatch({ type: 'update', id, patch: { chosen: option.label } })
     send(option.reply)
   }
 
-  return { messages: state.messages, busy: state.busy, online: state.online, send, approve, reject, choose, deliver }
+  // A token list card's Buy chip: sent like a typed message, only when it can really go out.
+  function buy(text: string) {
+    if (canReply()) send(text)
+  }
+
+  return { messages: state.messages, busy: state.busy, online: state.online, send, approve, reject, choose, buy, deliver }
 }
