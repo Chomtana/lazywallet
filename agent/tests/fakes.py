@@ -10,6 +10,8 @@ class FakeChain:
         self.gp = gas_price
         self.fail = False
         self.sandbox = True
+        self.call_responses: dict[str, bytes] = {}
+        self.now = 1_700_000_000
 
     async def eth_balance(self, address: str) -> int:
         if self.fail:
@@ -27,6 +29,20 @@ class FakeChain:
 
     async def is_sandbox(self) -> bool:
         return self.sandbox
+
+    async def call(self, to: str, data: str) -> bytes:
+        return self.call_responses.get(data[:10], bytes(96))
+
+    async def block_timestamp(self) -> int:
+        return self.now
+
+
+class FakeQuoter:
+    def __init__(self, fn):
+        self.fn = fn
+
+    async def quote(self, route, amount_in):
+        return self.fn(route, amount_in)
 
 
 class Outbox:

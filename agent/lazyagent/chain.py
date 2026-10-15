@@ -37,6 +37,8 @@ class Chain(Protocol):
     async def price_usd(self, token: Token) -> float: ...
     async def gas_price(self) -> int: ...
     async def is_sandbox(self) -> bool: ...
+    async def call(self, to: str, data: str) -> bytes: ...
+    async def block_timestamp(self) -> int: ...
 
 
 class RpcChain:
@@ -59,6 +61,12 @@ class RpcChain:
 
     async def gas_price(self) -> int:
         return await self.w3.eth.gas_price
+
+    async def call(self, to: str, data: str) -> bytes:
+        return bytes(await self.w3.eth.call({"to": Web3.to_checksum_address(to), "data": data}))
+
+    async def block_timestamp(self) -> int:
+        return (await self.w3.eth.get_block("latest"))["timestamp"]
 
     async def is_sandbox(self) -> bool:
         """True only for a local Anvil node — the faucet must never run against a real network."""

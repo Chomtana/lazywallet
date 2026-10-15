@@ -22,3 +22,11 @@ async def test_balances_prices_and_gas(fork_rpc):
 
 async def test_is_sandbox_false_when_unreachable():
     assert await RpcChain("http://127.0.0.1:1").is_sandbox() is False
+
+
+async def test_call_and_block_timestamp(fork_rpc):
+    chain = RpcChain(fork_rpc)
+    usdc = find_token("USDC")
+    decimals = await chain.call(usdc.address, "0x313ce567")  # decimals()
+    assert int.from_bytes(decimals, "big") == 6
+    assert await chain.block_timestamp() > 1_700_000_000
