@@ -112,3 +112,7 @@ Wait for my approval on design before proceeding to the next step.
 ### 2. Minimum Viable AI Wallet
 
 Setup agent and anvil for minimum wallet transfer etc that doesn't interact with external protocol yet
+
+### 3. Support Uniswap Tool
+
+Support uniswap v4 swap tool
