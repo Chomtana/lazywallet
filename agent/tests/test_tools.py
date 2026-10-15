@@ -184,3 +184,23 @@ def test_mcp_server_and_names():
         "mcp__wallet__unsupported_action",
         "mcp__wallet__request_test_funds",
     ]
+
+
+async def test_confirmed_transfer_shows_updated_balances():
+    tools, out, proposals = make()
+    task = asyncio.create_task(tools.propose_transfer({"token": "ETH", "amount": "0.1", "to": "Alice"}))
+    confirm = await wait_for_confirm(out)
+    assert not out.of_type("balances")
+    proposals.resolve(confirm["id"], {"outcome": "approved", "hash": "0xabc", "status": "success"})
+    result = text(await task)
+    assert len(out.of_type("balances")) == 1
+    assert "Updated balances" in result
+
+
+async def test_rejected_transfer_shows_no_balances():
+    tools, out, proposals = make()
+    task = asyncio.create_task(tools.propose_transfer({"token": "ETH", "amount": "0.1", "to": "Alice"}))
+    confirm = await wait_for_confirm(out)
+    proposals.resolve(confirm["id"], {"outcome": "rejected"})
+    await task
+    assert not out.of_type("balances")

@@ -69,6 +69,10 @@ def err(text: str) -> dict:
     return {"content": [{"type": "text", "text": text}], "is_error": True}
 
 
+def _succeeded(result: dict | None) -> bool:
+    return bool(result) and result.get("status") == "success" and not result.get("error")
+
+
 @dataclass
 class WalletContext:
     address: str | None = None
@@ -155,7 +159,20 @@ class WalletTools:
             }
         )
         result = await self.proposals.wait(pid, fut, self.approval_timeout)
-        return ok(outcome_text(result, steps, "transfer", f"Sent {human} to {label}. Confirmed on Sandbox, tx {result and result.get('hash')}."))
+        success = ""
+        if _succeeded(result):
+            success = f"Sent {human} to {label}. Confirmed on Sandbox, tx {result.get('hash')}." + await self._fresh_balances()
+        return ok(outcome_text(result, steps, "transfer", success))
+
+    async def _fresh_balances(self) -> str:
+        """After a confirmed transaction: show an updated balance card and return its summary (empty if unreadable)."""
+        try:
+            res = await self.get_balances({})
+        except Exception:
+            return ""
+        if res.get("is_error"):
+            return ""
+        return " Updated balances (shown as a card): " + res["content"][0]["text"].removeprefix("Balances shown to the user as a card: ")
 
     async def _balance(self, token) -> int:
         return await (self.chain.eth_balance(self.ctx.address) if token.address is None else self.chain.token_balance(token, self.ctx.address))
@@ -241,7 +258,7 @@ class WalletTools:
         )
         result = await self.proposals.wait(pid, fut, self.approval_timeout)
         success = ""
-        if result and result.get("status") == "success" and not result.get("error"):
+        if _succeeded(result):
             try:
                 received = max(await self._balance(tout) - out_before, 0)
             except Exception:
@@ -251,7 +268,7 @@ class WalletTools:
             else:
                 got = f"{display_units(received, tout.decimals)} {tout.symbol}"
                 got = f"about {got} (after network fees)" if tout.address is None else got
-            success = f"Swapped {human_in} for {got}. Confirmed on Sandbox, tx {result.get('hash')}."
+            success = f"Swapped {human_in} for {got}. Confirmed on Sandbox, tx {result.get('hash')}." + await self._fresh_balances()
         hint = f" The price probably moved more than the {bps / 100:g}% slippage — ask again for a fresh quote."
         return ok(outcome_text(result, steps_json, "swap", success, revert_hint=hint))
 
