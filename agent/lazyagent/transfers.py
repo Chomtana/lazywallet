@@ -1,0 +1,89 @@
+import re
+from decimal import Decimal
+
+from eth_abi import encode
+from web3 import Web3
+
+from .tokens import Token
+
+ERC20_TRANSFER_SELECTOR = "a9059cbb"
+_AMOUNT = re.compile(r"^\d*\.?\d+$")
+
+
+class TransferError(Exception):
+    """A user-facing reason a transfer can't be proposed."""
+
+
+def parse_amount(text: str, decimals: int) -> int:
+    cleaned = text.strip().replace(",", "")
+    if not _AMOUNT.match(cleaned):
+        raise TransferError(f'"{text}" isn\'t a valid amount.')
+    value = Decimal(cleaned)
+    if value <= 0:
+        raise TransferError("The amount needs to be more than 0.")
+    base = value.scaleb(decimals)
+    if base != base.to_integral_value():
+        raise TransferError(f"That token supports at most {decimals} decimal places.")
+    return int(base)
+
+
+def format_units(amount: int, decimals: int) -> str:
+    return format(Decimal(amount).scaleb(-decimals).normalize(), "f")
+
+
+def short(address: str) -> str:
+    return f"{address[:6]}…{address[-4:]}"
+
+
+def format_usd(value: float) -> str:
+    return f"${value:,.2f}"
+
+
+def resolve_recipient(name_or_address: str, contacts: list[dict]) -> tuple[str, str | None]:
+    query = name_or_address.strip()
+    for c in contacts:
+        if c.get("name", "").lower() == query.lower():
+            return Web3.to_checksum_address(c["address"]), c["name"]
+    if Web3.is_address(query):
+        address = Web3.to_checksum_address(query)
+        name = next((c["name"] for c in contacts if c.get("address", "").lower() == address.lower()), None)
+        return address, name
+    raise TransferError(f'I don\'t know "{query}" yet. Add them in the address book, then try again.')
+
+
+def gas_units(token: Token) -> int:
+    return 21_000 if token.address is None else 100_000
+
+
+def validate(token: Token, amount: int, balance: int, eth_balance: int, gas_cost: int) -> None:
+    have = f"{format_units(balance, token.decimals)} {token.symbol}"
+    if amount > balance:
+        raise TransferError(f"You only have {have}.")
+    if token.address is None:
+        if amount + gas_cost > eth_balance:
+            raise TransferError(
+                f"That leaves nothing for the network fee (~{format_units(gas_cost, 18)} ETH). Try a slightly smaller amount."
+            )
+    elif gas_cost > eth_balance:
+        raise TransferError("You need a little ETH for the network fee. Get test funds from the Receive screen.")
+
+
+def build_request(token: Token, to: str, amount: int) -> dict:
+    if token.address is None:
+        return {"to": to, "value": str(amount), "data": "0x"}
+    calldata = ERC20_TRANSFER_SELECTOR + encode(["address", "uint256"], [to, amount]).hex()
+    return {"to": token.address, "value": "0", "data": "0x" + calldata}
+
+
+def display_rows(
+    token: Token, amount: int, to: str, name: str | None, price: float, gas_cost: int, eth_price: float
+) -> list[dict]:
+    human = format_units(amount, token.decimals)
+    usd = float(Decimal(amount).scaleb(-token.decimals)) * price
+    fee = float(Decimal(gas_cost).scaleb(-18)) * eth_price
+    return [
+        {"label": "To", "value": f"{name} ({short(to)})" if name else short(to)},
+        {"label": "Amount", "value": f"{human} {token.symbol} ({format_usd(usd)})"},
+        {"label": "Network fee", "value": f"~{format_usd(fee)}"},
+        {"label": "Network", "value": "Sandbox"},
+    ]
