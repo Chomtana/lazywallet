@@ -5,9 +5,10 @@ import sys
 import uvicorn
 
 from .faucet import create_app
-from .rpc import anvil_command, load_env, wait_for_rpc
+from .rpc import AVAX_CHAIN_ID, AVAX_PUBLIC_RPC, anvil_command, load_env, wait_for_rpc
 
 ANVIL_PORT = 8545
+AVAX_PORT = 8546
 FAUCET_PORT = 8547
 
 
@@ -16,13 +17,24 @@ def main() -> None:
     fork_url = os.environ.get("ETH_RPC_URL")
     if not fork_url:
         sys.exit("ETH_RPC_URL is missing — add a mainnet archive RPC to .env (see .env.example).")
+    avax_url = os.environ.get("AVAX_RPC_URL") or AVAX_PUBLIC_RPC
     origins = os.environ.get("WALLET_ORIGINS", "http://localhost:5174").split(",")
-    proc = subprocess.Popen(anvil_command(fork_url, os.environ.get("FORK_BLOCK") or None, ANVIL_PORT))
+    procs = [
+        subprocess.Popen(anvil_command(fork_url, os.environ.get("FORK_BLOCK") or None, ANVIL_PORT)),
+        subprocess.Popen(anvil_command(avax_url, None, AVAX_PORT, AVAX_CHAIN_ID)),
+    ]
     rpc = f"http://127.0.0.1:{ANVIL_PORT}"
+    avax_rpc = f"http://127.0.0.1:{AVAX_PORT}"
     try:
         wait_for_rpc(rpc, 120)
-        print(f"Sandbox ready: Anvil fork {rpc} (chain id 1), faucet http://127.0.0.1:{FAUCET_PORT}", flush=True)
-        uvicorn.run(create_app(rpc, origins), host="127.0.0.1", port=FAUCET_PORT)
+        wait_for_rpc(avax_rpc, 120, AVAX_CHAIN_ID)
+        print(
+            f"Sandbox ready: Ethereum fork {rpc} (chain id 1), Avalanche fork {avax_rpc} (chain id {AVAX_CHAIN_ID}), "
+            f"faucet http://127.0.0.1:{FAUCET_PORT}",
+            flush=True,
+        )
+        uvicorn.run(create_app(rpc, origins, avax_rpc), host="127.0.0.1", port=FAUCET_PORT)
     finally:
-        proc.terminate()
-        proc.wait()
+        for p in procs:
+            p.terminate()
+            p.wait()
