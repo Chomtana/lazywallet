@@ -27,11 +27,11 @@ export function BalanceCard({ holdings }: { holdings: Holding[] }) {
                 <TokenLogo src={h.logo} symbol={h.symbol} className="size-7" />
                 <span className="min-w-0 flex-1 leading-tight">
                   <span className="block truncate text-sm font-semibold">{h.symbol}</span>
-                  <span className="block font-mono text-xs text-muted-foreground">{formatAmount(h.amount)}</span>
+                  <span className="block font-mono text-xs text-muted-foreground">
+                    {h.usdPrice === null ? 'price unknown' : formatUsd(h.amount * h.usdPrice)}
+                  </span>
                 </span>
-                <span className="shrink-0 text-right font-mono text-sm">
-                  {h.usdPrice === null ? <span className="text-xs text-muted-foreground">price unknown</span> : formatUsd(h.amount * h.usdPrice)}
-                </span>
+                <span className="shrink-0 text-right font-mono text-sm">{formatAmount(h.amount)}</span>
               </li>
             ))}
           </ul>
