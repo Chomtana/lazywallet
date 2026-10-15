@@ -6,4 +6,5 @@ export const QUICK_ACTIONS: QuickAction[] = [
   { label: 'Trending airdrops', text: 'What airdrops can I farm?' },
   { label: 'Upcoming unlocks', text: 'What are the upcoming token unlocks?' },
   { label: 'Trending memes', text: 'What memecoins are trending?' },
+  { label: 'Swap 10 AVAX to COQ', text: 'Swap 10 AVAX to COQ' },
 ]

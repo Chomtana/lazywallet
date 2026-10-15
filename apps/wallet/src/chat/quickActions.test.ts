@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { QUICK_ACTIONS } from './quickActions'
 
 describe('QUICK_ACTIONS', () => {
-  it('lists the four judge-facing actions in order, each with the message it sends', () => {
+  it('lists the judge-facing actions in order, each with the message it sends', () => {
     expect(QUICK_ACTIONS).toEqual([
       { label: 'Check balances', text: "What's my balance?" },
       { label: 'Trending airdrops', text: 'What airdrops can I farm?' },
       { label: 'Upcoming unlocks', text: 'What are the upcoming token unlocks?' },
       { label: 'Trending memes', text: 'What memecoins are trending?' },
+      { label: 'Swap 10 AVAX to COQ', text: 'Swap 10 AVAX to COQ' },
     ])
   })
 
