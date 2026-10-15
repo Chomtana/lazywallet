@@ -61,7 +61,7 @@ def test_transfer_round_trip():
         ws.send_json(USER)
         confirm = ws.receive_json()
         assert confirm["type"] == "confirm"
-        assert confirm["tx"]["request"]["to"] == ALICE
+        assert confirm["tx"]["steps"][0]["request"]["to"] == ALICE
         ws.send_json({"type": "tx_result", "id": confirm["id"], "outcome": "approved", "hash": "0xabc", "status": "success"})
         delta = ws.receive_json()
         assert delta["type"] == "text_delta"

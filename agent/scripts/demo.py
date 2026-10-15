@@ -8,16 +8,16 @@ Usage: uv run --directory agent python scripts/demo.py
 import asyncio
 import json
 
-from eth_account import Account
 from web3 import AsyncHTTPProvider, AsyncWeb3
 
 from lazyagent.chain import RpcChain
 from lazyagent.claude import connect_claude
 from lazyagent.config import ROOT, load_settings
+from lazyagent.devsigner import execute_steps
 from lazyagent.session import Session
 
 ALICE = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
-PROMPTS = ["What's my balance?", "Send 0.01 ETH to Alice", "Swap 10 USDC for ETH"]
+PROMPTS = ["What's my balance?", "Send 0.01 ETH to Alice", "Swap 0.5 ETH to USDC", "Swap 100 USDC to ETH"]
 
 
 async def main() -> None:
@@ -28,23 +28,9 @@ async def main() -> None:
     session: Session
 
     async def approve(msg: dict) -> None:
-        req = msg["tx"]["request"]
-        tx = {
-            "from": wallet["address"],
-            "to": req["to"],
-            "value": int(req["value"]),
-            "data": req["data"],
-            "chainId": 1,
-            "nonce": await w3.eth.get_transaction_count(wallet["address"]),
-            "gasPrice": await w3.eth.gas_price,
-        }
-        tx["gas"] = await w3.eth.estimate_gas(tx)
-        signed = Account.sign_transaction(tx, wallet["private_key"])
-        tx_hash = await w3.eth.send_raw_transaction(signed.raw_transaction)
-        receipt = await w3.eth.wait_for_transaction_receipt(tx_hash)
-        status = "success" if receipt["status"] == 1 else "reverted"
-        print(f"\n  [auto-approved, {status}: {tx_hash.to_0x_hex()}]")
-        await session.handle({"type": "tx_result", "id": msg["id"], "outcome": "approved", "hash": tx_hash.to_0x_hex(), "status": status})
+        result = await execute_steps(w3, wallet["private_key"], msg["tx"]["steps"])
+        print(f"\n  [auto-approved {len(msg['tx']['steps'])} step(s): {result.get('status') or result.get('error')}]")
+        await session.handle({"type": "tx_result", "id": msg["id"], **result})
 
     async def send(msg: dict) -> None:
         kind = msg["type"]

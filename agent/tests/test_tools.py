@@ -67,7 +67,7 @@ async def test_propose_transfer_approved_flow():
     confirm = await wait_for_confirm(out)
     assert confirm["tx"]["title"] == "Send 0.1 ETH"
     assert confirm["tx"]["from"] == ME
-    assert confirm["tx"]["request"] == {"to": ALICE, "value": str(10**17), "data": "0x"}
+    assert confirm["tx"]["steps"] == [{"label": "Send", "request": {"to": ALICE, "value": str(10**17), "data": "0x"}}]
     proposals.resolve(confirm["id"], {"outcome": "approved", "hash": "0xabc", "status": "success"})
     result = await task
     assert "Sent 0.1 ETH to Alice" in text(result)

@@ -5,6 +5,7 @@ from decimal import Decimal
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
 from .chain import Chain
+from .outcome import outcome_text
 from .proposals import Proposals
 from .tokens import ETH, TOKENS, find_token
 from .transfers import (
@@ -107,6 +108,7 @@ class WalletTools:
 
         human = f"{format_units(amount, token.decimals)} {token.symbol}"
         label = name or short(to)
+        steps = [{"label": "Send", "request": build_request(token, to, amount)}]
         pid, fut = self.proposals.new()
         await self.send(
             {
@@ -116,25 +118,12 @@ class WalletTools:
                     "title": f"Send {human}",
                     "from": self.ctx.address,
                     "rows": [{"label": "From", "value": short(self.ctx.address)}, *display_rows(token, amount, to, name, price, gas_cost, eth_price)],
-                    "request": build_request(token, to, amount),
+                    "steps": steps,
                 },
             }
         )
         result = await self.proposals.wait(pid, fut, self.approval_timeout)
-        if result is None:
-            return ok("The user didn't respond to the confirmation within 5 minutes, so nothing was sent.")
-        if result.get("outcome") == "rejected":
-            return ok("The user rejected the transfer. Nothing was sent.")
-        if result.get("error") and result.get("hash"):
-            return ok(
-                f"The transfer of {human} to {label} was broadcast (tx {result['hash']}) but its confirmation couldn't be read "
-                f"({result['error']}). Don't resend — ask the user to check their balance first."
-            )
-        if result.get("error"):
-            return ok(f"The transfer failed before it was sent: {result['error']}")
-        if result.get("status") == "reverted":
-            return ok(f"The transfer of {human} to {label} was mined but reverted. Tx {result.get('hash')}.")
-        return ok(f"Sent {human} to {label}. Confirmed on Sandbox, tx {result.get('hash')}.")
+        return ok(outcome_text(result, steps, "transfer", f"Sent {human} to {label}. Confirmed on Sandbox, tx {result and result.get('hash')}."))
 
     async def request_test_funds(self, args: dict) -> dict:
         if not self.ctx.address:
