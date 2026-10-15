@@ -8,31 +8,37 @@ type Props = {
   onResults: () => void
 }
 
-// Highlighted strip under the composer: an upsell, or the live hunting plan with its results.
+const ACTION = 'h-10 rounded-full text-base'
+
+// Highlighted strip under the composer: a line of text, then its buttons — an upsell, or the live plan and its results.
 export function PremiumPane({ subscription, onChoosePlan, onResults }: Props) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-primary/40 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent px-3 py-2">
+    <div className="space-y-2 rounded-2xl border border-primary/40 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent p-3">
       {subscription ? (
         <>
-          <span className="relative flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary">
-            <Bot className="size-4" />
-            <span className="absolute -right-0.5 -bottom-0.5 size-2.5 animate-pulse rounded-full bg-primary ring-2 ring-background" />
-          </span>
-          <p className="min-w-0 flex-1 text-sm font-medium">{planOf(subscription.plan).paneTitle}</p>
-          <Button variant="ghost" size="icon" className="size-8 shrink-0 rounded-full" aria-label="Change plan" onClick={onChoosePlan}>
-            <RefreshCw />
-          </Button>
-          <Button size="sm" className="shrink-0 rounded-full" onClick={onResults}>
-            Hunting Results
-          </Button>
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <Bot className="size-4 shrink-0 text-primary" />
+            {planOf(subscription.plan).paneTitle}
+            <span className="size-2 shrink-0 animate-pulse rounded-full bg-primary" aria-label="Running" />
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="icon" className="size-10 shrink-0 rounded-full" aria-label="Change plan" onClick={onChoosePlan}>
+              <RefreshCw />
+            </Button>
+            <Button className={`flex-1 ${ACTION}`} onClick={onResults}>
+              Airdrop Hunting Results
+            </Button>
+          </div>
         </>
       ) : (
         <>
-          <Sparkles className="size-4 shrink-0 text-primary" />
-          <p className="min-w-0 flex-1 text-sm">
-            Want to <span className="font-semibold text-primary">earn</span> while you sleep?
+          <p className="flex items-center gap-2 text-sm">
+            <Sparkles className="size-4 shrink-0 text-primary" />
+            <span>
+              Want to <span className="font-semibold text-primary">earn</span> while you sleep?
+            </span>
           </p>
-          <Button size="sm" className="shrink-0 rounded-full" onClick={onChoosePlan}>
+          <Button className={`w-full ${ACTION}`} onClick={onChoosePlan}>
             Enable Auto Airdrop Hunting
           </Button>
         </>
