@@ -15,7 +15,7 @@ afterEach(() => {
 describe('GetFundsButton', () => {
   it('asks the agent through the chat when it is online, so the new balance card shows', () => {
     const onAsk = vi.fn()
-    render(<GetFundsButton address={ME} onFunded={vi.fn()} agentOnline busy={false} onAsk={onAsk} />)
+    render(<GetFundsButton address={ME} onFunded={vi.fn()} agentOnline onAsk={onAsk} />)
     fireEvent.click(screen.getByRole('button', { name: 'Get funds' }))
     expect(onAsk).toHaveBeenCalledWith(FUND_PROMPT)
     expect(requestFunds).not.toHaveBeenCalled()
@@ -24,15 +24,19 @@ describe('GetFundsButton', () => {
   it('calls the faucet directly when the agent is offline', async () => {
     const onAsk = vi.fn()
     const onFunded = vi.fn()
-    render(<GetFundsButton address={ME} onFunded={onFunded} agentOnline={false} busy={false} onAsk={onAsk} />)
+    render(<GetFundsButton address={ME} onFunded={onFunded} agentOnline={false} onAsk={onAsk} />)
     fireEvent.click(screen.getByRole('button', { name: 'Get funds' }))
     await vi.waitFor(() => expect(onFunded).toHaveBeenCalled())
     expect(requestFunds).toHaveBeenCalled()
     expect(onAsk).not.toHaveBeenCalled()
   })
 
-  it('shows it is working while the agent is busy', () => {
-    render(<GetFundsButton address={ME} onFunded={vi.fn()} agentOnline busy onAsk={vi.fn()} />)
-    expect((screen.getByRole('button', { name: 'Adding funds…' }) as HTMLButtonElement).disabled).toBe(true)
+  it('stays enabled while the agent is busy — the chat queues the message', () => {
+    const onAsk = vi.fn()
+    render(<GetFundsButton address={ME} onFunded={vi.fn()} agentOnline onAsk={onAsk} />)
+    const button = screen.getByRole('button', { name: 'Get funds' }) as HTMLButtonElement
+    expect(button.disabled).toBe(false)
+    fireEvent.click(button)
+    expect(onAsk).toHaveBeenCalledWith(FUND_PROMPT)
   })
 })

@@ -13,14 +13,13 @@ type Props = {
   address: Address
   onFunded: () => Promise<void> | void
   agentOnline: boolean
-  busy: boolean
   onAsk: (text: string) => void
   className?: string
 }
 
-// One tap tops the wallet up. With the agent online it goes through the chat (new balance card);
-// otherwise it calls the faucet directly and re-reads the balance.
-export function GetFundsButton({ address, onFunded, agentOnline, busy, onAsk, className }: Props) {
+// One tap tops the wallet up. With the agent online it goes through the chat (new balance card) and
+// stays enabled — a tap while the agent is busy just queues the message; otherwise it calls the faucet directly.
+export function GetFundsButton({ address, onFunded, agentOnline, onAsk, className }: Props) {
   const [funding, setFunding] = useState(false)
 
   async function fund() {
@@ -36,11 +35,10 @@ export function GetFundsButton({ address, onFunded, agentOnline, busy, onAsk, cl
     }
   }
 
-  const working = funding || (agentOnline && busy)
   return (
-    <Button size="lg" className={cn('h-11 rounded-full px-5 text-base', className)} onClick={fund} disabled={working}>
-      {working ? <Loader2 className="animate-spin" /> : <Wallet />}
-      {working ? 'Adding funds…' : 'Get funds'}
+    <Button size="lg" className={cn('h-11 rounded-full px-5 text-base', className)} onClick={fund} disabled={funding}>
+      {funding ? <Loader2 className="animate-spin" /> : <Wallet />}
+      {funding ? 'Adding funds…' : 'Get funds'}
     </Button>
   )
 }

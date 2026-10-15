@@ -124,7 +124,7 @@ export default function WalletPage() {
       <div className="mx-auto w-full max-w-[720px] space-y-2 px-4 pb-4">
         {session && <ConnectedBar dapp={session} onDisconnect={disconnect} />}
         {offerFunds && (
-          <GetFundsButton address={active.address} onFunded={refreshBalance} className="w-full" agentOnline={chat.online} busy={chat.busy} onAsk={(t) => chat.send(t)} />
+          <GetFundsButton address={active.address} onFunded={refreshBalance} className="w-full" agentOnline={chat.online} onAsk={(t) => chat.send(t)} />
         )}
         <QuickActionBar onPick={(t) => chat.send(t)} disabled={!chat.online} />
         <InputBar onSend={chat.send} speakEnabled={speakEnabled} onToggleSpeak={() => setSpeakEnabled((v) => !v)} />
