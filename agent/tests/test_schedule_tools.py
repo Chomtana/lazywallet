@@ -8,7 +8,7 @@ from lazyagent.proposals import Proposals
 from lazyagent.scheduler import FIXED_GAS, NEXT_ID, SCHEDULER, encode_gas_balance, encode_get_order
 from lazyagent.tokens import find_token
 from lazyagent.tools import TOOL_NAMES, WalletContext, WalletTools
-from lazyagent.uniswap import Hop
+from lazyagent.uniswap import Hop, encode_erc20_allowance
 
 ME = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 USDC = find_token("USDC", ETHEREUM.tokens)
@@ -156,3 +156,54 @@ async def test_cancel_refuses_someone_elses_or_finished_order():
     assert (await tools.cancel_scheduled_swap({"order_id": 0, "network": "ethereum"})).get("is_error")
     chain.call_responses[encode_get_order(0)[:10]] = order_bytes(executed=3)
     assert "already" in text(await tools.cancel_scheduled_swap({"order_id": 0, "network": "ethereum"}))
+
+
+def committed_chain(allowance=None):
+    """One active order (10 USDC × 3, nothing run yet) of ME's on USDC."""
+    chain = FakeChain(tokens={"USDC": 5_000 * 10**6})
+    chain.call_responses[NEXT_ID[:10]] = (1).to_bytes(32, "big")
+    chain.call_responses[encode_get_order(0)[:10]] = order_bytes()
+    if allowance is not None:
+        chain.call_responses[encode_erc20_allowance(ME, SCHEDULER)[:10]] = allowance.to_bytes(32, "big")
+    return chain
+
+
+async def schedule_5x2(chain):
+    tools, out, proposals, _ = make(chain)
+    task = asyncio.create_task(tools.propose_scheduled_swap({"token_in": "USDC", "token_out": "ETH", "amount": "5", "interval_seconds": 60, "count": 2}))
+    confirm = await confirm_of(out)
+    proposals.resolve(confirm["id"], {"outcome": "rejected"})
+    await task
+    return confirm["tx"]["steps"]
+
+
+async def test_schedule_approval_covers_other_active_orders_on_same_token():
+    steps = await schedule_5x2(committed_chain())
+    assert steps[0]["label"] == "Allow USDC"
+    assert decode(["address", "uint256"], bytes.fromhex(steps[0]["request"]["data"][10:]))[1] == (10 + 30) * 10**6  # this order 10 + existing 30
+
+
+async def test_schedule_reapproves_when_allowance_only_covers_the_old_order():
+    steps = await schedule_5x2(committed_chain(allowance=30 * 10**6))
+    assert [s["label"] for s in steps] == ["Allow USDC", "Schedule swap"]
+
+
+async def test_schedule_skips_approval_when_allowance_covers_everything():
+    steps = await schedule_5x2(committed_chain(allowance=40 * 10**6))
+    assert [s["label"] for s in steps] == ["Schedule swap"]
+
+
+async def test_schedule_balance_check_includes_other_active_orders():
+    chain = committed_chain()
+    chain.tokens["USDC"] = 35 * 10**6  # 10 × 2 fits alone, not with the 30 already reserved
+    tools, out, _, _ = make(chain)
+    result = await tools.propose_scheduled_swap({"token_in": "USDC", "token_out": "ETH", "amount": "10", "interval_seconds": 60, "count": 2})
+    assert result.get("is_error") and "reserved" in text(result)
+    assert not out.of_type("confirm")
+
+
+async def test_schedule_rejects_zero_min_received():
+    tools, out, _, _ = make()
+    result = await tools.propose_scheduled_swap({"token_in": "USDC", "token_out": "ETH", "amount": "10", "min_received": "0"})
+    assert result.get("is_error") and "more than 0" in text(result)
+    assert not out.of_type("confirm")

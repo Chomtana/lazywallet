@@ -21,6 +21,7 @@ Requires Node.js LTS, pnpm, [uv](https://docs.astral.sh/uv/), [Foundry](https://
 
 ```bash
 cp .env.example .env   # set ETH_RPC_URL to an Ethereum mainnet archive RPC; AVAX_RPC_URL is optional (default public Avalanche RPC)
+git submodule update --init --recursive   # contracts/lib dependencies (empty after a plain clone)
 pnpm install
 pnpm dev:sandbox       # terminal 1: Anvil forks (Ethereum :8545, Avalanche :8546) + faucet :8547
 pnpm dev:agent         # terminal 2: AI agent

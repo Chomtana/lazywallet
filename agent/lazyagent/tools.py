@@ -463,21 +463,34 @@ class WalletTools:
             amount = parse_amount(str(args.get("amount", "")), tin.decimals)
             interval, count, delay = parse_schedule(args.get("interval_seconds"), args.get("count"), args.get("start_delay_seconds"))
             total = amount * count
+            # Remaining runs of the user's other active orders on this token draw on the same allowance and balance.
+            committed = sum(
+                o.amount_in * (o.count - o.executed)
+                for o in await read_orders(chain, self.ctx.address)
+                if o.active and o.token_in.lower() == pay.address.lower()
+            )
             balance = await self._balance_on(net, tin)
-            if total > balance:
+            # Native input is wrapped for this order only; the committed part must already be held as WETH/WAVAX.
+            need = total + (committed if tin.address is not None else 0)
+            if need > balance:
+                reserved = f", plus {format_units(committed, tin.decimals)} reserved for your other scheduled swaps" if committed else ""
                 raise TransferError(
-                    f"{count} runs of {format_units(amount, tin.decimals)} {tin.symbol} need {format_units(total, tin.decimals)} {tin.symbol}, "
+                    f"{count} runs of {format_units(amount, tin.decimals)} {tin.symbol} need {format_units(total, tin.decimals)} {tin.symbol}{reserved}, "
                     f"but you have {format_units(balance, tin.decimals)}."
                 )
+            if tin.address is None and committed and await self._balance_on(net, pay) < committed:
+                raise TransferError(f"Your other scheduled swaps still need {format_units(committed, pay.decimals)} {pay.symbol}, which you don't hold.")
             if args.get("min_received"):
                 minimum = parse_amount(str(args["min_received"]), get.decimals)
+                if minimum == 0:
+                    raise TransferError("The minimum to receive has to be more than 0.")
             else:
                 minimum = min_out(await self._quote_out(net, tin, tout, amount), MIN_OUT_DISCOUNT_BPS)
             start = await chain.block_timestamp() + delay
             allowance = int.from_bytes((await chain.call(pay.address, encode_erc20_allowance(self.ctx.address, SCHEDULER)))[:32], "big")
             gas_price = await chain.gas_price()
             top_up = gas_top_up(gas_price, count, await gas_balance(chain, self.ctx.address))
-            steps = schedule_steps(tin, tout, net, amount, minimum, start, interval, count, allowance, top_up)
+            steps = schedule_steps(tin, tout, net, amount, minimum, start, interval, count, allowance, top_up, total + committed)
             needed = gas_reserve(steps, gas_price) + top_up + (total if tin.address is None else 0)
             native_balance = await chain.eth_balance(self.ctx.address)
             if needed > native_balance:

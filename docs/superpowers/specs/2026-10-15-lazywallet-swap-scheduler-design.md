@@ -106,7 +106,7 @@ New `agent/lazyagent/scheduler.py`: pinned addresses, ABI, calldata builders (th
   - Token resolution as `propose_swap`. ETH/AVAX input maps to WETH/WAVAX in the order; ETH/AVAX output maps to WETH/WAVAX `tokenOut` (rows say so).
   - `minOut` = current venue quote × (1 − 5%) unless the user gives a limit ("only if I get at least 30 USDC").
   - `interval_seconds ≥ 60`; `start` defaults to now.
-  - Steps: (1) wrap `amount × count` if native input; (2) `approve(scheduler, amount × count)`, skipped if allowance suffices (USDT reset rule reused); (3) `scheduleSwap{value: gasTopUp}` with `gasTopUp = max(0, fixedGas × gasprice × count × 2 − gasBalance)`.
+  - Steps: (1) wrap `amount × count` if native input; (2) `approve(scheduler, …)` covering this order plus the remaining runs of the user's other active orders on the same token, skipped if the allowance already suffices (USDT reset rule reused); (3) `scheduleSwap{value: gasTopUp}` with `gasTopUp = max(0, fixedGas × gasprice × count × 2 − gasBalance)`.
   - Rows: pair, amount per run, schedule ("every 1 min × 5, starting now"), min received per run, gas deposit, scheduler address.
 - `list_scheduled_swaps()` — the user's orders on both forks with status and next run.
 - `cancel_scheduled_swap(id, chainId)` — one-step confirm card.

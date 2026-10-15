@@ -100,6 +100,8 @@ def gas_top_up(gas_price: int, count: int, balance: int) -> int:
 
 def parse_schedule(interval, count, delay) -> tuple[int, int, int]:
     """(interval seconds, run count, start delay seconds). One run → interval 0."""
+    if interval not in (None, "") and count in (None, ""):
+        raise TransferError("How many times should it run? Give a count with the interval.")
     try:
         n = int(count) if count not in (None, "") else 1
         every = int(interval) if interval not in (None, "") else 0
@@ -168,18 +170,19 @@ def _tx(to: str, data: str, value: int = 0) -> dict:
 
 
 def schedule_steps(
-    tin: Token, tout: Token, net: Network, amount_in: int, min_out: int, start: int, interval: int, count: int, allowance: int, top_up: int
+    tin: Token, tout: Token, net: Network, amount_in: int, min_out: int, start: int, interval: int, count: int, allowance: int, top_up: int, approve_amount: int | None = None
 ) -> list[Step]:
     pay, get = order_token(tin, net), order_token(tout, net)
     total = amount_in * count
+    approve = total if approve_amount is None else approve_amount  # this order plus other active orders on the same token
     steps: list[Step] = []
     if tin.address is None:
         steps.append(Step(f"Wrap {tin.symbol} → {pay.symbol}", _tx(pay.address, WETH_DEPOSIT, total), GAS["wrap"]))
-    if allowance < total:
+    if allowance < approve:
         if pay.symbol == "USDT" and allowance > 0:
             # USDT reverts when changing one nonzero allowance to another.
             steps.append(Step("Reset USDT allowance", _tx(pay.address, encode_erc20_approve(SCHEDULER, 0)), GAS["approve"]))
-        steps.append(Step(f"Allow {pay.symbol}", _tx(pay.address, encode_erc20_approve(SCHEDULER, total)), GAS["approve"]))
+        steps.append(Step(f"Allow {pay.symbol}", _tx(pay.address, encode_erc20_approve(SCHEDULER, approve)), GAS["approve"]))
     data = encode_schedule(pay.address, get.address, amount_in, min_out, start, interval, count)
     steps.append(Step("Schedule swap", _tx(SCHEDULER, data, top_up), GAS["schedule"]))
     return steps

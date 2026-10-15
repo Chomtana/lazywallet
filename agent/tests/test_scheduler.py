@@ -97,6 +97,12 @@ def test_parse_schedule_defaults_to_one_shot_now():
     assert parse_schedule(3600, 1, 30) == (0, 1, 30)  # interval ignored for one run
 
 
+@pytest.mark.parametrize("count", [None, ""])
+def test_parse_schedule_interval_without_count_asks_how_many(count):
+    with pytest.raises(TransferError, match="How many times"):
+        parse_schedule(3600, count, 0)
+
+
 @pytest.mark.parametrize("interval,count,delay", [(30, 2, 0), (60, 0, 0), (60, 101, 0), (60, 2, -1), ("soon", 2, 0)])
 def test_parse_schedule_rejects_nonsense(interval, count, delay):
     with pytest.raises(TransferError):
@@ -131,6 +137,8 @@ def test_schedule_steps_wrap_approve_schedule_for_native_input():
 
 def test_schedule_steps_skip_approval_and_reset_usdt():
     assert [s.label for s in schedule_steps(USDC, ETHEREUM.native, ETHEREUM, 10, 1, 0, 0, 1, allowance=10, top_up=0)] == ["Schedule swap"]
+    # approve_amount raises the bar beyond this order's own total (other active orders share the allowance)
+    assert [s.label for s in schedule_steps(USDC, ETHEREUM.native, ETHEREUM, 10, 1, 0, 0, 1, allowance=10, top_up=0, approve_amount=40)] == ["Allow USDC", "Schedule swap"]
     usdt = find_token("USDT", ETHEREUM.tokens)
     assert [s.label for s in schedule_steps(usdt, WETH, ETHEREUM, 10, 1, 0, 0, 1, allowance=1, top_up=0)] == ["Reset USDT allowance", "Allow USDT", "Schedule swap"]
 

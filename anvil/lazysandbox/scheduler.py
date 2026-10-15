@@ -23,7 +23,11 @@ def ensure_scheduler(rpc_url: str, run=subprocess.run) -> bool:
     w3 = Web3(HTTPProvider(rpc_url))
     if w3.eth.get_code(SCHEDULER):
         return False
-    run(deploy_command(rpc_url), cwd=CONTRACTS, check=True, capture_output=True)
+    try:
+        run(deploy_command(rpc_url), cwd=CONTRACTS, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        tail = "\n".join((e.stderr or e.stdout or "").strip().splitlines()[-20:])
+        raise RuntimeError(f"Deploying the SwapScheduler failed (forge exit {e.returncode}):\n{tail}") from e
     if not w3.eth.get_code(SCHEDULER):
         raise RuntimeError(f"SwapScheduler isn't at {SCHEDULER} after deploying — re-pin it (contracts/src/Deployment.sol).")
     return True

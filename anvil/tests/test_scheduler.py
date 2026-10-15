@@ -43,6 +43,16 @@ def test_ensure_scheduler_deploys_once_at_the_pinned_address(bare_anvil):
     assert ensure_scheduler(bare_anvil) is False  # idempotent across sandbox restarts
 
 
+def test_ensure_scheduler_failure_includes_forge_output(monkeypatch):
+    monkeypatch.setattr("lazysandbox.scheduler.Web3", lambda *_: type("W", (), {"eth": type("E", (), {"get_code": lambda self, a: b""})()})())
+
+    def failing(*a, **k):
+        raise subprocess.CalledProcessError(1, "forge", output="", stderr="Error: missing lib forge-std")
+
+    with pytest.raises(RuntimeError, match="missing lib forge-std"):
+        ensure_scheduler("http://x", run=failing)
+
+
 def test_pinned_addresses_match_deployment_sol():
     sol = (ROOT / "contracts/src/Deployment.sol").read_text()
     assert re.search(r"SCHEDULER = (0x[0-9a-fA-F]{40})", sol).group(1) == SCHEDULER
