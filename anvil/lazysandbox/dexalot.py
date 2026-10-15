@@ -138,7 +138,9 @@ class DexalotSandbox:
         self.api = api
         self.signer = Account.create()  # process memory only
         self.makers: list[str] = []
+        self.skipped: list[tuple[str, str]] = []  # (maker, reason) for makers setup() couldn't use
         self.error: str | None = "not set up yet"
+        self._setup_lock = asyncio.Lock()
         self._pairs: list[Pair] = []
         self._pairs_at = 0.0
 
@@ -150,24 +152,44 @@ class DexalotSandbox:
     async def setup(self) -> None:
         """Make every Dexalot RFQ maker on the fork trust the sandbox signer (swapSigner is immutable → bytecode)."""
         router = self.w3.eth.contract(address=ROUTER, abi=ROUTER_ABI)
-        makers = []
+        makers: list[str] = []
+        skipped: list[tuple[str, str]] = []
         for m in await router.functions.getAllowedRFQs().call():
             rfq = self.w3.eth.contract(address=m, abi=SIGNER_ABI)
             try:
                 old = await rfq.functions.swapSigner().call()
             except Exception:
-                continue  # not a signer-based maker
+                skipped.append((m, "no swapSigner()"))  # not a signer-based maker
+                continue
             code = (await self.w3.eth.get_code(m)).to_0x_hex()
             patched, n = patch_code(code, old, self.signer.address)
             if n == 0:
-                continue  # signer isn't an immutable in this maker (e.g. an upgradeable proxy keeping it in storage) — can't patch, don't use
-            await self._rpc("anvil_setCode", [m, patched])
-            if (await rfq.functions.swapSigner().call()).lower() != self.signer.address.lower():
-                raise RuntimeError(f"patched {m} still reports another swapSigner")
+                # signer isn't an immutable in this maker (e.g. an upgradeable proxy keeping it in storage) — can't patch, don't use
+                skipped.append((m, "swapSigner not in bytecode"))
+                continue
+            try:
+                await self._rpc("anvil_setCode", [m, patched])
+                if (await rfq.functions.swapSigner().call()).lower() != self.signer.address.lower():
+                    raise RuntimeError("still reports another swapSigner after the patch")
+            except Exception as e:
+                skipped.append((m, str(e)))
+                continue
             makers.append(m)
+        self.skipped = skipped
         if not makers:
-            raise RuntimeError("no Dexalot RFQ makers found")
+            detail = "; ".join(f"{m}: {why}" for m, why in skipped) or "the router lists none"
+            raise RuntimeError(f"no patchable Dexalot RFQ makers ({detail})")
         self.makers, self.error = makers, None
+
+    async def _retry_setup(self) -> None:
+        """One lazy setup() retry per quote while unavailable, so a transient startup failure doesn't need a restart."""
+        async with self._setup_lock:
+            if not self.error:
+                return  # a concurrent quote's retry already succeeded
+            try:
+                await self.setup()
+            except Exception as e:
+                self.error = str(e)
 
     async def pairs(self) -> list[Pair]:
         if not self._pairs or time.monotonic() - self._pairs_at > PAIRS_TTL_S:
@@ -181,6 +203,8 @@ class DexalotSandbox:
         return await self.w3.eth.contract(address=Web3.to_checksum_address(token), abi=BALANCE_OF).functions.balanceOf(maker).call()
 
     async def quote(self, token_in: str, token_out: str, amount_in: int, taker: str) -> dict:
+        if self.error:
+            await self._retry_setup()
         if self.error:
             raise QuoteError(503, f"Dexalot swaps are unavailable on this Sandbox ({self.error}).")
         pair, side, is_base = match_pair(await self.pairs(), token_in, token_out)

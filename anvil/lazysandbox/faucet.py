@@ -84,6 +84,8 @@ def create_app(rpc_url: str, allowed_origins: list[str], avax_rpc_url: str | Non
             try:
                 await dexalot.setup()
                 print(f"Dexalot RFQ: {len(dexalot.makers)} makers trust sandbox signer {dexalot.signer.address}", flush=True)
+                if dexalot.skipped:
+                    print("Dexalot RFQ skipped makers: " + "; ".join(f"{m}: {why}" for m, why in dexalot.skipped), flush=True)
             except Exception as e:
                 dexalot.error = str(e)
                 print(f"Dexalot RFQ signer patch FAILED — Avalanche swaps disabled: {e}", flush=True)

@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from eth_account import Account
 from eth_account.messages import encode_typed_data
@@ -102,3 +104,37 @@ def test_quote_endpoint_validates_input():
     assert res.status_code == 400
     res = client.post("/dexalot/quote", json={"token_in": NATIVE, "token_out": USDC, "amount_in": "-1", "taker": TAKER})
     assert res.status_code == 400
+
+
+class FlakySetup(DexalotSandbox):
+    """setup() fails `fails` times, then succeeds; pairs() stops the quote right after the availability gate."""
+
+    def __init__(self, fails: int):
+        super().__init__(AsyncWeb3(AsyncHTTPProvider("http://127.0.0.1:1")))
+        self.fails, self.setups = fails, 0
+
+    async def setup(self) -> None:
+        self.setups += 1
+        await asyncio.sleep(0)
+        if self.setups <= self.fails:
+            raise RuntimeError("public RPC hiccup")
+        self.makers, self.error = [MAKER], None
+
+    async def pairs(self):
+        raise QuoteError(418, "past the gate")
+
+
+async def test_quote_retries_a_failed_setup_once_serialized():
+    d = FlakySetup(fails=0)
+    d.error = "public RPC hiccup at startup"
+    results = await asyncio.gather(d.quote(NATIVE, USDC, 1, TAKER), d.quote(NATIVE, USDC, 1, TAKER), return_exceptions=True)
+    assert [r.status for r in results] == [418, 418]
+    assert d.setups == 1
+
+
+async def test_quote_stays_unavailable_when_the_retry_fails():
+    d = FlakySetup(fails=1)
+    d.error = "public RPC hiccup at startup"
+    with pytest.raises(QuoteError, match="unavailable.*public RPC hiccup") as e:
+        await d.quote(NATIVE, USDC, 1, TAKER)
+    assert e.value.status == 503 and d.setups == 1
