@@ -8,6 +8,46 @@ importers:
 
   .: {}
 
+  apps/landing:
+    dependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@8.3.4(@types/node@24.19.2)(jiti@2.7.0))
+      lucide-react:
+        specifier: ^1.57.0
+        version: 1.57.0(@types/react@19.3.0)(react@19.3.0)
+      react:
+        specifier: ^19.2.8
+        version: 19.3.0
+      react-dom:
+        specifier: ^19.2.8
+        version: 19.3.0(react@19.3.0)
+      tailwindcss:
+        specifier: ^4.3.3
+        version: 4.3.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.19.2
+      '@types/react':
+        specifier: ^19.2.18
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.2.7
+        version: 19.3.0(@types/react@19.3.0)
+      '@vitejs/plugin-react':
+        specifier: ^6.1.1
+        version: 6.1.2(vite@8.3.4(@types/node@24.19.2)(jiti@2.7.0))
+      oxlint:
+        specifier: ^1.81.0
+        version: 1.88.0
+      typescript:
+        specifier: ~6.0.2
+        version: 6.0.3
+      vite:
+        specifier: ^8.3.0
+        version: 8.3.4(@types/node@24.19.2)(jiti@2.7.0)
+
   apps/wallet:
     dependencies:
       '@scure/bip39':
