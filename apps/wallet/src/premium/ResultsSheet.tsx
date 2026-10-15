@@ -3,20 +3,14 @@ import { Bot, Volume2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { BOTTOM_SHEET } from '@/components/sheet-styles'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { cn } from '@/lib/utils'
-import { formatUsd } from '@/lib/format'
 import { speak, stopSpeaking } from '@/voice/speech'
-import { RESULTS, type HuntProtocol, type PlanId } from './plans'
+import { RESULTS, type PlanId } from './plans'
+
+const compactUsd = (n: number) => `$${Intl.NumberFormat('en-US', { notation: 'compact' }).format(n)}`
 
 type Props = { open: boolean; onOpenChange: (v: boolean) => void; plan: PlanId; speakEnabled: boolean }
 
-const STATUS: Record<HuntProtocol['status'], string> = {
-  farming: 'bg-primary/15 text-primary',
-  qualified: 'bg-secondary text-foreground',
-  'snapshot soon': 'bg-amber-400/15 text-amber-300',
-}
-
-// Overnight report: an AI summary (read aloud on open), headline stats, positions per protocol and the bot's log.
+// Overnight report: an AI summary (read aloud on open), headline stats, then points (and perp/RWA volume) per project.
 export function ResultsSheet({ open, onOpenChange, plan, speakEnabled }: Props) {
   const r = RESULTS[plan]
 
@@ -45,53 +39,45 @@ export function ResultsSheet({ open, onOpenChange, plan, speakEnabled }: Props) 
             <p className="text-sm leading-relaxed">{r.summary}</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="flex gap-2">
             {r.stats.map((s) => (
-              <div key={s.label} className="rounded-2xl border bg-card p-3">
+              <div key={s.label} className="flex-1 rounded-2xl border bg-card p-3">
                 <p className="font-mono text-lg font-semibold">{s.value}</p>
                 <p className="text-xs text-muted-foreground">{s.label}</p>
               </div>
             ))}
           </div>
 
-          <section>
-            <h3 className="mb-2 text-sm font-medium text-muted-foreground">Positions</h3>
-            <ul className="divide-y rounded-2xl border bg-card">
-              {r.protocols.map((p) => (
-                <li key={p.name} className="flex items-center gap-3 p-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold">
-                    {p.name.slice(0, 2)}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-2 font-medium">
-                      {p.name}
-                      <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', STATUS[p.status])}>{p.status}</span>
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {[p.kind, p.network, p.activity].filter(Boolean).join(' · ')}
-                    </p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="font-mono text-sm">≈ {formatUsd(p.estUsd)}</p>
-                    <p className="font-mono text-xs text-muted-foreground">{p.points}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section>
-            <h3 className="mb-2 text-sm font-medium text-muted-foreground">Bot activity</h3>
-            <ul className="space-y-2 text-sm">
-              {r.log.map((l) => (
-                <li key={l.when + l.text} className="flex gap-3">
-                  <span className="shrink-0 font-mono text-xs text-muted-foreground">{l.when}</span>
-                  <span>{l.text}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-          <p className="text-center text-xs text-muted-foreground">Estimates — final airdrop values are set by each project.</p>
+          {r.sections.map((sec) => (
+            <section key={sec.title}>
+              <div className="mb-2 flex px-1 text-xs text-muted-foreground">
+                <span className="flex-1 font-medium">{sec.title}</span>
+                {sec.showVolume && <span className="w-20 text-right">Volume 24h</span>}
+                <span className="w-28 text-right">Points</span>
+              </div>
+              <ul className="divide-y rounded-2xl border bg-card">
+                {sec.projects.map((p) => (
+                  <li key={p.name} className="flex items-center gap-3 p-3">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold">
+                      {p.name.slice(0, 2)}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{p.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">{[p.kind, p.network].filter(Boolean).join(' · ')}</p>
+                    </div>
+                    {sec.showVolume && <p className="w-20 shrink-0 text-right font-mono text-sm">{p.volumeUsd ? compactUsd(p.volumeUsd) : '—'}</p>}
+                    <div className="w-28 shrink-0 text-right">
+                      <p className="font-mono text-sm">
+                        {p.points.toLocaleString('en-US')} <span className="text-xs text-muted-foreground">{p.unit}</span>
+                      </p>
+                      <p className="font-mono text-xs text-primary">+{p.pointsToday.toLocaleString('en-US')} today</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+          <p className="text-center text-xs text-muted-foreground">Points as reported by each project.</p>
         </div>
       </SheetContent>
     </Sheet>

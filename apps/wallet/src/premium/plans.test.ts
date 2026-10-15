@@ -10,12 +10,11 @@ describe('premium plans', () => {
     expect(planOf(DEFAULT_PLAN).priceUsd).toBe(200)
   })
 
-  it('every plan has hunting results whose headline matches its positions', () => {
-    for (const p of PLANS) {
-      const r = RESULTS[p.id]
-      const total = r.protocols.reduce((sum, x) => sum + x.estUsd, 0)
-      expect(r.stats[0]).toEqual({ label: 'Est. airdrop value', value: `$${total.toLocaleString('en-US')}` })
-      expect(r.summary.length).toBeGreaterThan(0)
-    }
+  it('perp/RWA volume headline is the sum of its projects, and the plan includes the airdrop programs', () => {
+    const [perp, airdrops] = RESULTS.perp_rwa.sections
+    const total = perp.projects.reduce((sum, x) => sum + (x.volumeUsd ?? 0), 0)
+    expect(RESULTS.perp_rwa.stats[0]).toEqual({ label: 'Volume (24h)', value: `$${total / 1000}K` })
+    expect(airdrops).toBe(RESULTS.airdrop.sections[0])
+    expect(RESULTS.perp_rwa.stats[2].value).toBe(String(perp.projects.length + airdrops.projects.length))
   })
 })

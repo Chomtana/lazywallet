@@ -26,7 +26,7 @@ export const PLANS: Plan[] = [
     paneTitle: 'Auto Hunting Perp/RWA Airdrops',
     priceUsd: 1_000,
     minWalletUsd: 10_000,
-    blurb: 'Optimal-strategy volume on trending perp DEXs and RWA projects for points. Insured.',
+    blurb: 'Everything in Auto Airdrop Hunt, plus optimal-strategy volume on trending perp DEXs and RWA projects. Insured.',
   },
 ]
 
@@ -37,73 +37,73 @@ export const planOf = (id: PlanId): Plan => PLANS.find((p) => p.id === id)!
 
 export type Subscription = { plan: PlanId; since: string } // since: ISO date
 
-export type HuntProtocol = {
+// One row per project: points (total and gained in the last 24 h); perp/RWA rows also carry trading volume.
+export type HuntProject = {
   name: string
   kind: string // "Perp DEX", "RWA", "Points"
   network: string // '' when not confirmed
-  activity: string // what the bot did there
-  points: string
-  estUsd: number
-  status: 'farming' | 'qualified' | 'snapshot soon'
+  points: number
+  pointsToday: number
+  unit: string // "pts", "cores", "PAPER"
+  volumeUsd?: number // last 24 h; perp/RWA plan only (absent for hold-only RWA)
 }
+
+export type HuntSection = { title: string; showVolume: boolean; projects: HuntProject[] }
 
 export type HuntResults = {
   summary: string // shown and spoken
   stats: { label: string; value: string }[]
-  protocols: HuntProtocol[]
-  log: { when: string; text: string }[]
+  sections: HuntSection[]
+}
+
+const AIRDROPS: HuntSection = {
+  title: 'Airdrop programs',
+  showVolume: false,
+  projects: [
+    { name: 'Avant', kind: 'Points', network: 'Avalanche', points: 41_200, pointsToday: 1_480, unit: 'pts' },
+    { name: 'Theo', kind: 'RWA', network: 'Ethereum', points: 18_900, pointsToday: 760, unit: 'pts' },
+    { name: 'Re', kind: 'RWA', network: 'Ethereum', points: 9_750, pointsToday: 540, unit: 'pts' },
+    { name: 'Tori', kind: 'Points', network: 'Ethereum', points: 3_100, pointsToday: 150, unit: 'cores' },
+  ],
+}
+
+// Trending pre-TGE programs as of 2026-10-16 (Lighter, GRVT, edgeX, Paradex already launched tokens).
+const PERP_RWA: HuntSection = {
+  title: 'Perp & RWA',
+  showVolume: true,
+  projects: [
+    { name: 'Ostium', kind: 'RWA perps', network: 'Arbitrum', volumeUsd: 52_000, points: 14_200, pointsToday: 2_100, unit: 'pts' },
+    { name: 'Extended', kind: 'Perp DEX', network: 'Starknet', volumeUsd: 61_000, points: 2_940, pointsToday: 310, unit: 'pts' },
+    { name: 'Papertrade', kind: 'Perp DEX', network: 'HyperEVM', volumeUsd: 24_000, points: 38_500, pointsToday: 4_200, unit: 'PAPER' },
+    { name: 'PERPTools', kind: 'Perp DEX', network: '', volumeUsd: 31_000, points: 6_210, pointsToday: 890, unit: 'pts' },
+    { name: 'Ondo Perps', kind: 'RWA perps', network: 'Ethereum', volumeUsd: 16_000, points: 8_400, pointsToday: 620, unit: 'pts' },
+  ],
 }
 
 export const RESULTS: Record<PlanId, HuntResults> = {
   airdrop: {
     summary:
-      'Overnight I farmed four points programs. Your best position is Avant: savUSD points are up 18 percent this week. ' +
-      'Theo and Re keep earning on idle stablecoins, and Tori qualified you for Season 1. ' +
-      'Estimated airdrop value so far is about 640 dollars, with no new risk flags.',
+      'Overnight I farmed four points programs and earned about 2,900 points. ' +
+      'Avant is your biggest, at 41 thousand points, up 18 percent this week. ' +
+      'Theo and Re keep earning on idle stablecoins, and Tori is on a 21-day streak.',
     stats: [
-      { label: 'Est. airdrop value', value: '$640' },
+      { label: 'Programs', value: '4' },
       { label: 'Points this week', value: '+18%' },
-      { label: 'Programs farmed', value: '4' },
-      { label: 'Risk flags', value: '0' },
     ],
-    protocols: [
-      { name: 'Avant', kind: 'Points', network: 'Avalanche', activity: 'Staked 800 avUSD → savUSD', points: '41,200 pts', estUsd: 260, status: 'farming' },
-      { name: 'Theo', kind: 'RWA', network: 'Ethereum', activity: 'Holding 500 sthUSD', points: '18,900 pts', estUsd: 150, status: 'farming' },
-      { name: 'Re', kind: 'RWA', network: 'Ethereum', activity: 'Deposited 400 reUSD', points: '9,750 pts', estUsd: 130, status: 'farming' },
-      { name: 'Tori', kind: 'Points', network: 'Ethereum', activity: 'Daily check-ins, 21-day streak', points: '3,100 cores', estUsd: 100, status: 'qualified' },
-    ],
-    log: [
-      { when: '06:12', text: 'Claimed daily Tori cores (captcha solved by the team)' },
-      { when: '03:40', text: 'Re-staked Avant rewards into savUSD' },
-      { when: '01:05', text: 'Scanned 37 new programs — none passed the safety check' },
-    ],
+    sections: [AIRDROPS],
   },
+  // The perp/RWA plan includes everything the airdrop plan hunts.
   perp_rwa: {
     summary:
-      'Overnight I traded hedged volume across four perp exchanges and kept your RWA position earning. ' +
-      'That is 184 thousand dollars of volume for only 92 dollars in fees and funding, and your net exposure stayed flat. ' +
-      'Your strongest position is Ostium, where a Season 2 boost window doubled your gold points. ' +
+      'Overnight I traded 184 thousand dollars of hedged volume across five exchanges. ' +
+      'Extended took the most, 61 thousand. On Ostium a boost window doubled your points to 14 thousand. ' +
       'PERPTools converts points to tokens later this quarter, so I am leaning in there. ' +
-      'Estimated airdrop value is about 4,100 dollars.',
+      'Your four airdrop programs added about 2,900 points, led by Avant.',
     stats: [
-      { label: 'Est. airdrop value', value: '$4,100' },
-      { label: 'Volume generated', value: '$184K' },
+      { label: 'Volume (24h)', value: '$184K' },
       { label: 'Fees + funding', value: '$92' },
-      { label: 'Net exposure', value: '0%' },
+      { label: 'Programs', value: '9' },
     ],
-    // Trending pre-TGE programs as of 2026-10-16 (Lighter, GRVT, edgeX, Paradex already launched tokens).
-    protocols: [
-      { name: 'Ostium', kind: 'RWA perps', network: 'Arbitrum', activity: 'Gold hedged volume, 2x boost', points: '14,200 pts', estUsd: 1_200, status: 'farming' },
-      { name: 'Extended', kind: 'Perp DEX', network: 'Starknet', activity: 'Delta-neutral BTC/ETH volume', points: '2,940 pts', estUsd: 900, status: 'farming' },
-      { name: 'Papertrade', kind: 'Perp DEX', network: 'HyperEVM', activity: 'Hedged pair, losing leg mints PAPER', points: '38,500 PAPER', estUsd: 700, status: 'farming' },
-      { name: 'PERPTools', kind: 'Perp DEX', network: '', activity: 'Season 2 volume', points: '6,210 pts', estUsd: 600, status: 'snapshot soon' },
-      { name: 'Ondo Perps', kind: 'RWA perps', network: 'Ethereum', activity: 'Tokenized stock perps', points: '8,400 Ondo pts', estUsd: 420, status: 'farming' },
-      { name: 'Re', kind: 'RWA', network: 'Ethereum', activity: 'Holding reUSD in Pendle', points: '5,600 pts', estUsd: 280, status: 'qualified' },
-    ],
-    log: [
-      { when: '06:30', text: 'Rebalanced hedges after BTC moved 2.1%' },
-      { when: '04:15', text: 'Capped Papertrade at $500 after price-manipulation reports' },
-      { when: '00:50', text: 'Moved $3,000 of volume into an Ostium boost window' },
-    ],
+    sections: [PERP_RWA, AIRDROPS],
   },
 }
