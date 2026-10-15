@@ -31,4 +31,4 @@ async def request_funds(faucet_url: str, address: str) -> str:
     status, body = await asyncio.to_thread(_post, f"{faucet_url}/fund", {"address": address})
     if status != 200:
         raise RuntimeError(body.get("detail") or f"Faucet error ({status})")
-    return body.get("summary", "test funds")
+    return body.get("summary", "funds")

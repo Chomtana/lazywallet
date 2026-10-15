@@ -50,13 +50,12 @@ async def test_avax_to_usdc_receives_exactly_the_signed_amount(avax_sandbox):
     assert "Swapped 1 AVAX for" in text, text
     received = await chain.token_balance(USDC, account.address)
     assert received > 1_000_000  # > $1
-    rows = {r["label"]: r["value"] for r in seen[0]["tx"]["rows"]}
-    assert rows["Receive exactly"] == f"{display_units(received, 6)} USDC"
+    assert seen[0]["tx"]["summary"]["receive"]["amount"] == display_units(received, 6)
 
 
 async def test_usdc_to_avax_with_approval(avax_sandbox):
     text, seen, chain, account = await run_swap(avax_sandbox, {"token_in": "USDC", "token_out": "AVAX", "amount": "10"}, usdc=50 * 10**6)
-    rows = {r["label"]: r["value"] for r in seen[0]["tx"]["rows"]}
-    assert f"Swapped 10 USDC for {rows['Receive exactly']}." in text, text  # the signed amount, not a gas-reduced delta
+    got = seen[0]["tx"]["summary"]["receive"]["amount"]
+    assert f"Swapped 10 USDC for {got} AVAX." in text, text  # the signed amount, not a gas-reduced delta
     assert [s["label"] for s in seen[0]["tx"]["steps"]] == ["Allow USDC", "Swap USDC → AVAX"]
     assert await chain.token_balance(USDC, account.address) == 40 * 10**6

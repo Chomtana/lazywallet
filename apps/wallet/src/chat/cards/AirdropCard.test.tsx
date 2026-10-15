@@ -48,6 +48,15 @@ describe('AirdropCard', () => {
     expect(onSend).toHaveBeenCalledWith('Buy 10 USDC of reUSD (0x5086bf358635B81D8C47C66d1C8b9E567Db70c72)')
   })
 
+  it('shows chain icons instead of a category badge or network text', () => {
+    render(<AirdropCard title="Airdrops" items={[RE]} enabled onSend={vi.fn()} />)
+    expect(screen.getByRole('img', { name: 'Ethereum' })).toBeTruthy()
+    expect(screen.getByRole('img', { name: 'Avalanche' })).toBeTruthy()
+    expect(screen.queryByText('RWA')).toBeNull()
+    expect(screen.queryByText(/Ethereum ·/)).toBeNull()
+    expect(screen.queryByText(/sandbox/i)).toBeNull()
+  })
+
   it('buttons are disabled while the agent is busy or offline', () => {
     render(<AirdropCard title="Airdrops" items={[THEO]} enabled={false} onSend={vi.fn()} />)
     expect((screen.getByText('Farm') as HTMLButtonElement).disabled).toBe(true)

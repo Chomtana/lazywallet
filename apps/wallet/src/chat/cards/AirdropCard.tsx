@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Badge } from '@/components/ui/badge'
+import { ChainIcon } from '@/components/ChainIcon'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { AirdropItem } from '@/types'
@@ -23,10 +23,12 @@ export function AirdropCard({ title, items, enabled, onSend }: Props) {
                 <span className="min-w-0">
                   <span className="flex flex-wrap items-center gap-1.5">
                     <span className="font-medium">{a.name}</span>
-                    <Badge variant={a.category === 'rwa' ? 'default' : 'secondary'}>{a.category === 'rwa' ? 'RWA' : 'other'}</Badge>
+                    {a.networks.map((n) => (
+                      <ChainIcon key={n} network={n} size={14} />
+                    ))}
                   </span>
                   <span className="block text-xs text-muted-foreground">
-                    {a.networks.join(' · ')} · <span className={cn(a.status === 'live' ? 'text-primary' : 'text-muted-foreground')}>{statusLabel(a.status)}</span>
+                    <span className={cn(a.status === 'live' ? 'text-primary' : 'text-muted-foreground')}>{statusLabel(a.status)}</span>
                   </span>
                   <span className="mt-1 block text-sm">{a.action}</span>
                 </span>
@@ -62,7 +64,6 @@ export function AirdropCard({ title, items, enabled, onSend }: Props) {
           )
         })}
       </ul>
-      <p className="mt-2 text-xs text-muted-foreground">Points only count on real mainnet. This Sandbox is a demo.</p>
     </div>
   )
 }

@@ -9,7 +9,6 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -19,7 +18,7 @@ from web3 import Web3
 from .chain import Chain, PriceSource
 from .faucet import TIMEOUT_S, _json
 from .networks import Network
-from .swaps import Step, erc20_approval, min_out, parse_slippage, swap_rows
+from .swaps import Step, SwapPlan, erc20_approval, min_out, parse_slippage, swap_rows
 from .tokens import Token, find_token
 from .transfers import NoRoute, TransferError, token_address_rows
 from .uniswap import encode_erc20_allowance
@@ -190,7 +189,7 @@ async def allowance_override(chain: Chain, token: str, owner: str, amount: int) 
             continue
         if int.from_bytes(got[:32], "big") == amount:
             return override
-    raise TransferError("I couldn't simulate this swap on the Sandbox fork (unusual token storage), so I didn't show it.")
+    raise TransferError("I couldn't simulate this swap (unusual token storage), so I didn't show it.")
 
 
 async def simulate(chain: Chain, user: str, v: Verified, override: dict | None) -> int:
@@ -199,9 +198,9 @@ async def simulate(chain: Chain, user: str, v: Verified, override: dict | None) 
         raw = await chain.simulate({"from": user, "to": ROUTER, "data": v.data, "value": v.value}, override)
         returned = decode(["uint256", "uint256"], raw)[0]
     except Exception as e:
-        raise TransferError(f"That KyberSwap route fails on the Sandbox fork right now ({e}), so I didn't show it.") from e
+        raise TransferError(f"That KyberSwap route fails in simulation right now ({e}), so I didn't show it.") from e
     if abs(returned - v.expected) * 100 > v.expected * SIM_TOLERANCE_PCT:
-        raise TransferError("KyberSwap's quote doesn't match what the swap does on the Sandbox fork, so I didn't show it. Try again.")
+        raise TransferError("KyberSwap's quote doesn't match what the swap does in simulation, so I didn't show it. Try again.")
     return returned
 
 
@@ -259,15 +258,12 @@ async def kyber_swap(client: Kyber, chain: Chain, net: Network, tin: Token, tout
 
 async def kyber_plan(
     client: Kyber, chain: Chain, net: Network, tin: Token, tout: Token, amount: int, user: str, slippage: str | None
-) -> tuple[list[Step], Callable[[float], list[dict]], str, None]:
-    """kyber_swap as propose_swap's plan: (steps, rows(fee_usd), revert hint, None)."""
+) -> SwapPlan:
+    """kyber_swap as propose_swap's plan."""
     k = await kyber_swap(client, chain, net, tin, tout, amount, user, slippage)
-
-    def rows(fee_usd: float) -> list[dict]:
-        base = swap_rows(user, tin, tout, amount, k.verified.expected, k.verified.minimum, k.label, k.impact, fee_usd, network=net.label)
-        return base + token_address_rows(tin, tout)
-
-    return k.steps, rows, f" The price probably moved more than the {k.bps / 100:g}% slippage — ask again for a fresh quote.", None
+    rows = swap_rows(user, k.label, k.impact) + token_address_rows(tin, tout)
+    hint = f" The price probably moved more than the {k.bps / 100:g}% slippage — ask again for a fresh quote."
+    return SwapPlan(k.steps, rows, hint, k.verified.expected, k.label, k.impact)
 
 
 def usd_price(client: Kyber, net: Network) -> PriceSource:

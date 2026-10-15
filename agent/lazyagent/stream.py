@@ -8,7 +8,7 @@ TOOL_LABELS = {
     "resolve_recipient": "Looking up the recipient",
     "propose_swap": "Finding the best route",
     "list_trending_tokens": "Looking up trending tokens",
-    "request_test_funds": "Getting test funds",
+    "request_test_funds": "Adding funds",
     "list_airdrops": "Checking airdrops",
     "propose_deposit": "Preparing the farm",
     "unsupported_action": THINKING,

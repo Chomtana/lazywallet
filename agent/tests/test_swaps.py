@@ -7,12 +7,15 @@ from lazyagent.swaps import (
     check_swap_funds,
     display_units,
     erc20_approval,
+    fee_text,
     gas_reserve,
+    impact_warning,
     min_out,
     parse_slippage,
     price_impact,
     route_label,
     swap_rows,
+    swap_summary,
 )
 from lazyagent.tokens import ETH, find_token
 from lazyagent.transfers import TransferError
@@ -99,21 +102,45 @@ def test_gas_reserve_and_funds():
         check_swap_funds(USDC, 10**6, 10**6, 10**14, 10**15)
 
 
-def test_swap_rows():
-    rows = swap_rows(
-        "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", ETH, USDC, 10**18, 2_358_835_338, 2_335_246_984,
-        "ETH → USDC · Uniswap v4 0.05%", 0.0012, 1.23,
-    )
+def test_swap_rows_are_only_the_details():
+    rows = swap_rows("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "ETH → USDC · Uniswap v4 0.05%", 0.0012)
     assert rows == [
         {"label": "From", "value": "0xf39F…2266"},
-        {"label": "You pay", "value": "1 ETH"},
-        {"label": "Expected", "value": "≈ 2358.83 USDC"},
-        {"label": "Minimum received", "value": "2335.24 USDC"},
         {"label": "Route", "value": "ETH → USDC · Uniswap v4 0.05%"},
         {"label": "Price impact", "value": "0.12%"},
-        {"label": "Network fee", "value": "~$1.23"},
-        {"label": "Network", "value": "Sandbox"},
     ]
+    assert swap_rows("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "Dexalot", None)[-1] == {"label": "Price impact", "value": "unknown"}
+
+
+def test_fee_text():
+    assert fee_text(1.234) == "≈ $1.23"
+    assert fee_text(0.004) == "< $0.01"
+
+
+def test_impact_warning_only_above_five_percent():
+    assert impact_warning(None) is None
+    assert impact_warning(0.05) is None
+    assert impact_warning(0.072) == "Price impact 7.2%"
+
+
+def test_swap_summary():
+    summary = swap_summary("Ethereum", ETH, USDC, 10**18, 2_358_835_338, via="Uniswap v4", fee_usd=1.234, impact=0.0012, prices=(3200.0, 1.0))
+    assert summary == {
+        "kind": "swap",
+        "network": "Ethereum",
+        "pay": {"symbol": "ETH", "amount": "1", "usd": 3200.0, "logo": ETH.logo},
+        "receive": {"symbol": "USDC", "amount": "≈ 2358.83", "usd": 2358.84, "logo": USDC.logo, "note": None},
+        "via": "Uniswap v4",
+        "fee": "≈ $1.23",
+        "warning": None,
+    }
+
+
+def test_swap_summary_exact_output_unknown_prices_and_a_warning():
+    summary = swap_summary("Avalanche", USDC, WBTC, 10**6, 1_500, via="Dexalot", fee_usd=0.01, impact=0.08, prices=(None, None), exact=True)
+    assert summary["pay"]["usd"] is None and summary["receive"]["usd"] is None
+    assert summary["receive"]["amount"] == "0.000015"
+    assert summary["warning"] == "Price impact 8.0%"
 
 
 def test_erc20_approval_for_any_spender():
@@ -124,7 +151,3 @@ def test_erc20_approval_for_any_spender():
     assert step.request["data"].startswith("0x095ea7b3") and spender[2:].lower() in step.request["data"]
     assert [s.label for s in erc20_approval(USDT, 5, 10**6, spender)] == ["Reset USDT allowance", "Allow USDT"]
 
-
-def test_swap_rows_unknown_impact():
-    rows = swap_rows("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", ETH, USDC, 10**18, 2_358_835_338, 1_179_417_669, "KyberSwap via LFJ", None, 1.23)
-    assert {"label": "Price impact", "value": "unknown"} in rows

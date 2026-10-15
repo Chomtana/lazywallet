@@ -1,6 +1,5 @@
 import { Check, ChevronDown, Download, KeyRound, ListTodo, Lock, Plus, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router'
-import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,9 +24,6 @@ export function WalletMenu({ onOpenTasks, onShowSeed, onDelete }: Props) {
       <DropdownMenuTrigger className="flex min-w-0 items-center gap-2 rounded-full border px-3 py-1.5 text-sm hover:bg-secondary">
         <span className="truncate font-medium">{active.name}</span>
         <span className="font-mono text-xs text-muted-foreground">{shortAddress(active.address)}</span>
-        <Badge variant="secondary" className="hidden sm:inline-flex">
-          Sandbox
-        </Badge>
         <ChevronDown className="size-4 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="center" className="w-72">

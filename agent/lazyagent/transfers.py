@@ -77,7 +77,7 @@ def validate(token: Token, amount: int, balance: int, eth_balance: int, gas_cost
                 f"That leaves too little for the network fee (keep ~{format_units(reserve, 18)} {native}). Try a slightly smaller amount."
             )
     elif reserve > eth_balance:
-        raise TransferError(f"You need a little {native} for the network fee. Get test funds from the Receive screen.")
+        raise TransferError(f"You need a little {native} for the network fee. Add funds from the wallet menu.")
 
 
 def build_request(token: Token, to: str, amount: int) -> dict:
@@ -88,7 +88,7 @@ def build_request(token: Token, to: str, amount: int) -> dict:
 
 
 def display_rows(
-    token: Token, amount: int, to: str, name: str | None, price: float | None, gas_cost: int, eth_price: float, network: str = "Sandbox"
+    token: Token, amount: int, to: str, name: str | None, price: float | None, gas_cost: int, eth_price: float, network: str = "Ethereum"
 ) -> list[dict]:
     human = f"{format_units(amount, token.decimals)} {token.symbol}"
     if price is not None:

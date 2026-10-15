@@ -206,7 +206,7 @@ class DexalotSandbox:
         if self.error:
             await self._retry_setup()
         if self.error:
-            raise QuoteError(503, f"Dexalot swaps are unavailable on this Sandbox ({self.error}).")
+            raise QuoteError(503, f"Dexalot swaps are unavailable right now ({self.error}).")
         pair, side, is_base = match_pair(await self.pairs(), token_in, token_out)
         decimals = pair.base_decimals if is_base else pair.quote_decimals
         query = urllib.parse.urlencode({
@@ -218,7 +218,7 @@ class DexalotSandbox:
         holding, maker = max([(await self._holding(m, token_out), m) for m in self.makers])
         if holding < out:
             symbol = pair.quote_symbol if is_base else pair.base_symbol
-            raise QuoteError(409, f"Dexalot doesn't have enough {symbol} on Sandbox for that size — try a smaller amount.")
+            raise QuoteError(409, f"Dexalot doesn't have enough {symbol} for that size — try a smaller amount.")
         now = (await self.w3.eth.get_block("pending"))["timestamp"]  # Anvil mines only on txs: `latest` goes stale while idle
         order = build_order(maker, taker, token_in, token_out, amount_in, out, now)
         return {

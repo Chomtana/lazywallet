@@ -118,7 +118,7 @@ def test_display_rows():
         {"label": "To", "value": "Alice (0x7099…79C8)"},
         {"label": "Amount", "value": "0.1 ETH ($320.00)"},
         {"label": "Network fee", "value": "~$0.07"},
-        {"label": "Network", "value": "Sandbox"},
+        {"label": "Network", "value": "Ethereum"},
     ]
 
 

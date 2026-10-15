@@ -53,7 +53,8 @@ async def test_farm_theo_on_a_fork(fork_rpc):
         "Allow USDC", "Allow Uniswap router", "Swap USDC → thUSD", "Allow thUSD", "Stake thUSD → sthUSD",
     ]
     rows = {r["label"]: r["value"] for r in seen[0]["tx"]["rows"]}
-    assert rows["Swap"] == "USDC → thUSD · Uniswap v4 0.01%"
+    assert rows["Route"] == "USDC → thUSD · Uniswap v4 0.01%"
+    assert seen[0]["tx"]["summary"]["swap"]["via"] == "Uniswap v4"
     assert await chain.token_balance(USDC, account.address) == 400 * 10**6
     assert await chain.token_balance(STHUSD, account.address) > 0
     assert await chain.token_balance(THUSD, account.address) <= 100 * 10**6 * 15 // 1000  # ≤ 1.5% of the quote left
@@ -77,7 +78,7 @@ async def test_farm_avant_on_a_fork(avax_fork_rpc):
                         approval_timeout=120, avalanche=avax, kyber=kyber)
     result = await tools.propose_deposit({"farm": "avant", "amount": "100"})
     text = result["content"][0]["text"]
-    assert "Staked" in text and "into savUSD" in text and "Avalanche (Sandbox)" in text, text
+    assert "Staked" in text and "into savUSD" in text and "Confirmed on Avalanche," in text, text
     assert [s["label"] for s in seen[0]["tx"]["steps"]] == ["Allow USDC", "Swap USDC → avUSD", "Allow avUSD", "Stake avUSD → savUSD"]
     assert await avax.token_balance(AVAX_USDC, account.address) == 400 * 10**6
     assert await avax.token_balance(SAVUSD, account.address) > 0

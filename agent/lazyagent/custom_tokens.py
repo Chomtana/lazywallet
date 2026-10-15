@@ -12,7 +12,7 @@ from web3 import Web3
 from .chain import Chain
 from .kyber import http_json
 from .networks import Network
-from .tokens import Token
+from .tokens import Token, logo_url
 from .transfers import TransferError
 
 GECKO_API = "https://api.geckoterminal.com/api/v2"
@@ -29,7 +29,7 @@ def _saved(entry: dict) -> Token | None:
         return None
     if not ADDRESS.match(address) or not symbol or len(symbol) > 32 or not 0 <= decimals <= 255:
         return None
-    return Token(symbol, Web3.to_checksum_address(address), decimals, custom=True)
+    return Token(symbol, Web3.to_checksum_address(address), decimals, custom=True, logo=logo_url(entry.get("logo")))
 
 
 def merge(net: Network, saved: list[dict]) -> Network:
@@ -67,23 +67,23 @@ async def read_token(chain: Chain, address: str) -> Token | None:
     return Token(symbol, Web3.to_checksum_address(address), decimals, custom=True)
 
 
-def pick_pool(body: dict, symbol: str) -> tuple[str, str] | None:
-    """(address, symbol) of the base token with exactly this symbol in the deepest pool, if that pool holds ≥ $10k."""
+def pick_pool(body: dict, symbol: str) -> tuple[str, str, str | None] | None:
+    """(address, symbol, logo) of the base token with exactly this symbol in the deepest pool, if that pool holds ≥ $10k."""
     try:
         tokens = {t["id"]: t["attributes"] for t in body.get("included") or [] if t.get("type") == "token"}
-        best: tuple[float, str, str] | None = None
+        best: tuple[float, str, str, str | None] | None = None
         for pool in body.get("data") or []:
             base = tokens.get(pool["relationships"]["base_token"]["data"]["id"])
             if not base or str(base.get("symbol", "")).lower() != symbol.strip().lower():
                 continue
             reserve = float(pool["attributes"].get("reserve_in_usd") or 0)
             if best is None or reserve > best[0]:
-                best = (reserve, base["address"], base["symbol"])
+                best = (reserve, base["address"], base["symbol"], logo_url(base.get("image_url")))
     except (KeyError, TypeError, ValueError, AttributeError):
         return None
     if best is None or best[0] < MIN_RESERVE_USD or not ADDRESS.match(best[1]):
         return None
-    return best[1], best[2]
+    return best[1], best[2], best[3]
 
 
 class Search(Protocol):
@@ -116,13 +116,13 @@ async def discover(text: str, net: Network, chain: Chain, search: Search | None)
     if found is None:
         return None
     token = _not_an_impostor(await read_token(chain, found[0]), net)
-    return _not_an_impostor(replace(token, symbol=found[1], matched_by_symbol=True), net) if token else None
+    return _not_an_impostor(replace(token, symbol=found[1], matched_by_symbol=True, logo=found[2]), net) if token else None
 
 
 def _not_an_impostor(token: Token | None, net: Network) -> Token | None:
     """A discovered token may not use a built-in's symbol on the same network (e.g. a fake "USDC")."""
     if token and any(not t.custom and t.symbol.upper() == token.symbol.upper() for t in net.tokens):
         raise TransferError(
-            f"That token calls itself {token.symbol} but isn't the real {token.symbol} on {net.name} Sandbox, so I won't trade it."
+            f"That token calls itself {token.symbol} but isn't the real {token.symbol} on {net.name}, so I won't trade it."
         )
     return token

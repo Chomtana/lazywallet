@@ -93,11 +93,9 @@ export function QrSheet({ open, onOpenChange, address, onConnect }: Props) {
                 <Copy /> Copy address
               </Button>
               <Button className="w-full" onClick={fund} disabled={funding}>
-                <Droplets /> {funding ? 'Adding test funds…' : 'Get test funds'}
+                <Droplets /> {funding ? 'Adding funds…' : 'Add funds'}
               </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                Sandbox · Ethereum mainnet fork. Don't send real funds here.
-              </p>
+              <p className="text-center text-xs text-muted-foreground">Demo network</p>
             </TabsContent>
             <TabsContent value="connect" className="space-y-4 pt-4">
               <p className="text-sm text-muted-foreground">

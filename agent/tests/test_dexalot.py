@@ -50,10 +50,9 @@ def test_erc20_in_adds_sized_approval_only_when_needed():
 
 
 def test_rows():
-    rows = dexalot_rows("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", AVAX, USDC, 10**18, 9_574_000, 0.01, "Avalanche (Sandbox)")
+    rows = dexalot_rows("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", AVAX, USDC, 10**18, 9_574_000)
     assert {r["label"]: r["value"] for r in rows} == {
-        "From": "0xf39F…2266", "You pay": "1 AVAX", "Receive exactly": "9.574 USDC", "Rate": "1 AVAX = 9.574 USDC",
-        "Route": "Dexalot · sandbox-signed at live price", "Network fee": "~$0.01", "Network": "Avalanche (Sandbox)",
+        "From": "0xf39F…2266", "Rate": "1 AVAX = 9.574 USDC", "Route": "Dexalot · signed quote at live price",
     }
     assert asset_of(AVAX) == NATIVE and asset_of(USDC) == USDC.address
 

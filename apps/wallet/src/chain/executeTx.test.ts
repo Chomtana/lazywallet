@@ -68,7 +68,7 @@ describe('executeSteps', () => {
 
 describe('statusPatch and progressText', () => {
   it('keeps single-step wording', () => {
-    expect(statusPatch({ hashes: [HASH], hash: HASH, status: 'success' }, ONE)).toEqual({ state: 'success', text: 'Confirmed on Ethereum (Sandbox).', hash: HASH })
+    expect(statusPatch({ hashes: [HASH], hash: HASH, status: 'success' }, ONE)).toEqual({ state: 'success', text: 'Confirmed on Ethereum.', hash: HASH })
     expect(statusPatch({ hashes: [HASH], hash: HASH, status: 'reverted', failedStep: 0 }, ONE)).toEqual({
       state: 'failed',
       text: 'Transaction reverted.',
@@ -85,7 +85,7 @@ describe('statusPatch and progressText', () => {
 
   it('shows progress only for multi-step cards', () => {
     expect(progressText(1, THREE)).toBe('Step 2 of 3: Allow Uniswap router…')
-    expect(progressText(0, ONE)).toBe('Submitting to Ethereum (Sandbox)…')
+    expect(progressText(0, ONE)).toBe('Submitting to Ethereum…')
   })
 
   it('waits on the chain of the request and names it', async () => {
@@ -93,8 +93,8 @@ describe('statusPatch and progressText', () => {
     const wait = vi.fn(async () => 'success' as const)
     await executeSteps(avax, { send: async () => HASH, wait })
     expect(wait).toHaveBeenCalledWith(HASH, 43114)
-    expect(statusPatch({ hashes: [HASH], hash: HASH, status: 'success' }, avax).text).toBe('Confirmed on Avalanche (Sandbox).')
-    expect(progressText(0, avax)).toBe('Submitting to Avalanche (Sandbox)…')
+    expect(statusPatch({ hashes: [HASH], hash: HASH, status: 'success' }, avax).text).toBe('Confirmed on Avalanche.')
+    expect(progressText(0, avax)).toBe('Submitting to Avalanche…')
   })
 })
 
