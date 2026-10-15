@@ -6,6 +6,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from .chain import Chain, RpcChain
 from .claude import connect_claude
 from .config import load_settings
+from .dexalot import Quotes, SandboxQuotes
 from .faucet import request_funds
 from .session import ClientFactory, Session
 from .tools import Fund
@@ -17,6 +18,8 @@ def create_app(
     allowed_origins: tuple[str, ...],
     approval_timeout: float = 300,
     fund: Fund | None = None,
+    avalanche: Chain | None = None,
+    dexalot: Quotes | None = None,
 ) -> FastAPI:
     app = FastAPI(title="LazyWallet Agent")
 
@@ -30,7 +33,7 @@ def create_app(
             await ws.close(code=1008)
             return
         await ws.accept()
-        session = Session(ws.send_json, chain, client_factory, approval_timeout, fund)
+        session = Session(ws.send_json, chain, client_factory, approval_timeout, fund, avalanche=avalanche, dexalot=dexalot)
         try:
             while True:
                 try:
@@ -57,6 +60,17 @@ def main() -> None:
     async def fund(address: str) -> str:
         return await request_funds(settings.faucet_url, address)
 
-    app = create_app(RpcChain(settings.rpc_url), factory, settings.allowed_origins, fund=fund)
-    print(f"LazyWallet agent on ws://127.0.0.1:{settings.port}/ws (model {settings.model}, chain {settings.rpc_url})", flush=True)
+    app = create_app(
+        RpcChain(settings.rpc_url),
+        factory,
+        settings.allowed_origins,
+        fund=fund,
+        avalanche=RpcChain(settings.avax_rpc_url, poa=True),
+        dexalot=SandboxQuotes(settings.faucet_url),
+    )
+    print(
+        f"LazyWallet agent on ws://127.0.0.1:{settings.port}/ws (model {settings.model}, "
+        f"Ethereum {settings.rpc_url}, Avalanche {settings.avax_rpc_url})",
+        flush=True,
+    )
     uvicorn.run(app, host="127.0.0.1", port=settings.port)

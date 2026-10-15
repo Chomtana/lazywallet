@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from lazyagent.server import create_app
+from lazyagent.session import Session
 
 ORIGIN = "http://localhost:5174"
 ME = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
@@ -121,3 +122,20 @@ def test_tx_started_keeps_the_proposal_alive_past_the_approval_timeout():
         ws.send_json({"type": "tx_result", "id": confirm["id"], "outcome": "approved", "hash": "0xabc", "status": "success"})
         assert ws.receive_json()["type"] == "balances"
         assert "Sent 0.1 ETH to Alice" in ws.receive_json()["text"]
+
+
+async def test_session_passes_avalanche_to_tools():
+    async def factory(tools):
+        raise AssertionError("not used")
+
+    avax = FakeChain()
+    s = Session(lambda m: None, FakeChain(), factory, avalanche=avax, dexalot=object())
+    assert s.tools.chains["avalanche"] is avax and s.tools.dexalot is not None
+
+
+def test_create_app_accepts_avalanche():
+    async def factory(tools):
+        raise AssertionError("not used")
+
+    app = create_app(FakeChain(), factory, (ORIGIN,), avalanche=FakeChain())
+    assert app.title == "LazyWallet Agent"

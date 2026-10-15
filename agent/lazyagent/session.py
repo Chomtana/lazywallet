@@ -5,6 +5,7 @@ from contextlib import suppress
 from typing import Any, Protocol
 
 from .chain import Chain
+from .dexalot import Quotes
 from .proposals import Proposals
 from .stream import translate
 from .tools import Fund, Send, WalletContext, WalletTools
@@ -32,12 +33,14 @@ class Session:
         client_factory: ClientFactory,
         approval_timeout: float = 300,
         fund: Fund | None = None,
+        avalanche: Chain | None = None,
+        dexalot: Quotes | None = None,
     ):
         self._send = send
         self._factory = client_factory
         self.ctx = WalletContext()
         self.proposals = Proposals()
-        self.tools = WalletTools(chain, send, self.ctx, self.proposals, approval_timeout, fund)
+        self.tools = WalletTools(chain, send, self.ctx, self.proposals, approval_timeout, fund, avalanche=avalanche, dexalot=dexalot)
         self._client: AgentClient | None = None
         self._turn: asyncio.Task | None = None
 
