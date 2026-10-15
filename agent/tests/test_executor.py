@@ -1,8 +1,10 @@
 from eth_abi import decode
+from eth_abi import encode as abi_encode
+from fakes import FakeChain
 
-from lazyagent.executor import dexalot_calls, uniswap_calls
+from lazyagent.executor import Executor, Target, dexalot_calls, uniswap_calls
 from lazyagent.networks import AVALANCHE, ETHEREUM
-from lazyagent.scheduler import SWAPPER, Order, wrapped_token
+from lazyagent.scheduler import NEXT_ID, SWAPPER, Order, encode_get_order, wrapped_token
 from lazyagent.tokens import find_token
 from lazyagent.uniswap import PERMIT2, UNIVERSAL_ROUTER, WETH_DEPOSIT, ZERO, Hop, Route
 
@@ -58,3 +60,52 @@ def test_dexalot_native_out_is_wrapped_to_wavax():
     calls = dexalot_calls(order(AUSDC.address, WAVAX.address), quote(AUSDC.address, ZERO, 10**6, 5 * 10**16), WAVAX.address)
     assert [c[0] for c in calls] == [AUSDC.address, MAKER, WAVAX.address]
     assert calls[2] == (WAVAX.address, 5 * 10**16, WETH_DEPOSIT)
+
+
+ORDER_ABI = "(address,address,address,uint256,uint256,uint64,uint64,uint32,uint32,uint64,bool)"
+
+
+class OrdersChain(FakeChain):
+    """Two due orders (ids 0 and 1); FakeChain keys responses by selector only, so answer by full calldata."""
+
+    async def call(self, to, data, gas=None):
+        if data == NEXT_ID:
+            return (2).to_bytes(32, "big")
+        for i in (0, 1):
+            if data == encode_get_order(i):
+                return abi_encode([ORDER_ABI], [("0x" + "ab" * 20, USDC.address, WETH.address, 10**6, 1, 0, 0, 1, 0, 0, False)])
+        return bytes(32)
+
+
+class FakeExecutor(Executor):
+    def __init__(self, targets, fail_ids=()):
+        super().__init__(targets, None)
+        self.fail_ids, self.sent = set(fail_ids), []
+
+    async def build_calls(self, t, order, now):
+        if order.id in self.fail_ids:
+            raise RuntimeError("price below minOut")
+        return []
+
+    async def _send(self, t, order_id, calls):
+        self.sent.append(order_id)
+        return f"0x{order_id}"
+
+
+async def test_tick_skips_failing_order_and_runs_the_next():
+    ex = FakeExecutor([Target(ETHEREUM, OrdersChain(), None, None)], fail_ids={0})
+    assert await ex.tick() == ["0x1"]
+    assert ex.sent == [1]
+
+
+async def test_tick_survives_unreachable_chain():
+    down = FakeChain()
+    down.fail = True
+
+    async def boom(*a, **k):
+        raise ConnectionError("connection refused")
+
+    down.call = boom
+    down.block_timestamp = boom
+    ex = FakeExecutor([Target(ETHEREUM, down, None, None), Target(AVALANCHE, OrdersChain(), None, None)])
+    assert await ex.tick() == ["0x0", "0x1"]

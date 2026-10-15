@@ -9,6 +9,7 @@
     "test": "pnpm -r --if-present run test",
     "dev:sandbox": "uv run --directory anvil sandbox",
     "dev:agent": "uv run --directory agent agent",
+    "dev:executor": "uv run --directory agent executor",
     "test:contracts": "forge test --root contracts",
     "test:py": "uv run --directory anvil pytest -q && uv run --directory agent pytest -q"
   }

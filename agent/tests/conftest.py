@@ -12,6 +12,17 @@ TEST_PORT = 8646
 AVAX_TEST_PORT = 8649
 SANDBOX_TEST_PORT = 8650
 AVAX_PUBLIC_RPC = "https://api.avax.network/ext/bc/C/rpc"
+DEV_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+
+
+def deploy_scheduler(rpc: str) -> None:
+    """Idempotent CREATE2 deploy of contracts/ onto a test fork (same as `pnpm dev:sandbox` does)."""
+    from lazyagent.scheduler import SCHEDULER
+
+    if Web3(HTTPProvider(rpc)).eth.get_code(SCHEDULER):
+        return
+    cmd = ["forge", "script", "script/Deploy.s.sol:Deploy", "--rpc-url", rpc, "--broadcast", "--private-key", DEV_KEY]
+    subprocess.run(cmd, cwd=ROOT / "contracts", check=True, capture_output=True)
 
 
 def _wait(check, what: str, timeout: float = 120) -> None:

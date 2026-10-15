@@ -13,6 +13,7 @@ dependencies = [
 
 [project.scripts]
 agent = "lazyagent.server:main"
+executor = "lazyagent.executor:main"
 
 [dependency-groups]
 dev = ["pytest>=9.1", "pytest-asyncio>=1.4", "httpx2>=2.13"]
