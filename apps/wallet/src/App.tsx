@@ -1,9 +1,28 @@
-import { Button } from '@/components/ui/button'
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
+import { Toaster } from '@/components/ui/sonner'
+import { GuardedLayout } from '@/routes/GuardedLayout'
+import Unlock from '@/routes/Unlock'
+import WalletPage from '@/routes/WalletPage'
+import Welcome from '@/routes/Welcome'
+import { WalletProvider } from '@/state/WalletProvider'
+
+const router = createBrowserRouter([
+  {
+    element: <GuardedLayout />,
+    children: [
+      { path: '/', element: <WalletPage /> },
+      { path: '/welcome', element: <Welcome /> },
+      { path: '/unlock', element: <Unlock /> },
+    ],
+  },
+  { path: '*', element: <Navigate to="/" replace /> },
+])
 
 export default function App() {
   return (
-    <div className="flex min-h-dvh items-center justify-center">
-      <Button size="lg">LazyWallet</Button>
-    </div>
+    <WalletProvider>
+      <RouterProvider router={router} />
+      <Toaster theme="dark" position="top-center" />
+    </WalletProvider>
   )
 }
