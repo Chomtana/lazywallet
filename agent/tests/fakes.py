@@ -134,3 +134,25 @@ class FakeSearch:
     async def pools(self, network, query):
         self.calls.append((network, query))
         return self.body
+
+
+class FakeTrendingSource:
+    """Stands in for GeckoTerminal so tests never hit the network."""
+
+    def __init__(self, pools=None, tokens=None):
+        self.pools = pools if pools is not None else []
+        self.token_bodies = tokens or {}  # network -> tokens/multi JSON
+        self.calls: list[tuple] = []
+        self.fail = False
+
+    async def meme_pools(self):
+        self.calls.append(("meme_pools",))
+        if self.fail:
+            raise ConnectionError("HTTP Error 429: Too Many Requests")
+        return self.pools
+
+    async def tokens(self, network, addresses):
+        self.calls.append(("tokens", network, tuple(addresses)))
+        if self.fail:
+            raise ConnectionError("HTTP Error 429: Too Many Requests")
+        return self.token_bodies.get(network, {})

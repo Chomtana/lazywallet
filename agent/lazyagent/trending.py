@@ -2,10 +2,15 @@
 Ethereum + Avalanche. Research: docs/research/2026-10-15-avalanche-trending-tokens.md.
 Adding a category: an entry in CATEGORY_NETWORKS, a fetcher in TrendingTokens, a line in TRENDING_TOOL's description."""
 
+import asyncio
 import html
 import json
+import time
+import urllib.request
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from typing import Protocol
 
 from .tokens import AVAX_TOKENS
 
@@ -308,3 +313,76 @@ def rank_rwas(items: list[Trending], coins: list[RwaCoin]) -> list[Trending]:
 def load_rwa_snapshot(path: Path = RWA_SNAPSHOT) -> list[RwaCoin]:
     body = json.loads(path.read_text())
     return [RwaCoin(**c) for c in body["coins"]]
+
+
+# --- I/O ---
+
+
+def _get(url: str):
+    req = urllib.request.Request(url, headers={"accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=TIMEOUT_S) as res:
+        return json.loads(res.read())
+
+
+class TrendingSource(Protocol):
+    async def meme_pools(self) -> list[Pool]: ...
+    async def tokens(self, network: str, addresses: list[str]) -> dict: ...
+
+
+class GeckoTerminalSource:
+    def __init__(self, base: str = GT_API):
+        self.base = base
+
+    async def meme_pools(self) -> list[Pool]:
+        """Trending pools across all Avalanche DEXs, plus Arena DEX's busiest pools (where memecoins graduate to)."""
+        trending = await asyncio.to_thread(_get, f"{self.base}/avax/trending_pools?include=base_token,dex")
+        arena = await asyncio.to_thread(_get, f"{self.base}/avax/dexes/arena-dex/pools?sort=h24_volume_usd_desc&include=base_token,dex")
+        return parse_pools(trending, trending=True) + parse_pools(arena)
+
+    async def tokens(self, network: str, addresses: list[str]) -> dict:
+        if not addresses:
+            return {}
+        url = f"{self.base}/{GT_NETWORKS[network]}/tokens/multi/{','.join(addresses[:GT_BATCH])}?include=top_pools"
+        return await asyncio.to_thread(_get, url)
+
+
+class TrendingTokens:
+    """Ranked lists per (category, network), cached for 60 s. Errors propagate and are never cached."""
+
+    def __init__(
+        self,
+        source: TrendingSource,
+        rwa_coins: Callable[[], list[RwaCoin]] = load_rwa_snapshot,
+        ttl: float = TTL_S,
+        clock: Callable[[], float] = time.monotonic,
+    ):
+        self.source = source
+        self.rwa_coins = rwa_coins
+        self.ttl = ttl
+        self.clock = clock
+        self._cache: dict[tuple[str, str | None], tuple[float, list[Trending]]] = {}
+        # one fetcher per CATEGORY_NETWORKS key
+        self._fetchers: dict[str, Callable[[str | None], Awaitable[list[Trending]]]] = {"meme": self._memes, "rwa": self._rwas}
+
+    async def fetch(self, category: str = "meme", network: str | None = None) -> list[Trending]:
+        key = (category, network)
+        now = self.clock()
+        hit = self._cache.get(key)
+        if hit is not None and now - hit[0] < self.ttl:
+            return hit[1]
+        items = await self._fetchers[category](network)
+        self._cache[key] = (now, items)
+        return items
+
+    async def _memes(self, network: str | None) -> list[Trending]:
+        return rank_memes(await self.source.meme_pools())
+
+    async def _rwas(self, network: str | None) -> list[Trending]:
+        coins = self.rwa_coins()
+        items: list[Trending] = []
+        for net in [network] if network else CATEGORY_NETWORKS["rwa"]:
+            items += parse_tokens(await self.source.tokens(net, rwa_candidates(coins, net)), net)
+        return rank_rwas(items, coins)
+
+
+TRENDING = TrendingTokens(GeckoTerminalSource())
