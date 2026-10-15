@@ -1,10 +1,12 @@
-import { useState } from 'react'
-import { BookUser, Zap } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { BookUser, QrCode, Zap } from 'lucide-react'
 import { ChatView } from '@/chat/ChatView'
 import { InputBar } from '@/chat/InputBar'
 import { useChat } from '@/chat/useChat'
 import { AddressBookSheet } from '@/components/AddressBookSheet'
+import { ConnectedBar } from '@/components/ConnectedBar'
 import { DeleteWalletDialog } from '@/components/DeleteWalletDialog'
+import { QrSheet } from '@/components/QrSheet'
 import { ShowSeedDialog } from '@/components/ShowSeedDialog'
 import { TasksSheet } from '@/components/TasksSheet'
 import { TopBar } from '@/components/TopBar'
@@ -12,12 +14,15 @@ import { Button } from '@/components/ui/button'
 import { WalletMenu } from '@/components/WalletMenu'
 import { KEYS } from '@/lib/storage'
 import { useStored } from '@/lib/useStored'
-import { simulateTrigger } from '@/mock/agent'
+import { say, simulateTrigger } from '@/mock/agent'
 import { DEFAULT_CONTACTS } from '@/mock/fixtures'
+import { dappRequest } from '@/mock/walletconnect'
 import { useWallet } from '@/state/wallet-context'
-import type { Contact, Task } from '@/types'
+import type { Contact, DappInfo, Task } from '@/types'
 
-type Panel = 'contacts' | 'tasks' | 'seed' | 'delete' | null
+type Panel = 'qr' | 'contacts' | 'tasks' | 'seed' | 'delete' | null
+
+const DAPP_REQUEST_DELAY_MS = 3000
 
 export default function WalletPage() {
   const { active } = useWallet()
@@ -25,6 +30,8 @@ export default function WalletPage() {
   const [tasks, setTasks] = useStored<Task[]>(KEYS.tasks, [])
   const [speakEnabled, setSpeakEnabled] = useStored<boolean>(KEYS.speak, true)
   const [panel, setPanel] = useState<Panel>(null)
+  const [session, setSession] = useState<DappInfo | null>(null)
+  const requestTimer = useRef<number | undefined>(undefined)
   const chat = useChat({ contacts, speakEnabled, onTask: (t) => setTasks((prev) => [...prev, t]) })
   const activeTasks = tasks.filter((t) => t.status === 'active').length
   const panelProps = (p: Exclude<Panel, null>) => ({
@@ -32,11 +39,31 @@ export default function WalletPage() {
     onOpenChange: (v: boolean) => setPanel(v ? p : null),
   })
 
+  useEffect(() => () => window.clearTimeout(requestTimer.current), [])
+
+  function connect(dapp: DappInfo) {
+    setSession(dapp)
+    chat.deliver({ messages: [say(`Connected to ${dapp.name}. I'll explain anything it asks you to sign.`)] })
+    window.clearTimeout(requestTimer.current)
+    requestTimer.current = window.setTimeout(() => chat.deliver(dappRequest(dapp)), DAPP_REQUEST_DELAY_MS)
+  }
+
+  function disconnect() {
+    window.clearTimeout(requestTimer.current)
+    if (session) chat.deliver({ messages: [say(`Disconnected from ${session.name}.`)] })
+    setSession(null)
+  }
+
   if (!active) return null
 
   return (
     <div className="flex h-dvh flex-col">
       <TopBar
+        left={
+          <Button variant="ghost" size="icon" aria-label="Receive or connect dApp" onClick={() => setPanel('qr')}>
+            <QrCode />
+          </Button>
+        }
         center={
           <WalletMenu
             onOpenTasks={() => setPanel('tasks')}
@@ -70,8 +97,10 @@ export default function WalletPage() {
             {activeTasks} active {activeTasks === 1 ? 'task' : 'tasks'}
           </button>
         )}
+        {session && <ConnectedBar dapp={session} onDisconnect={disconnect} />}
         <InputBar onSend={chat.send} speakEnabled={speakEnabled} onToggleSpeak={() => setSpeakEnabled((v) => !v)} />
       </div>
+      <QrSheet {...panelProps('qr')} address={active.address} onConnect={connect} />
       <AddressBookSheet {...panelProps('contacts')} contacts={contacts} onChange={setContacts} />
       <TasksSheet {...panelProps('tasks')} tasks={tasks} onChange={setTasks} />
       <ShowSeedDialog {...panelProps('seed')} />
