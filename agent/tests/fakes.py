@@ -123,3 +123,13 @@ class FakeKyber:
         native = summary["tokenIn"].lower() == NATIVE.lower()
         return {"routerAddress": ROUTER, "data": swap_data(desc), "transactionValue": str(amount if native else 0),
                 "amountOut": str(self.out), "gas": "180000"}
+
+
+class FakeSearch:
+    def __init__(self, body: dict | None = None):
+        self.body = body or {"data": [], "included": []}
+        self.calls: list[tuple[str, str]] = []
+
+    async def pools(self, network, query):
+        self.calls.append((network, query))
+        return self.body
