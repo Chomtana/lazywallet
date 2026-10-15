@@ -120,3 +120,21 @@ async def test_chain_quoter_caps_gas_so_empty_pools_cannot_sweep_the_tick_range(
     chain = RecordingChain()
     assert await ChainQuoter(chain).quote(Route((ZERO, USDC), (Hop(500, 10),)), 10**18) == 42
     assert chain.calls == [QUOTE_GAS] and QUOTE_GAS == 1_000_000
+
+
+def test_encode_swap_wrap_output_takes_to_router_then_wraps_to_caller():
+    from lazyagent.uniswap import CONTRACT_BALANCE, TAKE, V4_SWAP, WRAP_ETH
+
+    usdc = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+    route = Route((usdc, ZERO), (Hop(500, 10),))
+    data = encode_swap(route, 10**6, 123, 999, wrap_output=True)
+    commands, inputs, deadline = decode(["bytes", "bytes[]", "uint256"], bytes.fromhex(data[10:]))
+    assert commands == bytes([V4_SWAP, WRAP_ETH]) and deadline == 999
+    actions, params = decode(["bytes", "bytes[]"], inputs[0])
+    assert actions[-1] == TAKE
+    taken = decode(["address", "address", "uint256"], params[2])
+    assert (taken[0].lower(), taken[1].lower(), taken[2]) == (ZERO, "0x0000000000000000000000000000000000000002", 0)
+    wrapped = decode(["address", "uint256"], inputs[1])
+    assert (wrapped[0].lower(), wrapped[1]) == ("0x0000000000000000000000000000000000000001", CONTRACT_BALANCE)
+    # default output is unchanged (matches the verified recipe tests above)
+    assert encode_swap(route, 10**6, 123, 999) == encode_swap(route, 10**6, 123, 999, wrap_output=False)

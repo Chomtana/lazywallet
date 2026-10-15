@@ -23,6 +23,12 @@ QUOTE_GAS = 1_000_000
 
 V4_SWAP = 0x10
 SWAP_EXACT_IN_SINGLE, SWAP_EXACT_IN, SETTLE_ALL, TAKE_ALL = 0x06, 0x07, 0x0C, 0x0F
+TAKE = 0x0E
+WRAP_ETH = 0x0B  # Universal Router command
+MSG_SENDER = "0x0000000000000000000000000000000000000001"
+ADDRESS_THIS = "0x0000000000000000000000000000000000000002"
+CONTRACT_BALANCE = 1 << 255
+OPEN_DELTA = 0
 POOL_KEY = "(address,address,uint24,int24,address)"
 PATH_KEY = "(address,uint24,int24,address,bytes)"
 WETH_DEPOSIT = "0xd0e30db0"
@@ -67,18 +73,29 @@ def _path(route: Route) -> list[tuple]:
     return [(route.currencies[i + 1], h.fee, h.tick_spacing, ZERO, b"") for i, h in enumerate(route.hops)]
 
 
-def encode_swap(route: Route, amount_in: int, min_out: int, deadline: int) -> str:
+def encode_swap(route: Route, amount_in: int, min_out: int, deadline: int, wrap_output: bool = False) -> str:
+    """wrap_output (route must end in native ETH): TAKE the ETH into the router, then WRAP_ETH all of it to the caller
+    as WETH — for the scheduler's Swapper, whose orders pay out WETH."""
     cin, cout = route.currencies[0], route.currencies[-1]
     if len(route.hops) == 1:
         key = pool_key(cin, cout, route.hops[0])
         swap = encode([f"({POOL_KEY},bool,uint128,uint128,bytes)"], [(key, cin == key[0], amount_in, min_out, b"")])
-        actions = bytes([SWAP_EXACT_IN_SINGLE, SETTLE_ALL, TAKE_ALL])
+        first = SWAP_EXACT_IN_SINGLE
     else:
         swap = encode([f"(address,{PATH_KEY}[],uint128,uint128)"], [(cin, _path(route), amount_in, min_out)])
-        actions = bytes([SWAP_EXACT_IN, SETTLE_ALL, TAKE_ALL])
-    params = [swap, encode(["address", "uint256"], [cin, amount_in]), encode(["address", "uint256"], [cout, min_out])]
-    v4_input = encode(["bytes", "bytes[]"], [actions, params])
-    return _call("execute(bytes,bytes[],uint256)", ["bytes", "bytes[]", "uint256"], [bytes([V4_SWAP]), [v4_input], deadline])
+        first = SWAP_EXACT_IN
+    settle = encode(["address", "uint256"], [cin, amount_in])
+    if wrap_output:
+        assert cout == ZERO, "wrap_output needs a route ending in native ETH"
+        actions = bytes([first, SETTLE_ALL, TAKE])
+        take = encode(["address", "address", "uint256"], [cout, ADDRESS_THIS, OPEN_DELTA])
+        commands, extra = bytes([V4_SWAP, WRAP_ETH]), [encode(["address", "uint256"], [MSG_SENDER, CONTRACT_BALANCE])]
+    else:
+        actions = bytes([first, SETTLE_ALL, TAKE_ALL])
+        take = encode(["address", "uint256"], [cout, min_out])
+        commands, extra = bytes([V4_SWAP]), []
+    v4_input = encode(["bytes", "bytes[]"], [actions, [swap, settle, take]])
+    return _call("execute(bytes,bytes[],uint256)", ["bytes", "bytes[]", "uint256"], [commands, [v4_input, *extra], deadline])
 
 
 def encode_quote(route: Route, amount_in: int) -> str:
