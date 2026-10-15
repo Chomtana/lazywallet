@@ -557,7 +557,7 @@ def build_mcp_server(t: WalletTools):
             tool(*TRENDING_TOOL)(t.list_trending_tokens),
             tool(
                 "unsupported_action",
-                "Use for bridging, scheduling, price alerts, dApps or anything other than balances, sends, swaps and test funds.",
+                "Use for bridging, airdrops, scheduling, price alerts, dApps or anything other than balances, sends, swaps and test funds.",
                 {"type": "object", "properties": {"action": {"type": "string"}}, "required": ["action"]},
             )(t.unsupported_action),
         ],
