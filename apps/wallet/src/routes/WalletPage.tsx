@@ -3,7 +3,7 @@ import { BookUser, QrCode, Zap } from 'lucide-react'
 import { needsFunds } from '@/chain/portfolio'
 import { usePortfolioUsd } from '@/chain/usePortfolioUsd'
 import { ChatView } from '@/chat/ChatView'
-import { GetFundsButton } from '@/chat/GetFundsButton'
+import { FUND_PROMPT, GetFundsButton } from '@/chat/GetFundsButton'
 import { InputBar } from '@/chat/InputBar'
 import { QuickActionBar } from '@/chat/QuickActionBar'
 import { useAgentChat } from '@/agent/useAgentChat'
@@ -129,7 +129,7 @@ export default function WalletPage() {
         <QuickActionBar onPick={(t) => chat.send(t)} disabled={!chat.online} />
         <InputBar onSend={chat.send} speakEnabled={speakEnabled} onToggleSpeak={() => setSpeakEnabled((v) => !v)} />
       </div>
-      <QrSheet {...panelProps('qr')} address={active.address} onConnect={connect} />
+      <QrSheet {...panelProps('qr')} address={active.address} onConnect={connect} onAddFunds={chat.online ? () => chat.send(FUND_PROMPT) : undefined} />
       <AddressBookSheet {...panelProps('contacts')} contacts={contacts} onChange={setContacts} />
       <TasksSheet {...panelProps('tasks')} tasks={tasks} onChange={setTasks} />
       <ShowSeedDialog {...panelProps('seed')} />
