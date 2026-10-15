@@ -74,9 +74,25 @@ export default function WalletPage() {
           />
         }
         right={
-          <Button variant="ghost" size="icon" className={TOPBAR_BUTTON} aria-label="Address book" onClick={() => setPanel('contacts')}>
-            <BookUser />
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`relative ${TOPBAR_BUTTON}`}
+              aria-label={`Scheduled tasks (${activeTasks} active)`}
+              onClick={() => setPanel('tasks')}
+            >
+              <Zap />
+              {activeTasks > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                  {activeTasks}
+                </span>
+              )}
+            </Button>
+            <Button variant="ghost" size="icon" className={TOPBAR_BUTTON} aria-label="Address book" onClick={() => setPanel('contacts')}>
+              <BookUser />
+            </Button>
+          </>
         }
       />
       <main className="flex-1 overflow-y-auto">
@@ -89,16 +105,6 @@ export default function WalletPage() {
         />
       </main>
       <div className="mx-auto w-full max-w-[720px] space-y-2 px-4 pb-4">
-        {activeTasks > 0 && (
-          <button
-            type="button"
-            onClick={() => setPanel('tasks')}
-            className="flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <Zap className="size-3.5 text-primary" />
-            {activeTasks} active {activeTasks === 1 ? 'task' : 'tasks'}
-          </button>
-        )}
         {session && <ConnectedBar dapp={session} onDisconnect={disconnect} />}
         <InputBar onSend={chat.send} speakEnabled={speakEnabled} onToggleSpeak={() => setSpeakEnabled((v) => !v)} />
       </div>
