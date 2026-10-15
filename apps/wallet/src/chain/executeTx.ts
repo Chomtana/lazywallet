@@ -53,7 +53,10 @@ export function progressText(index: number, steps: TxStep[]): string {
   return steps.length > 1 ? `Step ${index + 1} of ${steps.length}: ${steps[index].label}…` : `Submitting to ${networkName(steps[index].request.chainId)} (Sandbox)…`
 }
 
-/** The token a swap card asked to remember — only once every step succeeded. */
-export function tokenToSave(o: StepsOutcome, tx: TxDraft): CustomToken | undefined {
-  return o.status === 'success' && !o.error ? tx.addToken : undefined
+/** The tokens a card asked to remember (addToken, then addTokens; no duplicates) — only once every step succeeded. */
+export function tokensToSave(o: StepsOutcome, tx: TxDraft): CustomToken[] {
+  if (o.status !== 'success' || o.error) return []
+  const key = (t: CustomToken) => `${t.chainId}:${t.address.toLowerCase()}`
+  const all = [...(tx.addToken ? [tx.addToken] : []), ...(tx.addTokens ?? [])]
+  return all.filter((t, i) => all.findIndex((u) => key(u) === key(t)) === i)
 }

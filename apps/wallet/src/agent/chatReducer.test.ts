@@ -53,6 +53,17 @@ describe('chatReducer', () => {
     expect(s.streamingId).toBeNull()
   })
 
+  it('adds an airdrops card and ends the streaming bubble', () => {
+    const item = {
+      id: 'theo-thusd', name: 'Theo thUSD Points', category: 'rwa' as const, networks: ['Ethereum'], status: 'live' as const,
+      action: 'Stake thUSD into sthUSD', tvlUsd: 132e6, farm: 'Theo', buy: null,
+    }
+    const s = run([server({ type: 'text_delta', text: 'Here' }), server({ type: 'airdrops', title: 'RWA airdrops', items: [item] })])
+    expect(s.messages[1]).toMatchObject({ role: 'assistant', kind: 'airdrops', title: 'RWA airdrops', items: [item] })
+    expect(s.streamingId).toBeNull()
+    expect(new Set(s.messages.map((m) => m.id)).size).toBe(2)
+  })
+
   it('adds balance and confirm cards', () => {
     const s = run([server({ type: 'balances', holdings: [{ symbol: 'ETH', amount: 1, usdPrice: 3000 }] }), confirmMsg])
     expect(s.messages[0].kind).toBe('balance')

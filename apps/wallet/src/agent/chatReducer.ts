@@ -78,6 +78,13 @@ function onServer(s: ChatState, msg: ServerMsg): ChatState {
         streamingId: null,
         messages: [...s.messages, { id: msg.id, role: 'assistant', kind: 'choice', question: msg.question, options: msg.options }],
       }
+    case 'airdrops':
+      return {
+        ...s,
+        seq: s.seq + 1,
+        streamingId: null,
+        messages: [...s.messages, { id: nextId, role: 'assistant', kind: 'airdrops', title: msg.title, items: msg.items }],
+      }
     case 'error':
       return {
         ...s,
