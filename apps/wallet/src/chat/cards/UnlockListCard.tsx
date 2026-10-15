@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ChainIcon } from '@/components/ChainIcon'
 import { TokenLogo } from '@/components/TokenLogo'
-import { cn } from '@/lib/utils'
 import type { UnlockItem } from '@/types'
 import { dateLabel, detailLine, percentLabel, unlockBuyMessage, unlockBuyOptions, valueLabel } from './unlocks'
 
@@ -22,7 +21,7 @@ export function UnlockListCard({ title, items, enabled, onBuy }: Props) {
           const pct = percentLabel(u.percentOfSupply)
           return (
             <li key={key} className="py-2.5">
-              <div className={cn('flex items-center gap-3', options.length === 0 && 'opacity-50')}>
+              <div className="flex items-center gap-3">
                 <TokenLogo src={u.logo} symbol={u.symbol} />
                 <div className="min-w-0 flex-1">
                   <p className="flex items-baseline gap-1.5">
@@ -30,21 +29,25 @@ export function UnlockListCard({ title, items, enabled, onBuy }: Props) {
                     <span className="truncate text-sm text-muted-foreground">{u.name}</span>
                   </p>
                   <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <span className="truncate">{dateLabel(u.date)}</span>
+                    <span>{dateLabel(u.date)}</span>
                     {u.network && <ChainIcon network={u.network} size={14} />}
                   </p>
-                  {detail && <p className="truncate text-xs text-muted-foreground">{detail}</p>}
                 </div>
                 <div className="shrink-0 text-right">
                   <span className="block font-mono text-sm">{valueLabel(u.unlockUsd)}</span>
                   {pct && <span className="block font-mono text-xs text-muted-foreground">{pct}</span>}
                 </div>
-                {options.length > 0 && (
-                  <Button className="h-9 px-5 font-semibold" disabled={!enabled} onClick={() => setOpen(open === key ? null : key)}>
-                    Buy
-                  </Button>
-                )}
               </div>
+              {(detail || options.length > 0) && (
+                <div className="mt-1.5 flex items-center gap-3 pl-11">
+                  <p className="min-w-0 flex-1 text-xs text-muted-foreground wrap-anywhere">{detail}</p>
+                  {options.length > 0 && (
+                    <Button className="h-9 shrink-0 px-5 font-semibold" disabled={!enabled} onClick={() => setOpen(open === key ? null : key)}>
+                      Buy
+                    </Button>
+                  )}
+                </div>
+              )}
               {open === key && options.length > 0 && (
                 <div className="mt-2 flex flex-wrap justify-end gap-2">
                   {options.map((o) => (
