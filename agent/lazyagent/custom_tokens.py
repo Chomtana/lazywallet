@@ -13,6 +13,7 @@ from .chain import Chain
 from .kyber import http_json
 from .networks import Network
 from .tokens import Token
+from .transfers import TransferError
 
 GECKO_API = "https://api.geckoterminal.com/api/v2"
 GECKO_NETWORK = {"ethereum": "eth", "avalanche": "avax"}
@@ -101,10 +102,11 @@ class GeckoSearch:
 
 
 async def discover(text: str, net: Network, chain: Chain, search: Search | None) -> Token | None:
-    """A token that's neither built in nor saved: a 0x address read on the fork, else a symbol search on that network."""
+    """A token that's neither built in nor saved: a 0x address read on the fork, else a symbol search on that network.
+    Raises TransferError for a token posing as one of the network's built-ins."""
     query = text.strip()
     if ADDRESS.match(query):
-        return await read_token(chain, query)
+        return _not_an_impostor(await read_token(chain, query), net)
     if search is None or not query:
         return None
     try:
@@ -113,5 +115,14 @@ async def discover(text: str, net: Network, chain: Chain, search: Search | None)
         return None
     if found is None:
         return None
-    token = await read_token(chain, found[0])
-    return replace(token, symbol=found[1], matched_by_symbol=True) if token else None
+    token = _not_an_impostor(await read_token(chain, found[0]), net)
+    return _not_an_impostor(replace(token, symbol=found[1], matched_by_symbol=True), net) if token else None
+
+
+def _not_an_impostor(token: Token | None, net: Network) -> Token | None:
+    """A discovered token may not use a built-in's symbol on the same network (e.g. a fake "USDC")."""
+    if token and any(not t.custom and t.symbol.upper() == token.symbol.upper() for t in net.tokens):
+        raise TransferError(
+            f"That token calls itself {token.symbol} but isn't the real {token.symbol} on {net.name} Sandbox, so I won't trade it."
+        )
+    return token

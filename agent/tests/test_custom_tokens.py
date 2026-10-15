@@ -121,3 +121,23 @@ async def test_discover_survives_a_failing_search():
             raise ConnectionError("rate limited")
 
     assert await discover("coq", AVALANCHE, erc20_chain(encode(["string"], ["COQ"])), Down()) is None
+
+
+FAKE_USDC = "0x1111111111111111111111111111111111111111"
+
+
+def test_merge_drops_saved_tokens_posing_as_a_builtin():
+    fake = {"chainId": 43114, "address": FAKE_USDC, "symbol": "USDC", "decimals": 6}
+    net = merge(AVALANCHE, [fake, COQ_SAVED])
+    assert [t.symbol for t in net.tokens[len(AVALANCHE.tokens):]] == ["COQ"]
+    assert find_token("USDC", net.tokens) == find_token("USDC", AVALANCHE.tokens)  # the real one
+
+
+async def test_discover_refuses_a_token_posing_as_a_builtin():
+    import pytest
+
+    from lazyagent.transfers import TransferError
+
+    for symbol in ("USDC", "usdc"):
+        with pytest.raises(TransferError, match=f"calls itself {symbol} but isn't the real {symbol} on Avalanche"):
+            await discover(FAKE_USDC, AVALANCHE, erc20_chain(encode(["string"], [symbol])), None)

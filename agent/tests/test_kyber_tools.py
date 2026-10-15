@@ -199,3 +199,24 @@ async def test_token_found_on_both_networks_asks_which():
     assert result["is_error"] is True and "wait for their answer" in text(result)
     [choice] = out.of_type("choice")
     assert [o["label"] for o in choice["options"]] == ["Ethereum", "Avalanche"]
+
+
+async def test_token_posing_as_a_builtin_is_refused_by_address():
+    fake = FakeChain()
+    fake.call_responses["0x95d89b41"] = encode(["string"], ["USDC"])
+    fake.call_responses["0x313ce567"] = encode(["uint8"], [6])
+    tools, out, _, _, kyber = make(avax=fake)
+    result = await tools.propose_swap({"token_in": "AVAX", "token_out": "0x1111111111111111111111111111111111111111", "amount": "1"})
+    assert result["is_error"] is True
+    assert text(result) == "That token calls itself USDC but isn't the real USDC on Avalanche Sandbox, so I won't trade it."
+    assert not out.of_type("confirm") and kyber.routes == []
+
+
+async def test_saved_token_posing_as_a_builtin_is_ignored():
+    fake = {"chainId": 43114, "address": "0x1111111111111111111111111111111111111111", "symbol": "USDC", "decimals": 6}
+    tools, out, _, _, _ = make(avax=coq_chain(USDC=10**9), saved=[fake])
+    task = asyncio.create_task(tools.propose_transfer({"token": "USDC", "amount": "1", "to": "Alice", "network": "avalanche"}))
+    confirm = await confirm_of(out)
+    assert confirm["tx"]["steps"][0]["request"]["to"] == AVAX_USDC
+    assert "USDC address" not in rows_of(confirm)
+    task.cancel()

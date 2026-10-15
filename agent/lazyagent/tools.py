@@ -176,7 +176,10 @@ class WalletTools:
             nets = [n for n in nets if named is not None and n.key == named.key]
             if not nets:
                 return err(f"I can use {', '.join(n.name for n in self.networks)} on Sandbox.")
-        nets = await self._discover(symbols, nets)
+        try:
+            nets = await self._discover(symbols, nets)
+        except TransferError as e:  # a token posing as a built-in
+            return err(str(e))
         if explicit:
             net = nets[0]
             missing = [s for s in symbols if find_token(s, net.tokens) is None]
