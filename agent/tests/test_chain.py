@@ -30,3 +30,8 @@ async def test_call_and_block_timestamp(fork_rpc):
     decimals = await chain.call(usdc.address, "0x313ce567")  # decimals()
     assert int.from_bytes(decimals, "big") == 6
     assert await chain.block_timestamp() > 1_700_000_000
+
+
+async def test_lit_price_comes_from_v4_pool(fork_rpc):
+    price = await RpcChain(fork_rpc).price_usd(find_token("LIT"))
+    assert 0.01 < price < 1_000

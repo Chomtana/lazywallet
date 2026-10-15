@@ -22,6 +22,8 @@ TOKENS = [
     Token("DAI", "0x6B175474E89094C44Da98b954EedeAC495271d0F", 18, fixed_price=1.0),
     Token("WBTC", "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", 8, price_feed=BTC_USD_FEED),
     Token("WETH", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", 18, price_feed=ETH_USD_FEED),
+    # Lighter (LIT) — no Chainlink feed; priced from its Uniswap v4 pool.
+    Token("LIT", "0x232CE3bd40fCd6f80f3d55A522d03f25Df784Ee2", 18),
 ]
 
 

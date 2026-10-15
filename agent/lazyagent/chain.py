@@ -2,7 +2,8 @@ from typing import Protocol
 
 from web3 import AsyncHTTPProvider, AsyncWeb3, Web3
 
-from .tokens import Token
+from .tokens import ETH, Token
+from .uniswap import ZERO, ChainQuoter, best_route, currency_of
 
 ERC20_ABI = [
     {
@@ -55,9 +56,18 @@ class RpcChain:
     async def price_usd(self, token: Token) -> float:
         if token.fixed_price is not None:
             return token.fixed_price
+        if token.price_feed is None:
+            return await self._pool_price(token)
         feed = self.w3.eth.contract(address=Web3.to_checksum_address(token.price_feed), abi=AGGREGATOR_ABI)
         _, answer, _, _, _ = await feed.functions.latestRoundData().call()
         return answer / 10**FEED_DECIMALS
+
+    async def _pool_price(self, token: Token) -> float:
+        """Tokens without a Chainlink feed: 1 token → ETH on the best v4 route, times ETH/USD."""
+        found = await best_route(ChainQuoter(self), currency_of(token), ZERO, 10**token.decimals)
+        if found is None:
+            return 0.0
+        return found[1] / 10**18 * await self.price_usd(ETH)
 
     async def gas_price(self) -> int:
         return await self.w3.eth.gas_price

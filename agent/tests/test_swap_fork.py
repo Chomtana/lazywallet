@@ -72,3 +72,13 @@ async def test_wrap_eth(fork_rpc):
     text, _ = await swap(fork_rpc, w3, account, {"token_in": "ETH", "token_out": "WETH", "amount": "1"})
     assert "Swapped 1 ETH for 1 WETH" in text, text
     assert await RpcChain(fork_rpc).token_balance(WETH, account.address) == 10**18
+
+
+LIT = find_token("LIT")
+
+
+async def test_eth_to_lit(fork_rpc):
+    w3, account = await funded_account(fork_rpc)
+    text, _ = await swap(fork_rpc, w3, account, {"token_in": "ETH", "token_out": "LIT", "amount": "0.01"})
+    assert "Swapped 0.01 ETH for" in text, text
+    assert await RpcChain(fork_rpc).token_balance(LIT, account.address) > 0
