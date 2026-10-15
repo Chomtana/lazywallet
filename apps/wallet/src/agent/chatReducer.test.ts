@@ -64,6 +64,18 @@ describe('chatReducer', () => {
     expect(new Set(s.messages.map((m) => m.id)).size).toBe(2)
   })
 
+  it('adds an unlocks card and ends the streaming bubble', () => {
+    const item = {
+      symbol: 'ZRO', name: 'LayerZero', logo: null, date: '2026-10-20T11:00:00Z', unlockUsd: 53.7e6, unlockAmount: 25.7e6,
+      percentOfSupply: 2.57, allocation: 'Investors, Team', buybackUsd: 352_479, burnUsd: null, network: 'Ethereum',
+      address: '0x6985884c4392d348587b19cb9eaaf157f13271cd' as const, buyable: true,
+    }
+    const s = run([server({ type: 'text_delta', text: 'Here' }), server({ type: 'unlocks', title: 'Upcoming unlocks', items: [item] })])
+    expect(s.messages[1]).toMatchObject({ role: 'assistant', kind: 'unlocks', title: 'Upcoming unlocks', items: [item] })
+    expect(s.streamingId).toBeNull()
+    expect(new Set(s.messages.map((m) => m.id)).size).toBe(2)
+  })
+
   it('adds balance and confirm cards', () => {
     const s = run([server({ type: 'balances', holdings: [{ symbol: 'ETH', amount: 1, usdPrice: 3000 }] }), confirmMsg])
     expect(s.messages[0].kind).toBe('balance')

@@ -1,4 +1,4 @@
-import type { Address, AirdropItem, BalanceChange, ChoiceOption, CustomToken, Holding, TrendingToken, TxDraft, TxStep } from '@/types'
+import type { Address, AirdropItem, BalanceChange, ChoiceOption, CustomToken, Holding, TrendingToken, TxDraft, TxStep, UnlockItem } from '@/types'
 
 export type ClientMsg =
   | { type: 'tx_started'; id: string }
@@ -31,5 +31,6 @@ export type ServerMsg =
   | { type: 'confirm'; id: string; tx: TxDraft & { steps: TxStep[]; from: Address } }
   | { type: 'choice'; id: string; question: string; options: ChoiceOption[] }
   | { type: 'airdrops'; title: string; items: AirdropItem[] }
+  | { type: 'unlocks'; title: string; items: UnlockItem[] }
   | { type: 'error'; message: string }
   | { type: 'turn_end' }
