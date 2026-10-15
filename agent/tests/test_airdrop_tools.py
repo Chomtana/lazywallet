@@ -239,9 +239,59 @@ async def test_reverted_stake_names_the_step():
     confirm = await confirm_of(out)
     proposals.resolve(confirm["id"], {"outcome": "approved", "status": "reverted", "hash": "0xr", "failed_step": 4})
     result = text(await task)
-    assert "The deposit reverted at step 5 (Stake thUSD → sthUSD)" in result
-    assert "1% slippage" in result
+    assert result.startswith(
+        "The deposit reverted at step 5 (Stake thUSD → sthUSD) (tx 0xr). The swap went through, so your thUSD is in your "
+        "wallet but wasn't staked. Don't swap again; ask the user whether to try staking later."
+    )
+    assert "1% slippage" not in result and "harmless" not in result
+    assert " Balance change (shown as a card): " in result
+    assert len(out.of_type("balance_change")) == 1
+
+
+async def test_unsent_approval_after_the_swap_says_the_token_is_unstaked():
+    tools, out, proposals, _ = make()
+    task = asyncio.create_task(tools.propose_deposit({"farm": "theo-thusd", "amount": "100"}))
+    confirm = await confirm_of(out)
+    proposals.resolve(confirm["id"], {"outcome": "approved", "error": "user denied", "failed_step": 3})
+    result = text(await task)
+    assert result.startswith("The deposit failed before it was sent at step 4 (Allow thUSD): user denied. The swap went through")
+    assert len(out.of_type("balance_change")) == 1
+
+
+async def test_reverted_swap_keeps_the_slippage_hint():
+    tools, out, proposals, _ = make()
+    task = asyncio.create_task(tools.propose_deposit({"farm": "theo-thusd", "amount": "100"}))
+    confirm = await confirm_of(out)
+    proposals.resolve(confirm["id"], {"outcome": "approved", "status": "reverted", "hash": "0xr", "failed_step": 2})
+    result = text(await task)
+    assert "The deposit reverted at step 3 (Swap USDC → thUSD)" in result
+    assert "1% slippage" in result and "unstaked" not in result and "wasn't staked" not in result
     assert not out.of_type("balance_change")
+
+
+async def test_unreadable_confirmation_after_the_swap_still_says_dont_resend():
+    tools, out, proposals, _ = make()
+    task = asyncio.create_task(tools.propose_deposit({"farm": "theo-thusd", "amount": "100"}))
+    confirm = await confirm_of(out)
+    proposals.resolve(confirm["id"], {"outcome": "approved", "error": "timeout", "hash": "0xh", "failed_step": 4})
+    assert "Don't resend" in text(await task)
+    assert not out.of_type("balance_change")
+
+
+async def test_a_reverting_preview_reads_as_a_closed_vault():
+    chain = vault_chain()
+    call = chain.call
+
+    async def reverting(to, data, gas=None):
+        if data.startswith("0xef8b30f7"):
+            raise ValueError("execution reverted")
+        return await call(to, data, gas)
+
+    chain.call = reverting
+    tools, out, _, _ = make(chain=chain)
+    result = await tools.propose_deposit({"farm": "theo-thusd", "amount": "100"})
+    assert text(result) == "Theo's vault isn't accepting deposits right now."
+    assert not out.of_type("confirm")
 
 
 # --- Avant: KyberSwap only, on Avalanche ---

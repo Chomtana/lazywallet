@@ -408,12 +408,12 @@ async def deposit_plan(chain: Chain, dep: Deposit, user: str, assets: int) -> De
     try:
         asset = Web3.to_checksum_address((await chain.call(vault, ENCODED_ASSET))[12:32])
         room = _word(await chain.call(vault, encode_max_deposit(user)))
+        shares = _word(await chain.call(vault, encode_preview_deposit(assets)))
+        allowance = _word(await chain.call(dep.asset.address, encode_erc20_allowance(user, vault)))
     except Exception as e:
         raise closed from e
     if asset != dep.asset.address or room < assets:
         raise closed
-    shares = _word(await chain.call(vault, encode_preview_deposit(assets)))
-    allowance = _word(await chain.call(dep.asset.address, encode_erc20_allowance(user, vault)))
     request = {"to": vault, "value": "0", "data": encode_erc4626_deposit(assets, user)}
     return DepositPlan(allowance, shares, Step(f"Stake {dep.asset.symbol} → {dep.vault.symbol}", request, GAS["deposit"]))
 

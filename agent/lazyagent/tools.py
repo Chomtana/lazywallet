@@ -529,7 +529,7 @@ class WalletTools:
         except AirdropError as e:
             return err(str(e))
 
-    async def _farm_swap(self, net: Network, dep: Deposit, usdc, asset, amount: int):
+    async def _farm_swap(self, net: Network, dep: Deposit, usdc: Token, asset: Token, amount: int):
         """USDC → the farm's token on the deposit's venue: the pinned Uniswap v4 pool first (V4_THEN_KYBER), else
         KyberSwap with all of kyber.py's checks. Returns (steps, expected, minimum, venue label, price impact or None)."""
         if dep.venue == V4_THEN_KYBER:
@@ -606,6 +606,18 @@ class WalletTools:
                 left = display_units(max(after[asset.symbol] - before[asset.symbol], 0), asset.decimals)
                 staked += f", got {got} {vault.symbol}; {left} {asset.symbol} left"
             success = f"{staked}. Confirmed on {net.label}, tx {result.get('hash')}.{change} Points only count on real mainnet; this Sandbox is a demo."
+        swap_at = next(i for i, s in enumerate(steps_json) if s["label"].startswith("Swap "))
+        failed = (result or {}).get("failed_step")
+        unsent = (result or {}).get("error")
+        if isinstance(failed, int) and swap_at < failed < len(steps_json) and not (unsent and result.get("hash")):
+            # The swap landed but the approve/stake after it didn't: the token is unstaked; a retry would swap again.
+            label = steps_json[failed]["label"]
+            what = f"failed before it was sent at step {failed + 1} ({label}): {unsent}" if unsent else f"reverted at step {failed + 1} ({label}) (tx {result.get('hash')})"
+            _, change = await self._show_change(net, [usdc, asset, vault], before)
+            return ok(
+                f"The deposit {what}. The swap went through, so your {asset.symbol} is in your wallet but wasn't staked. "
+                f"Don't swap again; ask the user whether to try staking later.{change}"
+            )
         hint = f" The price probably moved more than the {DEFAULT_SLIPPAGE_BPS / 100:g}% slippage — ask again for a fresh quote."
         return ok(outcome_text(result, steps_json, "deposit", success, revert_hint=hint))
 
