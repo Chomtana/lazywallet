@@ -21,7 +21,7 @@ export function BalanceChangeCard({ changes }: { changes: BalanceChange[] }) {
                 {`${sign(c.delta)}${formatAmount(Math.abs(c.delta))} ${c.symbol}`}
               </span>
               <span className="block text-xs text-muted-foreground">
-                {`Now ${formatAmount(c.after)} · ${sign(c.delta)}${formatUsd(Math.abs(c.delta) * c.usdPrice)}`}
+                {`Now ${formatAmount(c.after)} · ${c.usdPrice === null ? 'price unknown' : `${sign(c.delta)}${formatUsd(Math.abs(c.delta) * c.usdPrice)}`}`}
               </span>
             </span>
           </li>

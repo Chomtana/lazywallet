@@ -6,7 +6,7 @@ export const HOLDINGS: Holding[] = [
   { symbol: 'WBTC', amount: 0.05, usdPrice: 64000 },
 ]
 
-export const PORTFOLIO_USD = HOLDINGS.reduce((sum, h) => sum + h.amount * h.usdPrice, 0)
+export const PORTFOLIO_USD = HOLDINGS.reduce((sum, h) => sum + h.amount * (h.usdPrice ?? 0), 0)
 
 // Anvil's default accounts #1 and #2 — they exist on the Sandbox fork.
 export const DEFAULT_CONTACTS: Contact[] = [

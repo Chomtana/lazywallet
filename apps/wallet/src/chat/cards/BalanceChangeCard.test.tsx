@@ -19,4 +19,9 @@ describe('BalanceChangeCard', () => {
     expect(screen.getByText('Now 7358 · +$2,358.00')).toBeTruthy()
     expect(screen.queryByText(/DAI/)).toBeNull()
   })
+
+  it('says price unknown instead of $0 for a custom token without a price', () => {
+    render(<BalanceChangeCard changes={[{ network: 'Avalanche', symbol: 'COQ', before: 0, after: 8e6, delta: 8e6, usdPrice: null }]} />)
+    expect(screen.getByText('Now 8000000 · price unknown')).toBeTruthy()
+  })
 })
