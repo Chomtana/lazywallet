@@ -6,6 +6,20 @@ export type Contact = { id: string; name: string; address: Address }
 // usdPrice null = price unknown (a custom token with no route to USDC) — shown as such, left out of totals.
 export type Holding = { symbol: string; amount: number; usdPrice: number | null; network?: string }
 export type BalanceChange = { network?: string; symbol: string; before: number; after: number; delta: number; usdPrice: number | null }
+// A row of the agent's token list card (list_trending_tokens). network is a display name ("Ethereum").
+export type TrendingToken = {
+  symbol: string
+  name: string
+  network: string
+  address: Address
+  priceUsd: number | null
+  change24h: number | null
+  liquidityUsd: number
+  dex: string
+  buyable: boolean
+  note: string | null
+  image: string | null
+}
 export type CustomToken = { chainId: number; address: Address; symbol: string; decimals: number }
 export type ChoiceOption = { label: string; detail?: string; reply: string }
 export type DappInfo = { name: string; url: string; icon: string }
@@ -35,6 +49,7 @@ export type Message =
   | { id: string; role: 'assistant'; kind: 'text'; text: string }
   | { id: string; role: 'assistant'; kind: 'balance'; holdings: Holding[] }
   | { id: string; role: 'assistant'; kind: 'balance_change'; changes: BalanceChange[] }
+  | { id: string; role: 'assistant'; kind: 'tokens'; title: string; items: TrendingToken[] }
   | { id: string; role: 'assistant'; kind: 'confirm'; tx: TxDraft; state: ConfirmState }
   | { id: string; role: 'assistant'; kind: 'status'; state: 'pending' | 'success' | 'failed'; text: string; hash?: string }
   | { id: string; role: 'assistant'; kind: 'task'; task: Task }
