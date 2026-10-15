@@ -187,6 +187,7 @@ def test_mcp_server_and_names():
         "mcp__wallet__list_trending_tokens",
         "mcp__wallet__list_airdrops",
         "mcp__wallet__propose_deposit",
+        "mcp__wallet__list_unlocks",
     ]
 
 

@@ -60,7 +60,7 @@ export function buyOptions(network: string): BuyOption[] {
 }
 
 // Sent as a normal user message; the agent swaps option.token into the token's contract address.
-export function buyMessage(t: TrendingToken, option: BuyOption): string {
+export function buyMessage(t: Pick<TrendingToken, 'symbol' | 'address'>, option: BuyOption): string {
   const address = isAddress(t.address, { strict: false }) ? getAddress(t.address) : t.address
   return `Buy ${option.amount} ${option.token} of ${t.symbol} (${address})`
 }

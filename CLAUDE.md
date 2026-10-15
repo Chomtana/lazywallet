@@ -49,6 +49,7 @@ pnpm build && pnpm lint
 - Custom tokens: the wallet keeps bought tokens in `lw.tokens` (non-secret, per wallet) and sends them with every `user` message; the agent stays stateless (`agent/lazyagent/custom_tokens.py`).
 - Dexalot recipe (Avalanche swaps) lives in `anvil/lazysandbox/dexalot.py` (signer patch, order signing) and `agent/lazyagent/dexalot.py` (calldata) — change only with a fork test.
 - Quick actions (`chat/quickActions.ts`) are pills above the composer that send a normal user message (queued while busy). A "Get funds" button calls the faucet directly while the wallet's USD total is under $1,000 — read wallet-side with viem + Chainlink in `chain/portfolio.ts`, re-read after every agent turn; hidden when a read fails.
+- Token unlocks: `agent/lazyagent/unlocks.py` (`list_unlocks`, Tokenomist v5; key `TOKENOMIST_API_KEY` in root `.env`, agent-only — never sent to the browser). Design: `docs/superpowers/specs/2026-10-16-lazywallet-token-unlocks-design.md`.
 - Unit tests cover pure logic (`*.test.ts` next to the module). UI is reviewed manually.
 
 ## Development motto

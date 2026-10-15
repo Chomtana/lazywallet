@@ -40,6 +40,7 @@ def test_tool_call_sends_a_friendly_progress_label():
     assert translate(tool_call("mcp__wallet__get_balances")) == [{"type": "progress", "label": "Checking your balances"}]
     assert translate(tool_call("mcp__wallet__propose_swap")) == [{"type": "progress", "label": "Finding the best route"}]
     assert translate(tool_call("mcp__wallet__list_airdrops")) == [{"type": "progress", "label": "Checking airdrops"}]
+    assert translate(tool_call("mcp__wallet__list_unlocks")) == [{"type": "progress", "label": "Checking upcoming unlocks"}]
     assert translate(tool_call("mcp__wallet__resolve_recipient")) == [{"type": "progress", "label": "Looking up the recipient"}]
 
 

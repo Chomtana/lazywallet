@@ -34,6 +34,23 @@ export type AirdropItem = {
   farm: string | null
   buy: { symbol: string; address: Address } | null
 }
+// One row of the unlocks card (agent list_unlocks). date: ISO UTC. buybackUsd/burnUsd: last 30 days, null = none.
+// network: where LazyWallet can buy it ("Ethereum" | "Avalanche"), null = not available; address null = native AVAX.
+export type UnlockItem = {
+  symbol: string
+  name: string
+  logo: string | null
+  date: string
+  unlockUsd: number | null
+  unlockAmount: number
+  percentOfSupply: number | null
+  allocation: string | null
+  buybackUsd: number | null
+  burnUsd: number | null
+  network: string | null
+  address: Address | null
+  buyable: boolean
+}
 export type ChoiceOption = { label: string; detail?: string; reply: string }
 export type DappInfo = { name: string; url: string; icon: string }
 export type TxRequest = { to: Address; value: string; data: `0x${string}`; chainId?: number }
@@ -84,5 +101,6 @@ export type Message =
   | { id: string; role: 'assistant'; kind: 'task'; task: Task }
   | { id: string; role: 'assistant'; kind: 'choice'; question: string; options: ChoiceOption[]; chosen?: string; closed?: boolean }
   | { id: string; role: 'assistant'; kind: 'airdrops'; title: string; items: AirdropItem[] }
+  | { id: string; role: 'assistant'; kind: 'unlocks'; title: string; items: UnlockItem[] }
 export type AssistantMessage = Exclude<Message, { role: 'user' }>
 export type AgentReply = { messages: Message[]; newTask?: Task }

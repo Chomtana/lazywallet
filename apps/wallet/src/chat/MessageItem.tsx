@@ -9,6 +9,7 @@ import { StatusCard } from './cards/StatusCard'
 import { TaskCard } from './cards/TaskCard'
 import { TextBubble } from './cards/TextBubble'
 import { TokenListCard } from './cards/TokenListCard'
+import { UnlockListCard } from './cards/UnlockListCard'
 
 export type MessageActions = {
   onApprove: (id: string) => void
@@ -55,6 +56,8 @@ function AssistantBody({ message, onApprove, onReject, onSimulate, onChoose, onB
       )
     case 'airdrops':
       return <AirdropCard title={message.title} items={message.items} enabled={choicesEnabled} onSend={(text) => onBuy?.(text)} />
+    case 'unlocks':
+      return <UnlockListCard title={message.title} items={message.items} enabled={choicesEnabled} onBuy={(text) => onBuy?.(text)} />
   }
 }
 
