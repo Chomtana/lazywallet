@@ -102,6 +102,7 @@ export default function WalletPage() {
           onApprove={chat.approve}
           onReject={chat.reject}
           onChoose={chat.choose}
+          onBuy={chat.buy}
           choicesEnabled={chat.online && !chat.busy}
         />
       </main>

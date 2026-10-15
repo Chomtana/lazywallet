@@ -93,6 +93,18 @@ def test_parse_tokens_tolerates_an_empty_body_and_unescapes_names():
     assert (t.name, t.address) == ("Propy & Co", "0xab")
 
 
+def test_parse_tokens_reads_the_logo_and_drops_placeholders():
+    logo = "https://coin-images.coingecko.com/coins/images/26580/large/ONDO.png?1696525656"
+    body = {
+        "data": [
+            {"id": "a", "attributes": {"address": "0x01", "symbol": "A", "image_url": logo}},
+            {"id": "b", "attributes": {"address": "0x02", "symbol": "B", "image_url": "missing.png"}},
+            {"id": "c", "attributes": {"address": "0x03", "symbol": "C"}},
+        ]
+    }
+    assert [t.image for t in parse_tokens(body, "ethereum")] == [logo, None, None]
+
+
 def test_rank_rwas_pinned_first_with_note_then_volume_then_market_cap():
     coins = [coin("ethereum", 1, mcap=10), coin("ethereum", 2, mcap=99)]
     items = [

@@ -1,6 +1,6 @@
 """Trending tokens from live mainnet data (read-only): Avalanche memecoins and RWA project tokens on
 Ethereum + Avalanche. Research: docs/research/2026-10-15-avalanche-trending-tokens.md.
-Adding a category: an entry in CATEGORY_NETWORKS, a fetcher in TrendingTokens, a line in TRENDING_TOOL's description."""
+Adding a category: an entry in CATEGORY_NETWORKS and CATEGORY_TITLES, a fetcher in TrendingTokens, a line in TRENDING_TOOL's description."""
 
 import asyncio
 import html
@@ -12,12 +12,15 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
+from .networks import find_network
 from .tokens import AVAX_TOKENS
 
 GT_API = "https://api.geckoterminal.com/api/v2/networks"
 GT_NETWORKS = {"ethereum": "eth", "avalanche": "avax"}
 # category → networks it covers (first is the default when there's only one)
 CATEGORY_NETWORKS = {"meme": ("avalanche",), "rwa": ("ethereum", "avalanche")}
+# category → the card's title in the app (never names a chain)
+CATEGORY_TITLES = {"meme": "Trending memecoins", "rwa": "Hot RWA tokens"}
 TIMEOUT_S = 15
 TTL_S = 60
 MIN_LIQUIDITY_USD = 10_000
@@ -54,6 +57,7 @@ class TokenInfo:
     symbol: str
     name: str
     address: str
+    image: str | None = None  # logo URL
 
 
 @dataclass(frozen=True)
@@ -80,6 +84,7 @@ class Trending:
     dex: str
     buyable: bool  # deepest pool ≥ $10k
     note: str | None = None  # only for pinned entries
+    image: str | None = None  # logo URL
 
 
 class TrendingError(Exception):
@@ -91,6 +96,12 @@ def _num(value) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _image(value) -> str | None:
+    """GeckoTerminal's logo URL, or None when it's missing or its "missing.png" placeholder."""
+    url = str(value or "")
+    return url if url.startswith("https://") and not url.endswith("missing.png") else None
 
 
 def _rel_id(obj: dict, name: str) -> str | None:
@@ -113,7 +124,7 @@ def parse_pools(body: dict, trending: bool = False) -> list[Pool]:
         dex_id = _rel_id(p, "dex") or "unknown"
         pools.append(
             Pool(
-                token=TokenInfo(token["symbol"], token.get("name") or token["symbol"], token["address"]),
+                token=TokenInfo(token["symbol"], token.get("name") or token["symbol"], token["address"], _image(token.get("image_url"))),
                 price_usd=_num(attrs.get("base_token_price_usd")),
                 volume_24h=_num((attrs.get("volume_usd") or {}).get("h24")),
                 change_24h=_num((attrs.get("price_change_percentage") or {}).get("h24")),
@@ -152,7 +163,10 @@ def rank_memes(pools: list[Pool]) -> list[Trending]:
     kept = [(k, p) for k, p in best.items() if p.liquidity_usd >= MIN_LIQUIDITY_USD]
     kept.sort(key=lambda kp: (order.get(kp[0], float("inf")), -kp[1].volume_24h))
     return [
-        Trending(p.token.symbol, p.token.name, p.token.address, "avalanche", p.price_usd, p.volume_24h, p.change_24h, p.liquidity_usd, p.dex, True)
+        Trending(
+            p.token.symbol, p.token.name, p.token.address, "avalanche", p.price_usd, p.volume_24h, p.change_24h, p.liquidity_usd, p.dex, True,
+            image=p.token.image,
+        )
         for _, p in kept[:TOP_N]
     ]
 
@@ -173,13 +187,39 @@ def parse_args(args: dict) -> tuple[str, str | None]:
 
 
 def to_json(items: list[Trending]) -> str:
+    """The tool's text for the model (the card has the logos)."""
     return json.dumps(
         {
             "source": "GeckoTerminal, live mainnet",
-            "note": "Offer to buy only buyable tokens. Buy with propose_swap: network = the token's network, token_out = its contract address.",
-            "tokens": [asdict(t) for t in items],
+            "note": "Shown to the user as a card; don't read the list. Offer to buy only buyable tokens. "
+            "Buy with propose_swap: network = the token's network, token_out = its contract address.",
+            "tokens": [{k: v for k, v in asdict(t).items() if k != "image"} for t in items],
         }
     )
+
+
+def to_card(category: str, items: list[Trending]) -> dict:
+    """The "tokens" message the app shows as a card."""
+    return {
+        "type": "tokens",
+        "title": CATEGORY_TITLES[category],
+        "items": [
+            {
+                "symbol": t.symbol,
+                "name": t.name,
+                "network": find_network(t.network).name,
+                "address": t.address,
+                "priceUsd": t.price_usd,
+                "change24h": t.change_24h,
+                "liquidityUsd": t.liquidity_usd,
+                "dex": t.dex,
+                "buyable": t.buyable,
+                "note": t.note,
+                "image": t.image,
+            }
+            for t in items
+        ],
+    }
 
 
 # --- RWA project tokens (Ethereum + Avalanche) ---
@@ -282,7 +322,7 @@ def parse_tokens(body: dict, network: str) -> list[Trending]:
             Trending(
                 symbol, html.unescape(a.get("name") or symbol), a["address"].lower(), network,
                 _opt(a.get("price_usd")), _num((a.get("volume_usd") or {}).get("h24")), change,
-                liquidity, dex, liquidity >= MIN_LIQUIDITY_USD,
+                liquidity, dex, liquidity >= MIN_LIQUIDITY_USD, image=_image(a.get("image_url")),
             )
         )
     return out
@@ -406,11 +446,12 @@ TRENDING_TOOL = (
 )
 
 
-async def trending_reply(trending: TrendingTokens, args: dict) -> str:
-    """The tool's answer as JSON text. Raises TrendingError with text for the model."""
+async def trending_reply(trending: TrendingTokens, args: dict) -> tuple[dict | None, str]:
+    """(the card message for the app — None when there's nothing to show, the JSON text for the model).
+    Raises TrendingError with text for the model."""
     category, network = parse_args(args)
     try:
         items = await trending.fetch(category, network)
     except Exception as e:
         raise TrendingError(UNAVAILABLE) from e
-    return to_json(items)
+    return (to_card(category, items) if items else None), to_json(items)

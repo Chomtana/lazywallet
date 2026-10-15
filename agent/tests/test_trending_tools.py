@@ -22,25 +22,39 @@ def text(result):
 
 
 async def test_memes_by_default():
-    tools = make(FakeTrendingSource([Pool(TokenInfo("COQ", "COQINU", COQ), 1.2e-7, 16_937.5, -5.1, 623_823.6, "LFJ", 0)]))
+    logo = "https://coin-images.coingecko.com/coins/images/1/large/coq.png"
+    tools = make(FakeTrendingSource([Pool(TokenInfo("COQ", "COQINU", COQ, logo), 1.2e-7, 16_937.5, -5.1, 623_823.6, "LFJ", 0)]))
     result = await tools.list_trending_tokens({})
     assert not result.get("is_error")
     [coq] = json.loads(text(result))["tokens"]
     assert (coq["symbol"], coq["address"], coq["network"], coq["change_24h"], coq["buyable"], coq["note"]) == ("COQ", COQ, "avalanche", -5.1, True, None)
+    [card] = tools.send.of_type("tokens")
+    assert card["title"] == "Trending memecoins"
+    assert card["items"] == [
+        {
+            "symbol": "COQ", "name": "COQINU", "network": "Avalanche", "address": COQ, "priceUsd": 1.2e-7, "change24h": -5.1,
+            "liquidityUsd": 623_823.6, "dex": "LFJ", "buyable": True, "note": None, "image": logo,
+        }
+    ]
 
 
 async def test_rwa_with_network():
     source = FakeTrendingSource(tokens={"ethereum": ONDO_BODY})
-    result = await make(source).list_trending_tokens({"category": "rwa", "network": "Ethereum"})
+    tools = make(source)
+    result = await tools.list_trending_tokens({"category": "rwa", "network": "Ethereum"})
     [ondo] = json.loads(text(result))["tokens"]
     assert (ondo["symbol"], ondo["network"], ondo["buyable"]) == ("ONDO", "ethereum", False)  # no pool in this body
     assert source.calls == [("tokens", "ethereum", (ONDO,))]
+    [card] = tools.send.of_type("tokens")
+    assert card["title"] == "Hot RWA tokens"
+    assert [(i["symbol"], i["network"], i["buyable"]) for i in card["items"]] == [("ONDO", "Ethereum", False)]
 
 
 async def test_works_without_an_active_wallet():
     tools = make(FakeTrendingSource([]))
     assert tools.ctx.address is None
     assert json.loads(text(await tools.list_trending_tokens({})))["tokens"] == []
+    assert tools.send.of_type("tokens") == []  # nothing to show; the model says so
 
 
 async def test_bad_arguments_are_errors_without_fetching():
@@ -51,6 +65,7 @@ async def test_bad_arguments_are_errors_without_fetching():
     eth_memes = await tools.list_trending_tokens({"category": "meme", "network": "ethereum"})
     assert text(eth_memes) == "meme tokens are only listed on Avalanche."
     assert source.calls == []
+    assert tools.send.messages == []
 
 
 async def test_fetch_failure_is_a_friendly_error():
