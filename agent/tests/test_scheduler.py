@@ -127,7 +127,7 @@ def test_schedule_steps_wrap_approve_schedule_for_native_input():
     assert steps[0].request == {"to": WETH.address, "value": str(3 * 10**17), "data": "0xd0e30db0"}
     assert steps[2].request["to"] == SCHEDULER and steps[2].request["value"] == "5"
     args = decode(["address", "address", "uint256", "uint256", "uint64", "uint64", "uint32"], bytes.fromhex(steps[2].request["data"][10:]))
-    assert args[0] == WETH.address and args[1] == USDC.address
+    assert args[0] == WETH.address.lower() and args[1] == USDC.address.lower()
 
 
 def test_schedule_steps_skip_approval_and_reset_usdt():
