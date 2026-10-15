@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { TxRequest, TxStep } from '@/types'
-import { executeSteps, executeTx, progressText, statusPatch, type TxDeps } from './executeTx'
+import type { CustomToken, TxDraft, TxRequest, TxStep } from '@/types'
+import { executeSteps, executeTx, progressText, statusPatch, tokenToSave, type TxDeps } from './executeTx'
 
 const req: TxRequest = { to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8', value: '100', data: '0x' }
 const HASH = '0xabc' as const
@@ -95,5 +95,28 @@ describe('statusPatch and progressText', () => {
     expect(wait).toHaveBeenCalledWith(HASH, 43114)
     expect(statusPatch({ hashes: [HASH], hash: HASH, status: 'success' }, avax).text).toBe('Confirmed on Avalanche (Sandbox).')
     expect(progressText(0, avax)).toBe('Submitting to Avalanche (Sandbox)…')
+  })
+})
+
+describe('tokenToSave', () => {
+  const COQ: CustomToken = { chainId: 43114, address: '0x420FcA0121DC28039145009570975747295f2329', symbol: 'COQ', decimals: 18 }
+  const tx: TxDraft = { title: 'Swap 1 AVAX → COQ', rows: [], steps: ONE, addToken: COQ }
+
+  it('returns the token only when every step succeeded', async () => {
+    const ok: TxDeps = { send: async () => HASH, wait: async () => 'success' }
+    expect(tokenToSave(await executeSteps(ONE, ok), tx)).toEqual(COQ)
+    const reverted: TxDeps = { send: async () => HASH, wait: async () => 'reverted' }
+    expect(tokenToSave(await executeSteps(ONE, reverted), tx)).toBeUndefined()
+    const unsent: TxDeps = {
+      send: async () => {
+        throw new Error('rejected')
+      },
+      wait: async () => 'success',
+    }
+    expect(tokenToSave(await executeSteps(ONE, unsent), tx)).toBeUndefined()
+  })
+
+  it('returns nothing for cards without addToken', () => {
+    expect(tokenToSave({ hashes: [HASH], hash: HASH, status: 'success' }, { ...tx, addToken: undefined })).toBeUndefined()
   })
 })

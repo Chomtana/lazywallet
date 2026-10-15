@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { savedTokens } from '@/lib/tokens'
 import { useAgentChat } from './useAgentChat'
 
 vi.mock('@/chain/client', () => ({
@@ -166,5 +167,28 @@ describe('useAgentChat', () => {
     expect(result.current.messages).toHaveLength(1)
     expect(result.current.messages[0]).not.toHaveProperty('chosen')
     expect(result.current.messages[0]).not.toHaveProperty('closed', true)
+  })
+
+  it('saves a bought token after the swap succeeds and sends saved tokens with each message', async () => {
+    localStorage.clear()
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    const me = OPTIONS.address
+    const COQ = { chainId: 43114, address: '0x420FcA0121DC28039145009570975747295f2329', symbol: 'COQ', decimals: 18 }
+    const step = { label: 'Swap AVAX → COQ', request: { to: me, value: '1', data: '0x', chainId: 43114 } }
+    act(() =>
+      live.onmessage?.({
+        data: JSON.stringify({ type: 'confirm', id: 'pbuy', tx: { title: 'Swap 1 AVAX → COQ', from: me, rows: [], steps: [step], addToken: COQ } }),
+      }),
+    )
+    expect(savedTokens(me)).toEqual([])
+    await act(() => result.current.approve('pbuy'))
+    expect(savedTokens(me)).toEqual([COQ])
+    act(() => result.current.send('sell all my COQ'))
+    expect(JSON.parse(live.sent.at(-1)!)).toMatchObject({ type: 'user', text: 'sell all my COQ', tokens: [COQ] })
   })
 })

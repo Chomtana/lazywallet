@@ -1,8 +1,9 @@
 import { useEffect, useReducer, useRef } from 'react'
 import { mnemonicToAccount } from 'viem/accounts'
-import { executeSteps, progressText, statusPatch } from '@/chain/executeTx'
+import { executeSteps, progressText, statusPatch, tokenToSave } from '@/chain/executeTx'
 import { txDepsFor } from '@/chain/client'
 import { shortAddress, txHash, uid } from '@/lib/format'
+import { savedTokens, saveToken } from '@/lib/tokens'
 import { say } from '@/mock/agent'
 import type { Address, AgentReply, ChoiceOption, Contact, Message } from '@/types'
 import { speak } from '@/voice/speech'
@@ -104,6 +105,7 @@ export function useAgentChat(options: Options) {
       spoken,
       address,
       contacts: contacts.map((c) => ({ name: c.name, address: c.address })),
+      tokens: savedTokens(address),
     })
     if (!sent) return deliver({ messages: [say(OFFLINE_TEXT)] })
     dispatch({ type: 'busy', busy: true })
@@ -148,6 +150,8 @@ export function useAgentChat(options: Options) {
       ? await executeSteps(steps, txDepsFor(mnemonic), (i) => dispatch({ type: 'update', id: statusId, patch: { text: progressText(i, steps) } }))
       : { hashes: [], error: 'No wallet is unlocked.', failedStep: 0 }
     dispatch({ type: 'update', id: statusId, patch: statusPatch(outcome, steps) })
+    const bought = tokenToSave(outcome, m.tx)
+    if (bought && m.tx.from) saveToken(m.tx.from, bought)
     sendJson({
       type: 'tx_result',
       id,
