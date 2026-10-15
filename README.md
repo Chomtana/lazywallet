@@ -2,7 +2,7 @@
 
 A voice-powered AI wallet for newcomers and degens. Say what you want — check balances, send, swap, set price alerts, recurring buys or conditional orders — and approve each transaction in the chat. Runs in the browser; keys stay on your device.
 
-> **Status: Phase 1 — design mockup.** The wallet UI is clickable end-to-end. Seed generation, the encrypted vault and voice are real; the AI agent, balances, transactions and WalletConnect are mocked. Everything runs against "Sandbox" (an Ethereum mainnet fork) only.
+> **Status: Phase 2 — minimum viable AI wallet.** The chat runs on a real Claude agent. Balances and ETH/ERC-20 sends are real on "Sandbox" (an Anvil fork of Ethereum mainnet). Swaps, bridges, scheduled tasks and WalletConnect are still mocked or "coming soon".
 
 ## Repo layout
 
@@ -10,39 +10,37 @@ A voice-powered AI wallet for newcomers and degens. Say what you want — check 
 |---|---|
 | `apps/landing` | Landing page (Vite + React + Tailwind) — http://localhost:5173 |
 | `apps/wallet` | Wallet app (Vite + React + Tailwind + shadcn/ui + viem + wagmi) — http://localhost:5174 |
-| `agent/` | Python Claude Agent SDK agent — Phase 2 |
-| `anvil/` | Anvil mainnet-fork sandbox, seed scripts, faucet — Phase 2 |
+| `agent/` | Python agent (FastAPI + Claude Agent SDK) — ws://localhost:8787/ws |
+| `anvil/` | Anvil mainnet fork :8545 + faucet :8547 |
 | `docs/superpowers/` | Design specs and implementation plans |
 
 ## Getting started
 
-Requires Node.js LTS and pnpm.
+Requires Node.js LTS, pnpm, [uv](https://docs.astral.sh/uv/), [Foundry](https://getfoundry.sh) (Anvil) and a logged-in [Claude Code](https://code.claude.com).
 
 ```bash
+cp .env.example .env   # set ETH_RPC_URL to an Ethereum mainnet archive RPC
 pnpm install
-pnpm dev      # landing on :5173, wallet on :5174
-pnpm test     # unit tests
-pnpm build
-pnpm lint
+pnpm dev:sandbox       # terminal 1: Anvil fork + faucet
+pnpm dev:agent         # terminal 2: AI agent
+pnpm dev               # terminal 3: landing :5173, wallet :5174
+pnpm test && pnpm test:py
 ```
 
 Voice input uses the browser's Web Speech API — use Chrome or Edge. Other browsers can still type.
 
 ## Try it
 
-Create a wallet, then say or type:
+Create a wallet, open Receive (QR button) → **Get test funds**, then say or type:
 
 - "What's my balance?"
 - "Send 0.1 ETH to Alice"
-- "Swap 100 USDC to ETH"
-- "Alert me if ETH drops below 3000"
-- "Buy ETH every Monday with 50 USDC"
-- "If ETH < 3000, swap 500 USDC to ETH" → tap *Simulate trigger*
+- "Send 50 USDC to Bob"
 
-To try the dApp flow: QR button → Connect dApp → paste any WalletConnect v2 link (`wc:…@2?relay-protocol=…&symKey=…`).
+To try the (still mocked) dApp flow: QR button → Connect dApp → paste any WalletConnect v2 link (`wc:…@2?relay-protocol=…&symKey=…`).
 
 ## Roadmap
 
-1. **Design** (current) — landing + clickable wallet mockup.
-2. **Minimum viable AI wallet** — Python agent, Anvil sandbox, real transactions, real WalletConnect (Reown WalletKit).
-3. Later — more chains, x402 payments.
+1. **Design** — landing + clickable wallet mockup. ✅
+2. **Minimum viable AI wallet** (current) — Python agent, Anvil sandbox, real balances and transfers.
+3. Next — swaps and other protocols, real WalletConnect (Reown WalletKit), scheduled tasks, more chains, x402 payments.
