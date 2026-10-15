@@ -1,7 +1,7 @@
 # LazyWallet — Phase 4 (Avalanche + Dexalot) Spec
 
 Date: 2026-10-15
-Status: Draft — awaiting user review
+Status: Approved — implemented on branch phase4-avalanche
 Builds on: `2026-10-15-lazywallet-uniswap-v4-swap-design.md` (Phase 3)
 Branch: `phase4-avalanche`
 
@@ -95,7 +95,7 @@ Source: `Dexalot/contracts` `contracts/DexalotRFQ.sol`.
 - `Session` / `WalletTools` hold one `RpcChain` per network; `RpcChain` injects `ExtraDataToPOAMiddleware` for Avalanche.
 
 ### 6.2 Tools
-- `propose_transfer` and `propose_swap` gain optional `network`; balances and faucet always cover both.
+- `propose_transfer` and `propose_swap` gain optional `network` (`"ethereum"` | `"avalanche"`); balances and faucet always cover both.
 - `get_balances`: both networks in parallel; holdings carry `network`; if a network is unreachable, show the rest and say which is down.
 - `propose_transfer`: resolve network, then the existing flow on that network's chain (gas in its native token).
 - `propose_swap`: resolve network; Ethereum → existing Uniswap v4 path; Avalanche → Dexalot path:

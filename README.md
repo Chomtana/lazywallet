@@ -11,7 +11,7 @@ A voice-powered AI wallet for newcomers and degens. Say what you want — check 
 | `apps/landing` | Landing page (Vite + React + Tailwind) — http://localhost:5173 |
 | `apps/wallet` | Wallet app (Vite + React + Tailwind + shadcn/ui + viem + wagmi) — http://localhost:5174 |
 | `agent/` | Python agent (FastAPI + Claude Agent SDK) — ws://localhost:8787/ws |
-| `anvil/` | Anvil mainnet fork :8545 + faucet :8547 |
+| `anvil/` | Anvil forks: Ethereum :8545 + Avalanche :8546, faucet/sandbox service :8547 |
 | `docs/superpowers/` | Design specs and implementation plans |
 
 ## Getting started
@@ -47,5 +47,6 @@ To try the (still mocked) dApp flow: QR button → Connect dApp → paste any Wa
 
 1. **Design** — landing + clickable wallet mockup. ✅
 2. **Minimum viable AI wallet** — Python agent, Anvil sandbox, real balances and transfers. ✅
-3. **Uniswap v4 swaps** (current) — best hookless route, approvals in one card.
-4. Next — other protocols, real WalletConnect (Reown WalletKit), scheduled tasks, more chains, x402 payments.
+3. **Uniswap v4 swaps** — best hookless route, approvals in one card. ✅
+4. **Avalanche + Dexalot swaps** (current) — Dexalot RFQ on Avalanche; balances and sends across both networks.
+5. Next — other protocols, real WalletConnect (Reown WalletKit), scheduled tasks, more chains, x402 payments.
