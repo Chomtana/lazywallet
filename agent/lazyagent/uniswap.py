@@ -17,6 +17,9 @@ UNIVERSAL_ROUTER = Web3.to_checksum_address("0x66a9893cc07d91d95644aedd05d03f95e
 PERMIT2 = Web3.to_checksum_address("0x000000000022D473030F116dDEE9F6B43aC78BA3")
 V4_QUOTER = Web3.to_checksum_address("0x52f0e24d1c21c8a0cb1e5a5dd6198556bd9e1203")
 FEE_TIERS = ((100, 1), (500, 10), (3000, 60), (10000, 200))
+# Real quotes use ≤ ~250k gas. Without a cap, an initialized-but-empty pool makes the quoter sweep the whole
+# tick bitmap — thousands of cold storage reads that take minutes on a fresh fork.
+QUOTE_GAS = 1_000_000
 
 V4_SWAP = 0x10
 SWAP_EXACT_IN_SINGLE, SWAP_EXACT_IN, SETTLE_ALL, TAKE_ALL = 0x06, 0x07, 0x0C, 0x0F
@@ -136,7 +139,7 @@ class ChainQuoter:
 
     async def quote(self, route: Route, amount_in: int) -> int | None:
         try:
-            out = decode_quote(await self.chain.call(V4_QUOTER, encode_quote(route, amount_in)))
+            out = decode_quote(await self.chain.call(V4_QUOTER, encode_quote(route, amount_in), gas=QUOTE_GAS))
         except Exception:
             return None
         return out or None

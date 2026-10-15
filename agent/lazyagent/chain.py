@@ -38,7 +38,7 @@ class Chain(Protocol):
     async def price_usd(self, token: Token) -> float: ...
     async def gas_price(self) -> int: ...
     async def is_sandbox(self) -> bool: ...
-    async def call(self, to: str, data: str) -> bytes: ...
+    async def call(self, to: str, data: str, gas: int | None = None) -> bytes: ...
     async def block_timestamp(self) -> int: ...
 
 
@@ -72,8 +72,11 @@ class RpcChain:
     async def gas_price(self) -> int:
         return await self.w3.eth.gas_price
 
-    async def call(self, to: str, data: str) -> bytes:
-        return bytes(await self.w3.eth.call({"to": Web3.to_checksum_address(to), "data": data}))
+    async def call(self, to: str, data: str, gas: int | None = None) -> bytes:
+        tx = {"to": Web3.to_checksum_address(to), "data": data}
+        if gas is not None:
+            tx["gas"] = gas
+        return bytes(await self.w3.eth.call(tx))
 
     async def block_timestamp(self) -> int:
         return (await self.w3.eth.get_block("latest"))["timestamp"]

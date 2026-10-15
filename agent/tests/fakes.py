@@ -30,7 +30,7 @@ class FakeChain:
     async def is_sandbox(self) -> bool:
         return self.sandbox
 
-    async def call(self, to: str, data: str) -> bytes:
+    async def call(self, to: str, data: str, gas: int | None = None) -> bytes:
         return self.call_responses.get(data[:10], bytes(96))
 
     async def block_timestamp(self) -> int:

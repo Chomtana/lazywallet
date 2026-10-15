@@ -3,8 +3,10 @@ from web3 import Web3
 
 from lazyagent.uniswap import (
     PERMIT2,
+    QUOTE_GAS,
     UNIVERSAL_ROUTER,
     ZERO,
+    ChainQuoter,
     Hop,
     Route,
     best_route,
@@ -103,3 +105,18 @@ async def test_best_route_picks_highest_output_and_handles_no_liquidity():
     route, out = await best_route(q, ZERO, USDC, 10**18)
     assert route.hops == (Hop(500, 10),) and out == 2358
     assert await best_route(TableQuoter({}), ZERO, USDC, 10**18) is None
+
+
+class RecordingChain:
+    def __init__(self):
+        self.calls = []
+
+    async def call(self, to, data, gas=None):
+        self.calls.append(gas)
+        return encode(["uint256", "uint256"], [42, 0])
+
+
+async def test_chain_quoter_caps_gas_so_empty_pools_cannot_sweep_the_tick_range():
+    chain = RecordingChain()
+    assert await ChainQuoter(chain).quote(Route((ZERO, USDC), (Hop(500, 10),)), 10**18) == 42
+    assert chain.calls == [QUOTE_GAS] and QUOTE_GAS == 1_000_000
