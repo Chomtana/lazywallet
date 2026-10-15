@@ -94,3 +94,9 @@ New `agent/lazyagent/kyber.py`:
 7. Kyber needs a non-default `user-agent` header (403 otherwise); GeckoTerminal search adds `include=base_token`.
 8. Confirm-card values wrap (`wrap-anywhere`) so full contract addresses fit on phones.
 9. The opt-in fork tests cover both chains with one token each: COQ on Avalanche (buy, balance, sell) and PEPE on Ethereum (buy, balance).
+
+## 8. Hardening added after review
+
+1. Impostor tokens: a custom token whose symbol equals (case-insensitive) a built-in token's symbol on the same network is refused. Found by contract address or symbol search → plain error ("That token calls itself USDC but isn't the real USDC on <network> Sandbox, so I won't trade it."); in the saved `lw.tokens` list → dropped silently by `merge` (built-ins win).
+2. `verify()` also cross-checks the build: its `amountOut` (which the minimum and the 5% simulation check are measured against) may be at most 1% (`MAX_BUILD_SHORTFALL_BPS = 100`) below the separate `/routes` quote; otherwise "build quote below the route quote", no card.
+3. Empty token text matches nothing (no longer the native coin); a non-object `data` in a `/routes` response counts as no route.
