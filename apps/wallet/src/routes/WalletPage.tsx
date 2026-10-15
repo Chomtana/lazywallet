@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BookUser, QrCode, Zap } from 'lucide-react'
 import { ChatView } from '@/chat/ChatView'
 import { InputBar } from '@/chat/InputBar'
+import { QuickActionBar } from '@/chat/QuickActionBar'
 import { useAgentChat } from '@/agent/useAgentChat'
 import { AddressBookSheet } from '@/components/AddressBookSheet'
 import { ConnectedBar } from '@/components/ConnectedBar'
@@ -110,6 +111,7 @@ export default function WalletPage() {
       </main>
       <div className="mx-auto w-full max-w-[720px] space-y-2 px-4 pb-4">
         {session && <ConnectedBar dapp={session} onDisconnect={disconnect} />}
+        <QuickActionBar onPick={(t) => chat.send(t)} disabled={!chat.online} />
         <InputBar onSend={chat.send} speakEnabled={speakEnabled} onToggleSpeak={() => setSpeakEnabled((v) => !v)} />
       </div>
       <QrSheet {...panelProps('qr')} address={active.address} onConnect={connect} />
