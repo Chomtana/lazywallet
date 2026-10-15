@@ -5,6 +5,7 @@ THINKING = "Thinking…"
 TOOL_LABELS = {
     "get_balances": "Checking your balances",
     "propose_transfer": "Preparing your transfer",
+    "resolve_recipient": "Looking up the recipient",
     "propose_swap": "Finding the best route",
     "list_trending_tokens": "Looking up trending tokens",
     "request_test_funds": "Getting test funds",
