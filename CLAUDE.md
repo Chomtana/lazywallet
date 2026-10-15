@@ -4,7 +4,7 @@ LazyWallet — voice-powered AI wallet (hackathon project). See README.md for ov
 
 ## Current phase
 
-Phase 2: minimum viable AI wallet. Spec: `docs/superpowers/specs/2026-10-14-lazywallet-mvp-agent-design.md` (Phase 1 design spec: `2026-10-14-lazywallet-design-phase-design.md`).
+Phase 3: Uniswap v4 swaps. Spec: `docs/superpowers/specs/2026-10-15-lazywallet-uniswap-v4-swap-design.md`.
 
 ## Stack & layout
 
@@ -32,11 +32,13 @@ pnpm build && pnpm lint
 - Domain and chat message types: `src/types.ts`.
 - Real vs mock boundary:
   - Real: `lib/vault.ts` (mnemonics, PBKDF2 + AES-GCM vault), `voice/speech.ts` (Web Speech API), `agent/useAgentChat.ts` (chat over the agent WebSocket), `chain/` (viem signing, faucet).
-  - Mock: `mock/walletconnect.ts` (WalletConnect), scheduled tasks, swaps. `mock/agent.ts` now only supplies `say()`/`confirm()` helpers for the WalletConnect mock.
+  - Mock: `mock/walletconnect.ts` (WalletConnect), scheduled tasks. `mock/agent.ts` now only supplies `say()`/`confirm()` helpers for the WalletConnect mock.
 - Never store a seed phrase unencrypted. Only `lw.vault` (encrypted) holds secrets; other `lw.*` keys are non-secret.
 - Signing model: keys stay in the browser; every transaction goes through an Approve/Reject confirm card. Scheduled tasks only run while the tab is open.
 - Network: Sandbox only (Anvil fork, chain id 1).
 - The model never builds calldata — `agent/lazyagent/transfers.py` does. Every transfer goes through `propose_transfer` and the browser's Approve card.
+- Agent confirm cards carry `tx.steps` (`[{label, request}]`); the browser runs them in order (`chain/executeTx.ts` `executeSteps`).
+- Uniswap v4 recipe and addresses live in `agent/lazyagent/uniswap.py` (verified on a fork) — change them only with a fork test.
 - Unit tests cover pure logic (`*.test.ts` next to the module). UI is reviewed manually.
 
 ## Development motto

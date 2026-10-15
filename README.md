@@ -2,7 +2,7 @@
 
 A voice-powered AI wallet for newcomers and degens. Say what you want — check balances, send, swap, set price alerts, recurring buys or conditional orders — and approve each transaction in the chat. Runs in the browser; keys stay on your device.
 
-> **Status: Phase 2 — minimum viable AI wallet.** The chat runs on a real Claude agent. Balances and ETH/ERC-20 sends are real on "Sandbox" (an Anvil fork of Ethereum mainnet). Swaps, bridges, scheduled tasks and WalletConnect are still mocked or "coming soon".
+> **Status: Phase 3 — Uniswap v4 swaps.** The chat runs on a real Claude agent. Balances, ETH/ERC-20 sends and Uniswap v4 swaps are real on "Sandbox" (an Anvil fork of Ethereum mainnet). Bridges, scheduled tasks and WalletConnect are still mocked or "coming soon".
 
 ## Repo layout
 
@@ -37,11 +37,15 @@ Create a wallet, then say or type:
 - "What's my balance?"
 - "Send 0.1 ETH to Alice"
 - "Send 50 USDC to Bob"
+- "Swap 0.5 ETH to USDC"
+- "Swap 100 USDC to ETH with 0.5% slippage"
+- "Swap 0.01 ETH to LIT"
 
 To try the (still mocked) dApp flow: QR button → Connect dApp → paste any WalletConnect v2 link (`wc:…@2?relay-protocol=…&symKey=…`).
 
 ## Roadmap
 
 1. **Design** — landing + clickable wallet mockup. ✅
-2. **Minimum viable AI wallet** (current) — Python agent, Anvil sandbox, real balances and transfers.
-3. Next — swaps and other protocols, real WalletConnect (Reown WalletKit), scheduled tasks, more chains, x402 payments.
+2. **Minimum viable AI wallet** — Python agent, Anvil sandbox, real balances and transfers. ✅
+3. **Uniswap v4 swaps** (current) — best hookless route, approvals in one card.
+4. Next — other protocols, real WalletConnect (Reown WalletKit), scheduled tasks, more chains, x402 payments.

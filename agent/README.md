@@ -1,6 +1,6 @@
 # agent — LazyWallet AI agent
 
-FastAPI WebSocket server (`ws://localhost:8787/ws`) running Claude through the Claude Agent SDK. Uses your **Claude Code login** (no API key). Built-in Claude Code tools are disabled; the agent only has wallet tools: `get_balances`, `resolve_recipient`, `propose_transfer`, `request_test_funds` (Sandbox faucet, refused on any non-Anvil chain), `unsupported_action`.
+FastAPI WebSocket server (`ws://localhost:8787/ws`) running Claude through the Claude Agent SDK. Uses your **Claude Code login** (no API key). Built-in Claude Code tools are disabled; the agent only has wallet tools: `get_balances`, `resolve_recipient`, `propose_transfer`, `propose_swap` (Uniswap v4, exact input), `request_test_funds` (Sandbox faucet, refused on any non-Anvil chain), `unsupported_action`.
 
 ```bash
 claude                                            # once: make sure Claude Code is logged in
