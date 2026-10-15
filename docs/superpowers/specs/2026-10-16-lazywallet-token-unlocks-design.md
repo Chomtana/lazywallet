@@ -17,7 +17,9 @@ Checked against the live API on 2026-10-16.
 Limits: the plan has 50,000 requests/month (`metadata.credit`), resetting on the 1st; quota or rate limit → `429`.
 No key → 401, a wrong key → 403. One refresh costs 2 + (flagged tokens among the 10) Tokenomist requests, and is cached for 10 minutes.
 
-Selection: unlocks from now to 30 days ahead; the 10 largest by USD value; shown soonest first. Allocation = the two
+Selection: unlocks from now to 30 days ahead; only tokens LazyWallet can trade (buyable) — the biggest ≤ 30 by USD
+value with an Ethereum contract (or AVAX) are checked on GeckoTerminal in one call; the 10 largest buyable ones, shown
+soonest first. Untradable tokens are hidden, not dimmed, and the next biggest tradable ones fill their slots. Allocation = the two
 biggest standard allocations by value ("Founder / Team" → "Team", "Private Investors" → "Investors").
 
 ## Where it can be bought
@@ -31,7 +33,7 @@ Tokenomist gives no contract addresses, but its token ids are CoinGecko coin ids
    the trending-tokens rule.
 3. AVAX (`avalanche-2`) is Avalanche's native coin: network Avalanche, no address, buyable.
 
-Other chains' tokens show dimmed with no Buy.
+Other chains' tokens, and tokens without a pool ≥ $10k, are not shown.
 
 ## Failure handling
 

@@ -70,6 +70,8 @@ def test_soonest_keeps_the_window_takes_the_biggest_and_sorts_by_date():
     assert [u.symbol for u in soonest(unlocks, later, days=14)] == ["BTW", "HYPE"]
     # top-N by USD value, then date order
     assert [u.symbol for u in soonest(unlocks, NOW, top=2)] == ["BTW", "HYPE"]
+    # a skipped token's slot goes to the next biggest one
+    assert [u.symbol for u in soonest(unlocks, NOW, top=2, keep=lambda u: u.symbol != "HYPE")] == ["ZRO", "BTW"]
 
 
 def test_parse_token_list():
@@ -141,17 +143,17 @@ def service(tokenomist=None, coins=None, gecko=None, clock=None):
     ), tokenomist, t
 
 
-async def test_fetch_merges_buybacks_burns_and_availability():
+async def test_fetch_shows_only_tradable_tokens_with_buybacks_and_burns():
     unlocks, tokenomist, _ = service()
     items = await unlocks.fetch()
     by = {i.unlock.symbol: i for i in items}
-    assert [i.unlock.symbol for i in items] == ["ZRO", "BTW", "HYPE", "AVAX"]
+    # HYPE (not on Ethereum) and BTW (no pool ≥ $10k) are hidden, not dimmed
+    assert [i.unlock.symbol for i in items] == ["ZRO", "AVAX"]
+    assert all(i.listing.buyable for i in items)
     assert by["ZRO"].buyback_usd == pytest.approx(352_479.5232) and by["ZRO"].burn_usd is None
     assert by["AVAX"].burn_usd == pytest.approx(459_773.26, rel=1e-6) and by["AVAX"].buyback_usd is None
-    assert by["HYPE"].buyback_usd is None and by["HYPE"].burn_usd is None  # flagged, but the lookup failed
-    assert by["BTW"].buyback_usd is None and by["BTW"].burn_usd is None  # not flagged: not looked up
     assert by["ZRO"].percent_of_supply == pytest.approx(2.5708334)
-    assert [c[0] for c in tokenomist.calls].count("buyback") == 2  # layerzero, hyperliquid
+    assert [c[0] for c in tokenomist.calls].count("buyback") == 1  # only shown tokens are looked up
     assert ("upcoming", "2026-10-16", "2026-11-15") in tokenomist.calls
     assert ("buyback", "layerzero", "2026-09-16", "2026-10-16") in tokenomist.calls
 
@@ -176,11 +178,12 @@ async def test_coin_list_is_cached_for_a_day_and_its_failure_only_hides_availabi
     coins = FakeCoinList(None)
     unlocks, _, t = service(coins=coins)
     items = await unlocks.fetch()
-    assert [(i.unlock.symbol, i.listing.network) for i in items] == [("ZRO", None), ("BTW", None), ("HYPE", None), ("AVAX", "avalanche")]
+    # no coin list → Ethereum availability unknown → only native AVAX can be shown
+    assert [(i.unlock.symbol, i.listing.network) for i in items] == [("AVAX", "avalanche")]
     coins.coins = COINS
     t[0] = 601
     items = await unlocks.fetch()
-    assert items[0].listing.network == "ethereum"
+    assert [(i.unlock.symbol, i.listing.network) for i in items] == [("ZRO", "ethereum"), ("AVAX", "avalanche")]
     t[0] = 1300
     await unlocks.fetch()
     assert coins.calls == 2  # the successful list is reused
@@ -189,7 +192,7 @@ async def test_coin_list_is_cached_for_a_day_and_its_failure_only_hides_availabi
 async def test_token_list_failure_drops_only_buybacks_and_burns():
     unlocks, tokenomist, _ = service(FakeTokenomist(UPCOMING, None))
     items = await unlocks.fetch()
-    assert len(items) == 4 and all(i.buyback_usd is None and i.burn_usd is None and i.percent_of_supply is None for i in items)
+    assert len(items) == 2 and all(i.buyback_usd is None and i.burn_usd is None and i.percent_of_supply is None for i in items)
     assert not any(c[0] in ("buyback", "burn") for c in tokenomist.calls)
 
 
@@ -208,15 +211,14 @@ async def test_card_items_are_camel_case_with_display_networks():
     unlocks, _, _ = service()
     card = to_card(await unlocks.fetch())
     assert card["type"] == "unlocks" and card["title"] == "Upcoming unlocks"
-    zro, btw, hype, avax = card["items"]
+    zro, avax = card["items"]
     assert set(zro) == {
         "symbol", "name", "logo", "date", "unlockUsd", "unlockAmount", "percentOfSupply", "allocation",
         "buybackUsd", "burnUsd", "network", "address", "buyable",
     }
     assert (zro["network"], zro["address"], zro["buyable"], zro["allocation"]) == ("Ethereum", ZRO, True, "Investors, Team")
     assert (avax["network"], avax["address"], avax["buyable"], avax["logo"]) == ("Avalanche", None, True, AVAX.logo)
-    assert (hype["network"], hype["buyable"]) == (None, False)
-    assert btw["date"] == "2026-11-02T08:00:00Z"
+    assert avax["date"] == "2026-11-08T00:00:00Z"
 
 
 async def test_reply_sends_the_card_and_compact_json():

@@ -36,8 +36,8 @@ async def test_list_unlocks_sends_the_card_and_works_without_a_wallet():
     [card] = out.of_type("unlocks")
     assert card["title"] == "Upcoming unlocks"
     assert [(i["symbol"], i["network"], i["buyable"]) for i in card["items"]] == [
-        ("ZRO", "Ethereum", True), ("BTW", "Ethereum", False), ("HYPE", None, False), ("AVAX", "Avalanche", True),
-    ]
+        ("ZRO", "Ethereum", True), ("AVAX", "Avalanche", True),
+    ]  # BTW (no pool ≥ $10k) and HYPE (not on Ethereum) are hidden
     assert "ONE short sentence" in text(result)
 
 

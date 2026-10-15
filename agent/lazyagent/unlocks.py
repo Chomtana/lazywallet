@@ -29,6 +29,7 @@ AVAX_ID = "avalanche-2"  # Tokenomist / CoinGecko id of AVAX
 WINDOW_DAYS = 30  # unlocks in the next 30 days; buybacks and burns over the last 30
 PAGE_SIZE = 200  # one page holds the whole month (139 events on 2026-10-16)
 TOP_N = 10
+GECKO_BATCH = 30  # GeckoTerminal tokens/multi takes at most 30 addresses
 TTL_S = 600
 COINS_TIMEOUT_S = 30
 COINS_TTL_S = 86_400  # CoinGecko's coin list (~4 MB) changes slowly; its free tier rate-limits hard
@@ -121,11 +122,17 @@ def parse_upcoming(body: dict) -> list[Unlock]:
     return out
 
 
-def soonest(unlocks: list[Unlock], now: datetime, days: int = WINDOW_DAYS, top: int = TOP_N) -> list[Unlock]:
-    """Unlocks from now until `days` ahead; the `top` biggest by USD value, soonest first."""
+def in_window(unlocks: list[Unlock], now: datetime, days: int = WINDOW_DAYS) -> list[Unlock]:
+    """Unlocks from now until `days` ahead, biggest USD value first."""
     end = now + timedelta(days=days)
-    window = [u for u in unlocks if now <= _when(u.date) < end]
-    biggest = sorted(window, key=lambda u: -(u.usd or 0.0))[:top]
+    return sorted((u for u in unlocks if now <= _when(u.date) < end), key=lambda u: -(u.usd or 0.0))
+
+
+def soonest(
+    unlocks: list[Unlock], now: datetime, days: int = WINDOW_DAYS, top: int = TOP_N, keep: Callable[[Unlock], bool] | None = None
+) -> list[Unlock]:
+    """Unlocks from now until `days` ahead that `keep` accepts; the `top` biggest by USD value, soonest first."""
+    biggest = [u for u in in_window(unlocks, now, days) if keep is None or keep(u)][:top]
     return sorted(biggest, key=lambda u: (_when(u.date), -(u.usd or 0.0)))
 
 
@@ -328,12 +335,28 @@ class Unlocks:
             return self._cache[1]
         now = self.now()
         today = now.date()
-        unlocks = soonest(parse_upcoming(await self.tokenomist.upcoming(_day(today), _day(today + timedelta(days=WINDOW_DAYS)))), now)
-        items = await self._enrich(unlocks, today) if unlocks else []
+        window = in_window(parse_upcoming(await self.tokenomist.upcoming(_day(today), _day(today + timedelta(days=WINDOW_DAYS)))), now)
+        listings = await self._listings(window)
+        # Only tokens LazyWallet can trade are shown; the next biggest tradable ones fill the slots.
+        unlocks = soonest(window, now, keep=lambda u: u.token_id in listings and listings[u.token_id].buyable)
+        items = await self._enrich(unlocks, listings, today) if unlocks else []
         self._cache = (self.clock(), items)
         return items
 
-    async def _enrich(self, unlocks: list[Unlock], today: date) -> list[UnlockItem]:
+    async def _listings(self, window: list[Unlock]) -> dict[str, Listing]:
+        """Where each of the biggest candidates can be bought: AVAX natively, others via an Ethereum contract
+        (from CoinGecko) checked for DEX liquidity on GeckoTerminal (one call, ≤ 30 addresses)."""
+        coins = await self._coin_list()
+        addresses = ethereum_addresses(coins, window) if coins else {}
+        candidates = [u for u in window if u.token_id == AVAX_ID or u.token_id in addresses][:GECKO_BATCH]
+        wanted = list(dict.fromkeys(addresses[u.token_id] for u in candidates if u.token_id in addresses))
+        gecko = None
+        if wanted:
+            body = await _or_none(self.gecko.tokens("ethereum", wanted))
+            gecko = None if body is None else {t.address: t for t in parse_tokens(body, "ethereum")}
+        return {u.token_id: listing(u, addresses.get(u.token_id), gecko) for u in candidates}
+
+    async def _enrich(self, unlocks: list[Unlock], listings: dict[str, Listing], today: date) -> list[UnlockItem]:
         start, end = _day(today - timedelta(days=WINDOW_DAYS)), _day(today)
         listed = await _or_none(self.tokenomist.token_list([u.token_id for u in unlocks]))
         meta = parse_token_list(listed) if listed else {}
@@ -347,14 +370,8 @@ class Unlocks:
 
         buybacks = await asyncio.gather(*(period(u, "buyback") for u in unlocks))
         burns = await asyncio.gather(*(period(u, "burn") for u in unlocks))
-        coins = await self._coin_list()
-        addresses = ethereum_addresses(coins, unlocks) if coins else {}
-        gecko = None
-        if addresses:
-            body = await _or_none(self.gecko.tokens("ethereum", list(dict.fromkeys(addresses.values()))))
-            gecko = None if body is None else {t.address: t for t in parse_tokens(body, "ethereum")}
         return [
-            UnlockItem(u, percent_of_supply(u.amount, meta.get(u.token_id)), bb, bn, listing(u, addresses.get(u.token_id), gecko))
+            UnlockItem(u, percent_of_supply(u.amount, meta.get(u.token_id)), bb, bn, listings[u.token_id])
             for u, bb, bn in zip(unlocks, buybacks, burns, strict=True)
         ]
 
