@@ -8,6 +8,8 @@ import { ConnectedBar } from '@/components/ConnectedBar'
 import { DeleteWalletDialog } from '@/components/DeleteWalletDialog'
 import { QrSheet } from '@/components/QrSheet'
 import { ShowSeedDialog } from '@/components/ShowSeedDialog'
+import { orderStatus } from '@/chain/scheduler'
+import { useScheduledOrders } from '@/chain/useScheduledOrders'
 import { TasksSheet } from '@/components/TasksSheet'
 import { TopBar } from '@/components/TopBar'
 import { Button } from '@/components/ui/button'
@@ -18,7 +20,7 @@ import { say } from '@/mock/agent'
 import { DEFAULT_CONTACTS } from '@/mock/fixtures'
 import { dappRequest } from '@/mock/walletconnect'
 import { useWallet } from '@/state/wallet-context'
-import type { Contact, DappInfo, Task } from '@/types'
+import type { Contact, DappInfo } from '@/types'
 
 type Panel = 'qr' | 'contacts' | 'tasks' | 'seed' | 'delete' | null
 
@@ -29,13 +31,14 @@ const TOPBAR_BUTTON = 'size-9 rounded-full border-border hover:bg-secondary'
 export default function WalletPage() {
   const { active } = useWallet()
   const [contacts, setContacts] = useStored<Contact[]>(KEYS.contacts, DEFAULT_CONTACTS)
-  const [tasks, setTasks] = useStored<Task[]>(KEYS.tasks, [])
   const [speakEnabled, setSpeakEnabled] = useStored<boolean>(KEYS.speak, true)
   const [panel, setPanel] = useState<Panel>(null)
   const [session, setSession] = useState<DappInfo | null>(null)
   const requestTimer = useRef<number | undefined>(undefined)
   const chat = useAgentChat({ address: active?.address, mnemonic: active?.mnemonic, contacts, speakEnabled })
-  const activeTasks = tasks.filter((t) => t.status === 'active').length
+  const { data: orders = [], isLoading: ordersLoading } = useScheduledOrders(active?.address)
+  const nowSec = Math.floor(Date.now() / 1000)
+  const activeTasks = orders.filter((o) => orderStatus(o, nowSec).state === 'active').length
   const panelProps = (p: Exclude<Panel, null>) => ({
     open: panel === p,
     onOpenChange: (v: boolean) => setPanel(v ? p : null),
@@ -111,7 +114,7 @@ export default function WalletPage() {
       </div>
       <QrSheet {...panelProps('qr')} address={active.address} onConnect={connect} />
       <AddressBookSheet {...panelProps('contacts')} contacts={contacts} onChange={setContacts} />
-      <TasksSheet {...panelProps('tasks')} tasks={tasks} onChange={setTasks} />
+      <TasksSheet {...panelProps('tasks')} orders={orders} loading={ordersLoading} />
       <ShowSeedDialog {...panelProps('seed')} />
       <DeleteWalletDialog {...panelProps('delete')} />
     </div>

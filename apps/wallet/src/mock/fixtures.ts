@@ -20,7 +20,7 @@ export const EXAMPLES = [
   'Send 0.1 ETH to Alice',
   'Swap 100 USDC to ETH',
   'Alert me if ETH drops below 3000',
-  'Buy ETH every Monday with 50 USDC',
+  'Swap 10 USDC to AVAX every minute, 3 times',
   'If ETH < 3000, swap 500 USDC to ETH',
 ]
 

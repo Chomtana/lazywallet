@@ -6,12 +6,10 @@ export type AgentContext = { contacts: Contact[]; holdings: Holding[] }
 
 const NUM = '(\\d+(?:\\.\\d+)?)'
 const SYM = '([a-z]+)'
-const DAYS = 'day|week|monday|tuesday|wednesday|thursday|friday|saturday|sunday'
 const BELOW = '(?:<|is below|drops below|falls below|goes below|below|under)'
 
 const CONDITIONAL = new RegExp(`^if ${SYM} ${BELOW} \\$?${NUM},? (?:then )?swap ${NUM} ?${SYM} (?:to|for|into) ${SYM}$`)
 const ALERT = new RegExp(`(?:alert|notify|tell) me (?:if|when) ${SYM} ${BELOW} \\$?${NUM}`)
-const DCA = new RegExp(`buy ${SYM} every (${DAYS}) with ${NUM} ?${SYM}`)
 const SEND = new RegExp(`^(?:send|transfer|pay) ${NUM} ?${SYM} to (.+)$`)
 const SWAP = new RegExp(`^swap ${NUM} ?${SYM} (?:to|for|into) ${SYM}$`)
 
@@ -32,7 +30,6 @@ function normalize(input: string): string {
 }
 
 const usdLabel = (n: number) => `$${n.toLocaleString('en-US')}`
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 function findHolding(ctx: AgentContext, symbol: string) {
   return ctx.holdings.find((h) => h.symbol === symbol.toUpperCase())
@@ -136,14 +133,6 @@ export function respond(input: string, ctx: AgentContext): AgentReply {
       kind: 'alert',
       description: `Price alert: ${sym.toUpperCase()} below ${usdLabel(Number(price))}`,
       schedule: 'Checks price every minute',
-    })
-  }
-  if ((m = text.match(DCA))) {
-    const [, buy, period, amount, payWith] = m
-    return newTask({
-      kind: 'dca',
-      description: `Buy ${buy.toUpperCase()} with ${formatAmount(Number(amount))} ${payWith.toUpperCase()}`,
-      schedule: `Every ${capitalize(period)}`,
     })
   }
   if (/\bbridge\b/.test(text)) {

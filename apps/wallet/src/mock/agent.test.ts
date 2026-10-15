@@ -62,11 +62,6 @@ describe('respond', () => {
     expect(textOf(respond('Bridge 0.05 ETH to Base', ctx))).toMatch(/coming soon/i)
   })
 
-  it('creates a DCA task', () => {
-    const r = respond('Buy ETH every Monday with 50 USDC', ctx)
-    expect(r.newTask).toMatchObject({ kind: 'dca', schedule: 'Every Monday', status: 'active' })
-  })
-
   it('creates a price alert from a spoken amount with separators', () => {
     const r = respond('Alert me if ETH drops below $3,000.', ctx)
     expect(r.newTask?.kind).toBe('alert')

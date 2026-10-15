@@ -43,7 +43,6 @@ def order_bytes(owner=ME, token_in=USDC.address, token_out=WETH.address, execute
     return encode([ORDER_ABI], [(owner, token_in, token_out, 10 * 10**6, 4 * 10**15, 1_700_000_000, 60, count, executed, next_time, cancelled)])
 
 
-@pytest.mark.skip(reason="scheduler.ts lands in Task 7")
 def test_pinned_addresses_agree_everywhere():
     sol = (ROOT / "contracts/src/Deployment.sol").read_text()
     for name, value in (("SCHEDULER", SCHEDULER), ("SWAPPER", SWAPPER)):
