@@ -16,7 +16,7 @@ export function PremiumPane({ subscription, onChoosePlan, onResults }: Props) {
     <div className="space-y-2 rounded-2xl border border-primary/40 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent p-3">
       {subscription ? (
         <>
-          <p className="flex items-center gap-2 text-sm font-medium">
+          <p className="flex items-center justify-center gap-2 text-sm font-medium">
             <Bot className="size-4 shrink-0 text-primary" />
             {planOf(subscription.plan).paneTitle}
             <span className="size-2 shrink-0 animate-pulse rounded-full bg-primary" aria-label="Running" />
@@ -32,7 +32,7 @@ export function PremiumPane({ subscription, onChoosePlan, onResults }: Props) {
         </>
       ) : (
         <>
-          <p className="flex items-center gap-2 text-sm">
+          <p className="flex items-center justify-center gap-2 text-sm">
             <Sparkles className="size-4 shrink-0 text-primary" />
             <span>
               Want to <span className="font-semibold text-primary">earn</span> while you sleep?
