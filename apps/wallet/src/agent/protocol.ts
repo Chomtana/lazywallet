@@ -1,4 +1,4 @@
-import type { Address, Holding, TxDraft, TxRequest } from '@/types'
+import type { Address, Holding, TxDraft, TxStep } from '@/types'
 
 export type ClientMsg =
   | {
@@ -15,12 +15,14 @@ export type ClientMsg =
       hash?: string
       status?: 'success' | 'reverted'
       error?: string
+      hashes?: string[]
+      failed_step?: number
     }
 
 export type ServerMsg =
   | { type: 'text_delta'; text: string }
   | { type: 'text_done' }
   | { type: 'balances'; holdings: Holding[] }
-  | { type: 'confirm'; id: string; tx: TxDraft & { request: TxRequest; from: Address } }
+  | { type: 'confirm'; id: string; tx: TxDraft & { steps: TxStep[]; from: Address } }
   | { type: 'error'; message: string }
   | { type: 'turn_end' }

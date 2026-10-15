@@ -20,7 +20,7 @@ export const initialChat: ChatState = { messages: [], streamingId: null, busy: f
 
 // Agent cards (they carry a tx request) can no longer be answered once the agent's turn or session is gone.
 function expireAgentCards(messages: Message[]): Message[] {
-  return messages.map((m) => (m.kind === 'confirm' && m.state === 'waiting' && m.tx.request ? { ...m, state: 'expired' } : m))
+  return messages.map((m) => (m.kind === 'confirm' && m.state === 'waiting' && m.tx.steps ? { ...m, state: 'expired' } : m))
 }
 
 function onServer(s: ChatState, msg: ServerMsg): ChatState {

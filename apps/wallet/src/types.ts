@@ -6,12 +6,13 @@ export type Contact = { id: string; name: string; address: Address }
 export type Holding = { symbol: string; amount: number; usdPrice: number }
 export type DappInfo = { name: string; url: string; icon: string }
 export type TxRequest = { to: Address; value: string; data: `0x${string}` }
+export type TxStep = { label: string; request: TxRequest }
 export type TxDraft = {
   title: string
   rows: { label: string; value: string }[]
   dapp?: DappInfo
   explanation?: string
-  request?: TxRequest
+  steps?: TxStep[]
   from?: Address
 }
 export type TaskKind = 'dca' | 'alert' | 'conditional'

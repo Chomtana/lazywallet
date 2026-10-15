@@ -1,4 +1,4 @@
-import type { TxRequest } from '@/types'
+import type { TxRequest, TxStep } from '@/types'
 
 type Hash = `0x${string}`
 
@@ -28,8 +28,26 @@ export async function executeTx(req: TxRequest, deps: TxDeps): Promise<TxOutcome
   }
 }
 
-export function statusPatch(o: TxOutcome): { state: 'success' | 'failed'; text: string; hash?: string } {
-  if (o.error) return { state: 'failed', text: `Failed: ${o.error}`, hash: o.hash }
-  if (o.status === 'reverted') return { state: 'failed', text: 'Transaction reverted.', hash: o.hash }
+export type StepsOutcome = { hashes: string[]; hash?: string; status?: 'success' | 'reverted'; error?: string; failedStep?: number }
+
+export async function executeSteps(steps: TxStep[], deps: TxDeps, onStep?: (index: number) => void): Promise<StepsOutcome> {
+  const hashes: string[] = []
+  for (let i = 0; i < steps.length; i++) {
+    onStep?.(i)
+    const r = await executeTx(steps[i].request, deps)
+    if (r.hash) hashes.push(r.hash)
+    if (r.error || r.status === 'reverted') return { hashes, hash: r.hash, status: r.status, error: r.error, failedStep: i }
+  }
+  return { hashes, hash: hashes.at(-1), status: 'success' }
+}
+
+export function statusPatch(o: StepsOutcome, steps: TxStep[]): { state: 'success' | 'failed'; text: string; hash?: string } {
+  const at = o.failedStep !== undefined && steps.length > 1 ? `${steps[o.failedStep].label}: ` : ''
+  if (o.error) return { state: 'failed', text: `${at}Failed: ${o.error}`, hash: o.hash }
+  if (o.status === 'reverted') return { state: 'failed', text: `${at}Transaction reverted.`, hash: o.hash }
   return { state: 'success', text: 'Confirmed on Sandbox.', hash: o.hash }
+}
+
+export function progressText(index: number, steps: TxStep[]): string {
+  return steps.length > 1 ? `Step ${index + 1} of ${steps.length}: ${steps[index].label}…` : 'Submitting to Sandbox…'
 }

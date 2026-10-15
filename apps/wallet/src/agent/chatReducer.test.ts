@@ -7,7 +7,12 @@ const server = (msg: Extract<ChatEvent, { type: 'server' }>['msg']): ChatEvent =
 const confirmMsg = server({
   type: 'confirm',
   id: 'p1',
-  tx: { title: 'Send 0.1 ETH', from: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', rows: [], request: { to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8', value: '1', data: '0x' } },
+  tx: {
+    title: 'Send 0.1 ETH',
+    from: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
+    rows: [],
+    steps: [{ label: 'Send', request: { to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8', value: '1', data: '0x' } }],
+  },
 })
 
 describe('chatReducer', () => {

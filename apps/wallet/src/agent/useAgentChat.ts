@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useRef } from 'react'
 import { mnemonicToAccount } from 'viem/accounts'
-import { executeTx, statusPatch } from '@/chain/executeTx'
+import { executeSteps, progressText, statusPatch } from '@/chain/executeTx'
 import { txDepsFor } from '@/chain/client'
 import { shortAddress, txHash, uid } from '@/lib/format'
 import { say } from '@/mock/agent'
@@ -127,7 +127,8 @@ export function useAgentChat(options: Options) {
     const statusId = uid()
     const pending: Message = { id: statusId, role: 'assistant', kind: 'status', state: 'pending', text: 'Submitting to Sandbox…' }
     dispatch({ type: 'local', messages: [pending] })
-    if (!m.tx.request) {
+    const steps = m.tx.steps
+    if (!steps) {
       // Phase-1 WalletConnect mock card: no real transaction.
       window.setTimeout(
         () => dispatch({ type: 'update', id: statusId, patch: { state: 'success', text: 'Done! Transaction confirmed.', hash: txHash() } }),
@@ -135,16 +136,27 @@ export function useAgentChat(options: Options) {
       )
       return
     }
-    const outcome = mnemonic ? await executeTx(m.tx.request, txDepsFor(mnemonic)) : { error: 'No wallet is unlocked.' }
-    dispatch({ type: 'update', id: statusId, patch: statusPatch(outcome) })
-    sendJson({ type: 'tx_result', id, outcome: 'approved', ...outcome })
+    const outcome = mnemonic
+      ? await executeSteps(steps, txDepsFor(mnemonic), (i) => dispatch({ type: 'update', id: statusId, patch: { text: progressText(i, steps) } }))
+      : { hashes: [], error: 'No wallet is unlocked.', failedStep: 0 }
+    dispatch({ type: 'update', id: statusId, patch: statusPatch(outcome, steps) })
+    sendJson({
+      type: 'tx_result',
+      id,
+      outcome: 'approved',
+      hash: outcome.hash,
+      hashes: outcome.hashes,
+      status: outcome.status,
+      error: outcome.error,
+      failed_step: outcome.failedStep,
+    })
   }
 
   function reject(id: string) {
     const m = findWaitingConfirm(id)
     if (!m) return
     dispatch({ type: 'update', id, patch: { state: 'rejected' } })
-    if (m.tx.request) sendJson({ type: 'tx_result', id, outcome: 'rejected' })
+    if (m.tx.steps) sendJson({ type: 'tx_result', id, outcome: 'rejected' })
     else deliver({ messages: [say('Cancelled — nothing was sent.')] })
   }
 

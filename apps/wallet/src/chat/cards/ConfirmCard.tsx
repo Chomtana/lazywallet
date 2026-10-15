@@ -39,6 +39,18 @@ export function ConfirmCard({ tx, state, onApprove, onReject }: Props) {
           </div>
         ))}
       </dl>
+      {tx.steps && tx.steps.length > 1 && (
+        <div className="mt-3 rounded-xl bg-secondary p-3">
+          <p className="text-xs font-medium text-muted-foreground">Steps (one tap runs them in order)</p>
+          <ol className="mt-1 space-y-0.5 text-sm">
+            {tx.steps.map((s, i) => (
+              <li key={i}>
+                {i + 1}. {s.label}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
       {state === 'waiting' ? (
         <div className="mt-4 grid grid-cols-2 gap-2">
           <Button variant="secondary" onClick={onReject}>

@@ -84,7 +84,7 @@ describe('useAgentChat', () => {
         data: JSON.stringify({
           type: 'confirm',
           id: 'pabc',
-          tx: { title: 'Send 1 ETH', from: otherWallet, rows: [], request: { to: otherWallet, value: '1', data: '0x' } },
+          tx: { title: 'Send 1 ETH', from: otherWallet, rows: [], steps: [{ label: 'Send', request: { to: otherWallet, value: '1', data: '0x' } }] },
         }),
       }),
     )
