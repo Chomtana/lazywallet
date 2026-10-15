@@ -231,10 +231,17 @@ def kyber_steps(token_in: Token, token_out: Token, amount: int, allowance: int, 
     return steps
 
 
-async def kyber_plan(
-    client: Kyber, chain: Chain, net: Network, tin: Token, tout: Token, amount: int, user: str, slippage: str | None
-) -> tuple[list[Step], Callable[[float], list[dict]], str, None]:
-    """Route, build, verify and simulate a KyberSwap swap; returns (steps, rows(fee_usd), revert hint, None)."""
+@dataclass(frozen=True)
+class KyberSwap:
+    steps: list[Step]
+    verified: Verified
+    label: str
+    impact: float | None
+    bps: int
+
+
+async def kyber_swap(client: Kyber, chain: Chain, net: Network, tin: Token, tout: Token, amount: int, user: str, slippage: str | None) -> KyberSwap:
+    """Route, build, verify and simulate a KyberSwap swap."""
     bps = kyber_slippage(slippage)
     req = SwapRequest(kyber_asset(tin), kyber_asset(tout), amount, user, bps)
     route = await client.route(net.key, req.token_in, req.token_out, amount)
@@ -247,13 +254,20 @@ async def kyber_plan(
             override = await allowance_override(chain, tin.address, user, amount)
     await simulate(chain, user, v, override)
     steps = kyber_steps(tin, tout, amount, allowance, v, max(_int(summary.get("gas")), SWAP_GAS_FLOOR))
-    label, impact = kyber_label(summary), usd_impact(summary)
+    return KyberSwap(steps, v, kyber_label(summary), usd_impact(summary), bps)
+
+
+async def kyber_plan(
+    client: Kyber, chain: Chain, net: Network, tin: Token, tout: Token, amount: int, user: str, slippage: str | None
+) -> tuple[list[Step], Callable[[float], list[dict]], str, None]:
+    """kyber_swap as propose_swap's plan: (steps, rows(fee_usd), revert hint, None)."""
+    k = await kyber_swap(client, chain, net, tin, tout, amount, user, slippage)
 
     def rows(fee_usd: float) -> list[dict]:
-        base = swap_rows(user, tin, tout, amount, v.expected, v.minimum, label, impact, fee_usd, network=net.label)
+        base = swap_rows(user, tin, tout, amount, k.verified.expected, k.verified.minimum, k.label, k.impact, fee_usd, network=net.label)
         return base + token_address_rows(tin, tout)
 
-    return steps, rows, f" The price probably moved more than the {bps / 100:g}% slippage — ask again for a fresh quote.", None
+    return k.steps, rows, f" The price probably moved more than the {k.bps / 100:g}% slippage — ask again for a fresh quote.", None
 
 
 def usd_price(client: Kyber, net: Network) -> PriceSource:

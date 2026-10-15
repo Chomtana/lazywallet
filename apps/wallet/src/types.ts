@@ -21,6 +21,18 @@ export type TrendingToken = {
   image: string | null
 }
 export type CustomToken = { chainId: number; address: Address; symbol: string; decimals: number }
+// One row of the airdrops card (agent list_airdrops). farm = short name for "Farm <farm> with N USDC"; buy = a farm token to buy.
+export type AirdropItem = {
+  id: string
+  name: string
+  category: 'rwa' | 'other'
+  networks: string[]
+  status: 'live' | 'unverified' | 'claim_pending'
+  action: string
+  tvlUsd: number | null
+  farm: string | null
+  buy: { symbol: string; address: Address } | null
+}
 export type ChoiceOption = { label: string; detail?: string; reply: string }
 export type DappInfo = { name: string; url: string; icon: string }
 export type TxRequest = { to: Address; value: string; data: `0x${string}`; chainId?: number }
@@ -33,6 +45,7 @@ export type TxDraft = {
   steps?: TxStep[]
   from?: Address
   addToken?: CustomToken // a token this swap buys; saved to lw.tokens once every step succeeded
+  addTokens?: CustomToken[] // tokens a multi-step card (e.g. a farm deposit) leaves in the wallet; saved like addToken
 }
 export type TaskKind = 'dca' | 'alert' | 'conditional'
 export type Task = {
@@ -54,5 +67,6 @@ export type Message =
   | { id: string; role: 'assistant'; kind: 'status'; state: 'pending' | 'success' | 'failed'; text: string; hash?: string }
   | { id: string; role: 'assistant'; kind: 'task'; task: Task }
   | { id: string; role: 'assistant'; kind: 'choice'; question: string; options: ChoiceOption[]; chosen?: string; closed?: boolean }
+  | { id: string; role: 'assistant'; kind: 'airdrops'; title: string; items: AirdropItem[] }
 export type AssistantMessage = Exclude<Message, { role: 'user' }>
 export type AgentReply = { messages: Message[]; newTask?: Task }

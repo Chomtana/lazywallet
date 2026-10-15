@@ -1,7 +1,7 @@
 # LazyWallet — RWA Airdrops (list + farm) Spec
 
 Date: 2026-10-15
-Status: Draft design — not yet implemented (rev. 2: Avant savUSD farm on Avalanche, Season 1 assumed running for the demo)
+Status: Implemented on feat-rwa-airdrops
 Builds on: `main` after the KyberSwap + custom tokens merge (`68d9f38`)
 Research: `docs/research/2026-10-15-rwa-airdrops.md` (`235f59c`)
 Branch: `feat-rwa-airdrops` (worktree, from `main`)
@@ -207,3 +207,18 @@ Add these bullets:
 8. **Avant TGE date.** The docs say TBA; aggregators said Sept 2026. For the demo Avant Season 1 is assumed running (§2); revert `status`/`action` and drop the `deposit` block after the hackathon.
 10. **savUSD price.** Same as sthUSD (item 1): balances may show "price unknown".
 9. **Re S2 end date.** "Approximately six months" from 2026-06-01; stored as `~2026-12`.
+
+## 11. Decisions made while planning
+
+- Visual card: `list_airdrops` sends `{"type": "airdrops", "title": "RWA airdrops" | "Airdrops", "items": [...]}` and the model answers in one sentence. Items: `id, name, category, networks (display names), status, action, tvlUsd, farm (short name) | null, buy {symbol, address} | null`. Buy = the first farm token (on the requested network, if any) whose `buyable` isn't `false`; executable entries get Farm instead. Chips send `Farm Theo with 50 USDC` / `Buy 50 USDC of reUSD (0x…)`.
+- Titles and suggestions never name a chain: the Points row reads "Only count on real mainnet. This Sandbox is a demo and earns nothing." (§2 said "real Ethereum mainnet"); the Aave entry is named "Aave V4 WAVAX incentives".
+- `Deposit` gets a `venue` (`uniswap_v4_pinned_then_kyber` | `kyber`) so Theo and Avant share one code path, and a `name` ("Theo", "Avant") so `propose_deposit` accepts the id or the short name; the JSON `deposit.asset` is resolved to its farm token (symbol + decimals).
+- `filter` is named `filter_programs` (no shadowing of the builtin) and filters before enrichment, so a filtered request makes fewer HTTP calls. `action_kind` also allows `claim` (no entry uses it since Avant became a deposit).
+- `kyber_swap()` is split out of `kyber_plan` (same checks) so the deposit can stake KyberSwap's verified minimum; the fallback uses 1% slippage, not the Sandbox 50% default.
+- Card rows: the vault address row is `sthUSD address` (from `token_address_rows`, same as custom-token swaps).
+- `addTokens` handling: `tokenToSave` became `tokensToSave` (array; `addToken` first, deduplicated).
+- Avant (user decision, after the plan was written): Season 1 is treated as running for the hackathon demo — `status: "live"`, `action_kind: "deposit"`, category `other`, `season_ends: null`, plus `demo_assumption` recording the real state (ended 2026-05-15, AVANT claim pending). It is the Avalanche farm: USDC → avUSD on KyberSwap, then `savUSD.deposit` of the swap's minimum (savUSD verified on a fork: `asset()` = avUSD, `maxDeposit` unlimited, no pause switch). The prompt forbids stating real dates for entries with `demo_assumption`.
+- DefiLlama slugs: Re is `re`; Avant uses the parent `avant-protocol` (Avalanche TVL only); Aave uses `aave-v4` (Avalanche TVL only).
+- Avant is featured (user decision): `"featured": true` in the JSON → `Program.featured`, the first element of the rank key, so Avant lists first while its category stays `other`. Unfiltered order: Avant, Theo, Re, Tori, Aave, Suzaku.
+- After a confirmed farm the agent shows the balance-change card (USDC, the farm token, the vault share) like sends and swaps; the share token may have an unknown price.
+- If a step after the swap fails (the farm token's approval or the stake), the reply says the swap went through and the token is in the wallet unstaked, shows the balance change, and tells the model not to swap again. The slippage hint is only given when the swap itself (or a step before it) failed. A failing `previewDeposit`/allowance read counts as "the vault isn't accepting deposits".

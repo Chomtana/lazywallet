@@ -278,4 +278,22 @@ describe('useAgentChat', () => {
       vi.useRealTimers()
     }
   })
+
+  it('saves every token a farm card lists once all its steps succeed', async () => {
+    localStorage.clear()
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    const me = OPTIONS.address
+    const THUSD = { chainId: 1, address: '0xa3fE5c7596024E6811E14F029937D5bd8Ae485b3', symbol: 'thUSD', decimals: 6 }
+    const STHUSD = { chainId: 1, address: '0xA808Bc9775cb41c52C7842f8b50427fE7A770326', symbol: 'sthUSD', decimals: 6 }
+    const step = (label: string) => ({ label, request: { to: me, value: '0', data: '0x', chainId: 1 } })
+    const tx = { title: 'Farm Theo points: 100 USDC → sthUSD', from: me, rows: [], steps: [step('Swap USDC → thUSD'), step('Stake thUSD → sthUSD')], addTokens: [THUSD, STHUSD] }
+    act(() => live.onmessage?.({ data: JSON.stringify({ type: 'confirm', id: 'pfarm', tx }) }))
+    await act(() => result.current.approve('pfarm'))
+    expect(savedTokens(me)).toEqual([THUSD, STHUSD])
+  })
 })

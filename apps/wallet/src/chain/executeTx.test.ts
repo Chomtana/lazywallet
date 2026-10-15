@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { CustomToken, TxDraft, TxRequest, TxStep } from '@/types'
-import { executeSteps, executeTx, progressText, statusPatch, tokenToSave, type TxDeps } from './executeTx'
+import { executeSteps, executeTx, progressText, statusPatch, tokensToSave, type TxDeps } from './executeTx'
 
 const req: TxRequest = { to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8', value: '100', data: '0x' }
 const HASH = '0xabc' as const
@@ -98,25 +98,35 @@ describe('statusPatch and progressText', () => {
   })
 })
 
-describe('tokenToSave', () => {
+describe('tokensToSave', () => {
   const COQ: CustomToken = { chainId: 43114, address: '0x420FcA0121DC28039145009570975747295f2329', symbol: 'COQ', decimals: 18 }
+  const THUSD: CustomToken = { chainId: 1, address: '0xa3fE5c7596024E6811E14F029937D5bd8Ae485b3', symbol: 'thUSD', decimals: 6 }
+  const STHUSD: CustomToken = { chainId: 1, address: '0xA808Bc9775cb41c52C7842f8b50427fE7A770326', symbol: 'sthUSD', decimals: 6 }
   const tx: TxDraft = { title: 'Swap 1 AVAX → COQ', rows: [], steps: ONE, addToken: COQ }
+  const farm: TxDraft = { title: 'Farm Theo points: 100 USDC → sthUSD', rows: [], steps: THREE, addTokens: [THUSD, STHUSD] }
+  const ok: TxDeps = { send: async () => HASH, wait: async () => 'success' }
 
-  it('returns the token only when every step succeeded', async () => {
-    const ok: TxDeps = { send: async () => HASH, wait: async () => 'success' }
-    expect(tokenToSave(await executeSteps(ONE, ok), tx)).toEqual(COQ)
+  it('returns the tokens only when every step succeeded', async () => {
+    expect(tokensToSave(await executeSteps(ONE, ok), tx)).toEqual([COQ])
+    expect(tokensToSave(await executeSteps(THREE, ok), farm)).toEqual([THUSD, STHUSD])
     const reverted: TxDeps = { send: async () => HASH, wait: async () => 'reverted' }
-    expect(tokenToSave(await executeSteps(ONE, reverted), tx)).toBeUndefined()
+    expect(tokensToSave(await executeSteps(ONE, reverted), tx)).toEqual([])
+    expect(tokensToSave(await executeSteps(THREE, reverted), farm)).toEqual([])
     const unsent: TxDeps = {
       send: async () => {
         throw new Error('rejected')
       },
       wait: async () => 'success',
     }
-    expect(tokenToSave(await executeSteps(ONE, unsent), tx)).toBeUndefined()
+    expect(tokensToSave(await executeSteps(ONE, unsent), tx)).toEqual([])
   })
 
-  it('returns nothing for cards without addToken', () => {
-    expect(tokenToSave({ hashes: [HASH], hash: HASH, status: 'success' }, { ...tx, addToken: undefined })).toBeUndefined()
+  it('merges addToken and addTokens without duplicates', () => {
+    const both: TxDraft = { ...farm, addToken: { ...THUSD, address: THUSD.address.toLowerCase() as CustomToken['address'] } }
+    expect(tokensToSave({ hashes: [HASH], hash: HASH, status: 'success' }, both).map((t) => t.symbol)).toEqual(['thUSD', 'sthUSD'])
+  })
+
+  it('returns nothing for cards without tokens', () => {
+    expect(tokensToSave({ hashes: [HASH], hash: HASH, status: 'success' }, { ...tx, addToken: undefined })).toEqual([])
   })
 })

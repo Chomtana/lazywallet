@@ -156,3 +156,32 @@ class FakeTrendingSource:
         if self.fail:
             raise ConnectionError("HTTP Error 429: Too Many Requests")
         return self.token_bodies.get(network, {})
+
+
+class FakeLlama:
+    """DefiLlama /protocol/{slug} stand-in: slug → body; a missing slug raises like an HTTP error."""
+
+    def __init__(self, bodies: dict | None = None):
+        self.bodies = bodies or {}
+        self.calls: list[str] = []
+        self.fail = False
+
+    async def protocol(self, slug):
+        self.calls.append(slug)
+        if self.fail or slug not in self.bodies:
+            raise ConnectionError("HTTP Error 429: Too Many Requests")
+        return self.bodies[slug]
+
+
+class FakeGeckoPools:
+    """GeckoTerminal /tokens/{address}/pools stand-in: lower-case address → body; missing raises."""
+
+    def __init__(self, bodies: dict | None = None):
+        self.bodies = bodies or {}
+        self.calls: list[tuple[str, str]] = []
+
+    async def pools(self, network, address):
+        self.calls.append((network, address))
+        if address.lower() not in self.bodies:
+            raise ConnectionError("HTTP Error 429: Too Many Requests")
+        return self.bodies[address.lower()]
