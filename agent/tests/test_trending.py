@@ -4,7 +4,20 @@ from pathlib import Path
 
 import pytest
 
-from lazyagent.trending import Pool, TokenInfo, Trending, TrendingError, is_memecoin, parse_args, parse_pools, rank_memes, to_json
+from lazyagent.trending import (
+    CATEGORY_NETWORKS,
+    CATEGORY_TITLES,
+    Pool,
+    TokenInfo,
+    Trending,
+    TrendingError,
+    is_memecoin,
+    parse_args,
+    parse_pools,
+    rank_memes,
+    to_card,
+    to_json,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 COQ = "0x420fca0121dc28039145009570975747295f2329"
@@ -48,6 +61,20 @@ def test_parse_pools_skips_pools_without_base_token_and_zeroes_missing_numbers()
     [p] = parse_pools(body)
     assert p.token == TokenInfo("NEW", "NEW", "0x01")
     assert (p.price_usd, p.volume_24h, p.change_24h, p.liquidity_usd, p.dex) == (0.0, 0.0, 0.0, 0.0, "mystery-dex")
+
+
+def test_parse_pools_reads_the_logo_and_drops_placeholders():
+    def pool(n: int) -> dict:
+        return {"attributes": {}, "relationships": {"base_token": {"data": {"id": f"avax_0x0{n}"}}}}
+
+    def token(n: int, image) -> dict:
+        return {"id": f"avax_0x0{n}", "type": "token", "attributes": {"address": f"0x0{n}", "symbol": f"T{n}", "image_url": image}}
+
+    logo = "https://coin-images.coingecko.com/coins/images/1/large/coq.png?1"
+    body = {"data": [pool(1), pool(2), pool(3)], "included": [token(1, logo), token(2, "missing.png"), token(3, None)]}
+    assert [p.token.image for p in parse_pools(body)] == [logo, None, None]
+    [p] = rank_memes([replace(meme("COQ", 1), token=TokenInfo("COQ", "COQINU", COQ, logo))])
+    assert p.image == logo
 
 
 def test_parse_pools_tolerates_an_empty_body():
@@ -137,5 +164,31 @@ def test_to_json_lists_tokens_for_the_model():
         "buyable": True,
         "note": None,
     }
-    assert "buyable" in body["note"] and "contract address" in body["note"]
+    assert "image" not in body["tokens"][0]  # the card shows logos; the model doesn't need them
+    assert "card" in body["note"] and "buyable" in body["note"] and "contract address" in body["note"]
     assert json.loads(to_json([]))["tokens"] == []
+
+
+def test_every_category_has_a_title_that_names_no_chain():
+    assert CATEGORY_TITLES == {"meme": "Trending memecoins", "rwa": "Hot RWA tokens"}
+    assert set(CATEGORY_TITLES) == set(CATEGORY_NETWORKS)
+
+
+def test_to_card_is_the_browser_message():
+    xaut0 = Trending("XAUt0", "XAUt0", "0x27", "avalanche", 4151.8, 1.4e5, None, 64_072.7, "blackhole-v3", True, "tokenized gold", "https://x/xaut.png")
+    ondo = Trending("ONDO", "Ondo", "0xfa", "ethereum", 0.43, 1e6, -7.5, 1.7e6, "uniswap_v3", False)
+    assert to_card("rwa", [xaut0, ondo]) == {
+        "type": "tokens",
+        "title": "Hot RWA tokens",
+        "items": [
+            {
+                "symbol": "XAUt0", "name": "XAUt0", "network": "Avalanche", "address": "0x27", "priceUsd": 4151.8, "change24h": None,
+                "liquidityUsd": 64_072.7, "dex": "blackhole-v3", "buyable": True, "note": "tokenized gold", "image": "https://x/xaut.png",
+            },
+            {
+                "symbol": "ONDO", "name": "Ondo", "network": "Ethereum", "address": "0xfa", "priceUsd": 0.43, "change24h": -7.5,
+                "liquidityUsd": 1.7e6, "dex": "uniswap_v3", "buyable": False, "note": None, "image": None,
+            },
+        ],
+    }
+    assert to_card("meme", [])["title"] == "Trending memecoins"

@@ -497,9 +497,12 @@ class WalletTools:
 
     async def list_trending_tokens(self, args: dict) -> dict:
         try:
-            return ok(await trending_reply(self.trending, args))
+            card, reply = await trending_reply(self.trending, args)
         except TrendingError as e:
             return err(str(e))
+        if card:
+            await self.send(card)
+        return ok(reply)
 
     async def unsupported_action(self, args: dict) -> dict:
         action = str(args.get("action", "That"))
