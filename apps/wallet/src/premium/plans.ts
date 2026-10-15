@@ -80,28 +80,30 @@ export const RESULTS: Record<PlanId, HuntResults> = {
   },
   perp_rwa: {
     summary:
-      'Overnight I traded delta-neutral volume across three perp exchanges and topped up two RWA vaults. ' +
-      'That is 184 thousand dollars of volume for only 92 dollars in fees and funding. ' +
-      'Your strongest position is on Variational, which snapshots soon. ' +
-      'Estimated airdrop value is about 4,100 dollars, and your hedges are flat, so price moves did not cost you.',
+      'Overnight I traded hedged volume across four perp exchanges and kept your RWA position earning. ' +
+      'That is 184 thousand dollars of volume for only 92 dollars in fees and funding, and your net exposure stayed flat. ' +
+      'Your strongest position is Ostium, where a Season 2 boost window doubled your gold points. ' +
+      'PERPTools converts points to tokens later this quarter, so I am leaning in there. ' +
+      'Estimated airdrop value is about 4,100 dollars.',
     stats: [
       { label: 'Est. airdrop value', value: '$4,100' },
       { label: 'Volume generated', value: '$184K' },
       { label: 'Fees + funding', value: '$92' },
       { label: 'Net exposure', value: '0%' },
     ],
+    // Trending pre-TGE programs as of 2026-10-16 (Lighter, GRVT, edgeX, Paradex already launched tokens).
     protocols: [
-      // Picked from memory (mid-2026) while offline — re-check each points program before a live demo.
-      { name: 'Variational', kind: 'Perp DEX', network: 'Arbitrum', activity: 'BTC/ETH hedged volume', points: '12,480 pts', estUsd: 1_350, status: 'snapshot soon' },
-      { name: 'Extended', kind: 'Perp DEX', network: 'Starknet', activity: 'Delta-neutral volume', points: '2,940 pts', estUsd: 1_100, status: 'farming' },
-      { name: 'Paper Trade', kind: 'Perp DEX', network: '', activity: 'Funding-rate arbitrage', points: '6,210 pts', estUsd: 750, status: 'farming' },
-      { name: 'Ostium', kind: 'RWA perps', network: 'Arbitrum', activity: 'Gold and FX hedged volume', points: '8,400 pts', estUsd: 520, status: 'farming' },
-      { name: 'Theo', kind: 'RWA', network: 'Ethereum', activity: 'Holding 2,000 sthUSD', points: '5,600 pts', estUsd: 380, status: 'qualified' },
+      { name: 'Ostium', kind: 'RWA perps', network: 'Arbitrum', activity: 'Gold hedged volume, 2x boost', points: '14,200 pts', estUsd: 1_200, status: 'farming' },
+      { name: 'Extended', kind: 'Perp DEX', network: 'Starknet', activity: 'Delta-neutral BTC/ETH volume', points: '2,940 pts', estUsd: 900, status: 'farming' },
+      { name: 'Papertrade', kind: 'Perp DEX', network: 'HyperEVM', activity: 'Hedged pair, losing leg mints PAPER', points: '38,500 PAPER', estUsd: 700, status: 'farming' },
+      { name: 'PERPTools', kind: 'Perp DEX', network: '', activity: 'Season 2 volume', points: '6,210 pts', estUsd: 600, status: 'snapshot soon' },
+      { name: 'Ondo Perps', kind: 'RWA perps', network: 'Ethereum', activity: 'Tokenized stock perps', points: '8,400 Ondo pts', estUsd: 420, status: 'farming' },
+      { name: 'Re', kind: 'RWA', network: 'Ethereum', activity: 'Holding reUSD in Pendle', points: '5,600 pts', estUsd: 280, status: 'qualified' },
     ],
     log: [
       { when: '06:30', text: 'Rebalanced hedges after BTC moved 2.1%' },
-      { when: '04:15', text: 'Closed funding arb on Paper Trade (+$14)' },
-      { when: '00:50', text: 'Rotated $3,000 of volume to Variational before the snapshot' },
+      { when: '04:15', text: 'Capped Papertrade at $500 after price-manipulation reports' },
+      { when: '00:50', text: 'Moved $3,000 of volume into an Ostium boost window' },
     ],
   },
 }
