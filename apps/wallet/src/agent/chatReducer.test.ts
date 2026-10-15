@@ -85,4 +85,9 @@ describe('chatReducer', () => {
     const s = run([choiceMsg, { type: 'local', messages: [user] }])
     expect(s.messages[0]).toMatchObject({ kind: 'choice', closed: true })
   })
+
+  it('closes open choice cards when the connection drops (a new session has no context)', () => {
+    const s = run([choiceMsg, server({ type: 'turn_end' }), { type: 'online', online: false }])
+    expect(s.messages[0]).toMatchObject({ kind: 'choice', closed: true })
+  })
 })

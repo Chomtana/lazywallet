@@ -89,7 +89,7 @@ export function chatReducer(s: ChatState, e: ChatEvent): ChatState {
     case 'online':
       return e.online
         ? { ...s, online: true }
-        : { ...s, online: false, busy: false, streamingId: null, messages: expireAgentCards(s.messages) }
+        : { ...s, online: false, busy: false, streamingId: null, messages: closeChoices(expireAgentCards(s.messages)) }
     case 'update':
       return { ...s, messages: s.messages.map((m) => (m.id === e.id ? ({ ...m, ...e.patch } as Message) : m)) }
   }
