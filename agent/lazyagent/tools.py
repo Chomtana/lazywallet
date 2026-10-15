@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
+from .airdrops import AIRDROPS, AIRDROPS_TOOL, AirdropError, Airdrops, airdrops_reply
 from .chain import Chain
 from .custom_tokens import ADDRESS, MIN_RESERVE_USD, Search, discover, merge
 from .dexalot import DEXALOT_REVERT_HINT, Quotes, asset_of, dexalot_rows, dexalot_steps
@@ -65,7 +66,7 @@ Fund = Callable[[str], Awaitable[str]]
 SERVER_NAME = "wallet"
 TOOL_NAMES = [
     f"mcp__{SERVER_NAME}__{n}"
-    for n in ("get_balances", "resolve_recipient", "propose_transfer", "propose_swap", "unsupported_action", "request_test_funds", "list_trending_tokens")
+    for n in ("get_balances", "resolve_recipient", "propose_transfer", "propose_swap", "unsupported_action", "request_test_funds", "list_trending_tokens", "list_airdrops")
 ]
 
 
@@ -504,6 +505,14 @@ class WalletTools:
             await self.send(card)
         return ok(reply)
 
+    airdrops: Airdrops = AIRDROPS  # shared 10 min cache; tests assign their own
+
+    async def list_airdrops(self, args: dict) -> dict:
+        try:
+            return ok(await airdrops_reply(self.airdrops, args, self.send))
+        except AirdropError as e:
+            return err(str(e))
+
     async def unsupported_action(self, args: dict) -> dict:
         action = str(args.get("action", "That"))
         return ok(f"{action} is coming soon. Right now LazyWallet can check balances, send and swap on Sandbox ({self.supported()}).")
@@ -555,6 +564,7 @@ def build_mcp_server(t: WalletTools):
                 {"type": "object", "properties": {}},
             )(t.request_test_funds),
             tool(*TRENDING_TOOL)(t.list_trending_tokens),
+            tool(*AIRDROPS_TOOL)(t.list_airdrops),
             tool(
                 "unsupported_action",
                 "Use for bridging, airdrops, scheduling, price alerts, dApps or anything other than balances, sends, swaps and test funds.",

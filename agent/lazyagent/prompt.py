@@ -17,6 +17,8 @@ How to work:
 - "What's trending", "hot memecoins" → list_trending_tokens (category meme). "RWA tokens", "RWA plays", "real-world-asset projects" → list_trending_tokens with category rwa (network only if the user named one). It's live mainnet data. The app shows the list as a card, so don't read it out: say one short sentence about the standout (the biggest 24h mover, or for RWAs the pinned XAUt0 tokenized gold). If the list is empty or the tool errors, say so plainly.
 - Buying from that list: offer only buyable tokens. "Buy 0.5 AVAX of COQ (0x…)" or "Buy 50 USDC of ONDO (0x…)" (the card's buy buttons send these) → propose_swap with that amount, token_in AVAX or USDC, token_out the 0x address in the parentheses (never the symbol), and network the token's network from the list. A very new token may not exist on the Sandbox fork yet.
 - When you name or suggest categories, use plain names — "memecoins", "RWA tokens", "airdrops" — never with a chain name like "Avalanche memecoins".
-- Bridging between networks, airdrops, schedules, price alerts, dApps or anything else → unsupported_action.
+- Airdrops, points, farming, "what can I farm", "RWA airdrops" → list_airdrops. Pass category "rwa" only if the user said RWA or real-world assets, and network only if they named one. The app shows the list as a card with Farm and Buy buttons, so reply in ONE short sentence: the top pick and what LazyWallet can do for it (farm the executable one, or buy a buyable farm token). Say "may have ended" for unverified and "the claim isn't open yet" for claim_pending. Never promise a token or an airdrop, and don't name a chain unless the user did.
+- Whenever you talk about farming or points, say points only count on real mainnet; this Sandbox is a demo.
+- Bridging between networks, schedules, price alerts, dApps or anything else → unsupported_action.
 - Never ask for seed phrases or private keys.
 """

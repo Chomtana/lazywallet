@@ -1,12 +1,15 @@
 import json
 
 import pytest
+from fakes import FakeGeckoPools, FakeLlama
 from web3 import Web3
 
 from lazyagent.airdrops import (
     DATA,
+    MAX_RESULTS,
     PROGRAMS,
     AirdropError,
+    Airdrops,
     card,
     enrich,
     filter_programs,
@@ -187,3 +190,31 @@ def test_card_titles_never_name_a_chain_and_buttons_follow_the_data():
     # Asked for one network: only that network's farm token, and never one known to be unbuyable.
     assert card([re_], "all", "avalanche")["items"][0]["buy"] is None
     assert card([enrich(program("re"), None, {})], "all")["items"][0]["buy"] == {"symbol": "reUSD", "address": REUSD_ETH}  # unknown → offer
+
+
+# --- live sources and cache ---
+
+
+async def test_list_enriches_ranks_and_caps():
+    source = Airdrops(FakeLlama({"theo-network-thusd": llama({"Ethereum": 132e6})}), FakeGeckoPools({THUSD.lower(): pools(3.5e6)}))
+    items = await source.list()
+    assert len(items) == len(PROGRAMS) <= MAX_RESULTS
+    assert items[0].program.id == "avant"
+    theo = next(a for a in items if a.program.id == "theo-thusd")
+    assert theo.tvl_usd == 132e6 and theo.farm_tokens[0].buyable is True
+    assert all(a.tvl_usd is None for a in items if a is not theo)  # every other lookup failed → curated data with nulls
+
+
+async def test_cache_is_10_minutes_and_errors_are_not_cached():
+    now = [0.0]
+    llama_src = FakeLlama({"theo-network-thusd": llama({"Ethereum": 1})})
+    gecko = FakeGeckoPools({})
+    source = Airdrops(llama_src, gecko, clock=lambda: now[0])
+    await source.list("rwa")
+    await source.list("rwa")
+    assert llama_src.calls.count("theo-network-thusd") == 1
+    assert llama_src.calls.count("re") == 2  # failed both times, never cached
+    assert gecko.calls.count(("ethereum", THUSD)) == 2
+    now[0] = 601
+    await source.list("rwa")
+    assert llama_src.calls.count("theo-network-thusd") == 2

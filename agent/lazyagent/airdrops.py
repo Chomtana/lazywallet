@@ -266,3 +266,103 @@ def card(airdrops: list[Airdrop], category: str, network: str | None = None) -> 
             }
         )
     return {"type": "airdrops", "title": "RWA airdrops" if category == "rwa" else "Airdrops", "items": items}
+
+
+# --- live enrichment: I/O ---
+
+
+class DefiLlamaSource(Protocol):
+    async def protocol(self, slug: str) -> dict: ...
+
+
+class GeckoSource(Protocol):
+    async def pools(self, network: str, address: str) -> dict: ...
+
+
+async def _get(url: str) -> dict:
+    status, body = await asyncio.to_thread(http_json, url, None, {"accept": "application/json"})
+    if status != 200:
+        raise ConnectionError(f"{url} answered {status}")
+    return body
+
+
+class DefiLlamaHttp:
+    async def protocol(self, slug: str) -> dict:
+        return await _get(f"{LLAMA_API}/protocol/{slug}")
+
+
+class GeckoPoolsHttp:
+    async def pools(self, network: str, address: str) -> dict:
+        return await _get(f"{GECKO_API}/networks/{GECKO_NETWORK[network]}/tokens/{address}/pools")
+
+
+class Airdrops:
+    """The curated programs, enriched live. Each lookup is cached for 10 min; a failed one reads as unknown
+    (None) and isn't cached."""
+
+    def __init__(
+        self,
+        llama: DefiLlamaSource,
+        gecko: GeckoSource,
+        programs: list[Program] = PROGRAMS,
+        ttl: float = TTL_S,
+        clock: Callable[[], float] = time.monotonic,
+    ):
+        self.llama, self.gecko, self.programs, self.ttl, self.clock = llama, gecko, programs, ttl, clock
+        self._cache: dict[tuple, tuple[float, dict]] = {}
+
+    async def _cached(self, key: tuple, fetch: Callable[[], Awaitable[dict]]) -> dict | None:
+        hit = self._cache.get(key)
+        if hit is not None and self.clock() - hit[0] < self.ttl:
+            return hit[1]
+        try:
+            body = await fetch()
+        except Exception:
+            return None
+        self._cache[key] = (self.clock(), body)
+        return body
+
+    async def _enrich(self, p: Program) -> Airdrop:
+        llama = await self._cached(("llama", p.defillama_slug), lambda: self.llama.protocol(p.defillama_slug)) if p.defillama_slug else None
+        pools = {}
+        for t in p.farm_tokens:
+            pools[t.address.lower()] = await self._cached(("pools", t.network, t.address.lower()), lambda t=t: self.gecko.pools(t.network, t.address))
+        return enrich(p, llama, pools)
+
+    async def list(self, category: str = "all", network: str | None = None) -> list[Airdrop]:
+        programs = filter_programs(self.programs, category, network)
+        return rank(list(await asyncio.gather(*(self._enrich(p) for p in programs))))[:MAX_RESULTS]
+
+
+AIRDROPS = Airdrops(DefiLlamaHttp(), GeckoPoolsHttp())
+
+
+# --- agent tools ---
+
+AIRDROPS_TOOL = (
+    "list_airdrops",
+    "Airdrops and points programs the user can farm (read-only): a curated list with live TVL and farm-token "
+    "liquidity. Featured first, then RWA programs. Each: id, name, category, networks, status (live | unverified = may have ended | "
+    "claim_pending = claim not open yet), reward, token, action, executable (propose_deposit can farm it), farm_tokens "
+    "(contract address, buyable). Also shows the user a card, so reply in one short sentence.",
+    {
+        "type": "object",
+        "properties": {
+            "category": {"type": "string", "enum": [*CATEGORIES, "all"], "description": "'rwa' only if the user said RWA / real-world assets; default 'all'"},
+            "network": {"type": "string", "enum": list(CHAIN_NAMES), "description": "Only if the user named a network"},
+        },
+    },
+)
+
+
+async def airdrops_reply(airdrops: Airdrops, args: dict, send: Callable[[dict], Awaitable[None]]) -> str:
+    """Sends the card and returns the tool's text. Raises AirdropError for bad arguments."""
+    category, network = parse_args(args)
+    items = await airdrops.list(category, network)
+    if not items:
+        return "No airdrops match that right now. Say so in one short sentence."
+    await send(card(items, category, network))
+    return (
+        "The user now sees these as a card. Reply in ONE short sentence: name the top one or two and which one "
+        "LazyWallet can farm or buy; say points only count on real mainnet. Don't read the list out. Data: " + to_json(items)
+    )
