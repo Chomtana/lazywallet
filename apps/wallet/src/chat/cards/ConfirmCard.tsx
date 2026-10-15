@@ -35,7 +35,7 @@ export function ConfirmCard({ tx, state, onApprove, onReject }: Props) {
         {tx.rows.map((r) => (
           <div key={r.label} className="flex justify-between gap-4">
             <dt className="text-muted-foreground">{r.label}</dt>
-            <dd className="text-right font-mono">{r.value}</dd>
+            <dd className="min-w-0 text-right font-mono wrap-anywhere">{r.value}</dd>
           </div>
         ))}
       </dl>

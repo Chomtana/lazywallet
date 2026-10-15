@@ -10,7 +10,7 @@ from web3 import Web3
 from .faucet import _post
 from .swaps import Step, display_units
 from .tokens import Token
-from .transfers import TransferError, format_units, format_usd, short
+from .transfers import NoRoute, TransferError, format_units, format_usd, short
 from .uniswap import encode_erc20_approve
 
 NATIVE = "0x0000000000000000000000000000000000000000"
@@ -76,5 +76,6 @@ class SandboxQuotes:
         except ConnectionError as e:
             raise TransferError("The Sandbox service isn't reachable — start it with `pnpm dev:sandbox`.") from e
         if status != 200:
-            raise TransferError(body.get("detail") or f"Dexalot quote failed ({status}).")
+            error = NoRoute if status == 404 else TransferError  # 404 = Dexalot doesn't offer the pair
+            raise error(body.get("detail") or f"Dexalot quote failed ({status}).")
         return body

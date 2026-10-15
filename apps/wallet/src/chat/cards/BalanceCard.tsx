@@ -2,7 +2,7 @@ import { formatAmount, formatUsd } from '@/lib/format'
 import type { Holding } from '@/types'
 
 export function BalanceCard({ holdings }: { holdings: Holding[] }) {
-  const total = holdings.reduce((sum, h) => sum + h.amount * h.usdPrice, 0)
+  const total = holdings.reduce((sum, h) => sum + (h.usdPrice === null ? 0 : h.amount * h.usdPrice), 0)
   return (
     <div className="rounded-2xl border bg-card p-4">
       <p className="text-sm text-muted-foreground">Total balance</p>
@@ -16,7 +16,9 @@ export function BalanceCard({ holdings }: { holdings: Holding[] }) {
             </span>
             <span className="text-right">
               <span className="block font-mono">{formatAmount(h.amount)}</span>
-              <span className="block text-xs text-muted-foreground">{formatUsd(h.amount * h.usdPrice)}</span>
+              <span className="block text-xs text-muted-foreground">
+                {h.usdPrice === null ? 'price unknown' : formatUsd(h.amount * h.usdPrice)}
+              </span>
             </span>
           </li>
         ))}

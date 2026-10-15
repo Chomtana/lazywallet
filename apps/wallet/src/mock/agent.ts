@@ -66,7 +66,7 @@ function send(ctx: AgentContext, amount: number, symbol: string, recipient: stri
         title: `Send ${formatAmount(amount)} ${sym}`,
         rows: [
           { label: 'To', value: to },
-          { label: 'Amount', value: `${formatAmount(amount)} ${sym} (${formatUsd(amount * holding.usdPrice)})` },
+          { label: 'Amount', value: `${formatAmount(amount)} ${sym} (${formatUsd(amount * (holding.usdPrice ?? 0))})` },
           { label: 'Network fee', value: '~$1.20' },
           { label: 'Network', value: 'Sandbox' },
         ],
@@ -80,7 +80,7 @@ function swapDraft(ctx: AgentContext, amount: number, from: string, to: string):
   const b = findHolding(ctx, to)
   if (!a || !b) return 'I can only swap ETH, USDC and WBTC in Sandbox for now.'
   if (a.symbol === b.symbol) return 'Pick two different tokens to swap.'
-  const out = ((amount * a.usdPrice) / b.usdPrice) * 0.997
+  const out = ((amount * (a.usdPrice ?? 0)) / (b.usdPrice ?? 1)) * 0.997
   return {
     title: `Swap ${formatAmount(amount)} ${a.symbol} → ${b.symbol}`,
     rows: [

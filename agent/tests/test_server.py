@@ -139,3 +139,23 @@ def test_create_app_accepts_avalanche():
 
     app = create_app(FakeChain(), factory, (ORIGIN,), avalanche=FakeChain())
     assert app.title == "LazyWallet Agent"
+
+
+async def test_session_stores_saved_tokens_and_passes_kyber():
+    sent = []
+
+    async def send(m):
+        sent.append(m)
+
+    async def factory(tools):
+        raise RuntimeError("no claude here")
+
+    coq = {"chainId": 43114, "address": "0x420FcA0121DC28039145009570975747295f2329", "symbol": "COQ", "decimals": 18}
+    s = Session(send, FakeChain(), factory, kyber=object(), search=object())
+    assert s.tools.kyber is not None and s.tools.search is not None
+    await s.handle({**USER, "tokens": [coq]})
+    await s._turn
+    assert s.ctx.tokens == [coq]
+    await s.handle(USER)  # an older wallet build sends no tokens
+    await s._turn
+    assert s.ctx.tokens == []

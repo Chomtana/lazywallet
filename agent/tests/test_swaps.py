@@ -6,6 +6,7 @@ from lazyagent.swaps import (
     approval_steps,
     check_swap_funds,
     display_units,
+    erc20_approval,
     gas_reserve,
     min_out,
     parse_slippage,
@@ -113,3 +114,17 @@ def test_swap_rows():
         {"label": "Network fee", "value": "~$1.23"},
         {"label": "Network", "value": "Sandbox"},
     ]
+
+
+def test_erc20_approval_for_any_spender():
+    spender = "0x6131B5fae19EA4f9D964eAc0408E4408b66337b5"
+    assert erc20_approval(USDC, 10**6, 10**6, spender) == []
+    [step] = erc20_approval(USDC, 0, 10**6, spender)
+    assert step.label == "Allow USDC" and step.request["to"] == USDC.address
+    assert step.request["data"].startswith("0x095ea7b3") and spender[2:].lower() in step.request["data"]
+    assert [s.label for s in erc20_approval(USDT, 5, 10**6, spender)] == ["Reset USDT allowance", "Allow USDT"]
+
+
+def test_swap_rows_unknown_impact():
+    rows = swap_rows("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", ETH, USDC, 10**18, 2_358_835_338, 1_179_417_669, "KyberSwap via LFJ", None, 1.23)
+    assert {"label": "Price impact", "value": "unknown"} in rows

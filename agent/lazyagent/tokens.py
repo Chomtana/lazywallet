@@ -11,6 +11,8 @@ class Token:
     decimals: int
     price_feed: str | None = None
     fixed_price: float | None = None
+    custom: bool = False  # not built in: saved by the wallet, or found by contract address / symbol search
+    matched_by_symbol: bool = False  # found by symbol search — the card asks the user to verify the address
 
 
 ETH = Token("ETH", None, 18, price_feed=ETH_USD_FEED)
@@ -43,5 +45,8 @@ AVAX_TOKENS = [
 
 
 def find_token(symbol: str, tokens: list[Token] | tuple[Token, ...] = TOKENS) -> Token | None:
+    """By symbol or by contract address, case-insensitive."""
     s = symbol.strip().upper()
-    return next((t for t in tokens if t.symbol.upper() == s), None)
+    if not s:
+        return None
+    return next((t for t in tokens if t.symbol.upper() == s or (t.address or "").upper() == s), None)

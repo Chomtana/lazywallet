@@ -16,6 +16,10 @@ class TransferError(Exception):
     """A user-facing reason a transfer can't be proposed."""
 
 
+class NoRoute(TransferError):
+    """The network's own venue has no quote for this pair — KyberSwap may still have one."""
+
+
 def parse_amount(text: str, decimals: int) -> int:
     cleaned = text.strip()
     if "," in cleaned:
@@ -84,14 +88,25 @@ def build_request(token: Token, to: str, amount: int) -> dict:
 
 
 def display_rows(
-    token: Token, amount: int, to: str, name: str | None, price: float, gas_cost: int, eth_price: float, network: str = "Sandbox"
+    token: Token, amount: int, to: str, name: str | None, price: float | None, gas_cost: int, eth_price: float, network: str = "Sandbox"
 ) -> list[dict]:
-    human = format_units(amount, token.decimals)
-    usd = float(Decimal(amount).scaleb(-token.decimals)) * price
+    human = f"{format_units(amount, token.decimals)} {token.symbol}"
+    if price is not None:
+        human += f" ({format_usd(float(Decimal(amount).scaleb(-token.decimals)) * price)})"
     fee = float(Decimal(gas_cost).scaleb(-18)) * eth_price
     return [
         {"label": "To", "value": f"{name} ({short(to)})" if name else short(to)},
-        {"label": "Amount", "value": f"{human} {token.symbol} ({format_usd(usd)})"},
+        {"label": "Amount", "value": human},
         {"label": "Network fee", "value": f"~{format_usd(fee)}"},
         {"label": "Network", "value": network},
     ]
+
+
+def token_address_rows(*tokens: Token) -> list[dict]:
+    """Custom tokens aren't vetted: every card that touches one shows its full contract address."""
+    rows = []
+    for t in dict.fromkeys(tokens):
+        if t.custom:
+            note = " (matched by symbol — verify)" if t.matched_by_symbol else ""
+            rows.append({"label": f"{t.symbol} address", "value": f"{t.address}{note}"})
+    return rows

@@ -1,13 +1,15 @@
 import asyncio
 import secrets
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
 from .chain import Chain
+from .custom_tokens import ADDRESS, MIN_RESERVE_USD, Search, discover, merge
 from .dexalot import DEXALOT_REVERT_HINT, Quotes, asset_of, dexalot_rows, dexalot_steps
+from .kyber import Kyber, kyber_plan
 from .networks import ETHEREUM, NETWORKS, Choice, Network, candidates, find_network, pick_network
 from .outcome import outcome_text
 from .proposals import Proposals
@@ -29,6 +31,7 @@ from .swaps import (
 from .tokens import find_token
 from .transfers import (
     FEE_HEADROOM,
+    NoRoute,
     TransferError,
     build_request,
     display_rows,
@@ -38,6 +41,7 @@ from .transfers import (
     parse_amount,
     resolve_recipient,
     short,
+    token_address_rows,
     validate,
 )
 from .uniswap import (
@@ -72,6 +76,10 @@ def err(text: str) -> dict:
     return {"content": [{"type": "text", "text": text}], "is_error": True}
 
 
+def _usd(holding: dict) -> str:
+    return "price unknown" if holding["usdPrice"] is None else format_usd(holding["amount"] * holding["usdPrice"])
+
+
 def _succeeded(result: dict | None) -> bool:
     return bool(result) and result.get("status") == "success" and not result.get("error")
 
@@ -80,6 +88,7 @@ def _succeeded(result: dict | None) -> bool:
 class WalletContext:
     address: str | None = None
     contacts: list[dict] = field(default_factory=list)
+    tokens: list[dict] = field(default_factory=list)  # the wallet's saved custom tokens (lw.tokens)
 
 
 class WalletTools:
@@ -94,8 +103,12 @@ class WalletTools:
         quoter: Quoter | None = None,
         avalanche: Chain | None = None,
         dexalot: Quotes | None = None,
+        kyber: Kyber | None = None,
+        search: Search | None = None,
     ):
         self.fund = fund
+        self.kyber = kyber
+        self.search = search
         self.quoter = quoter or ChainQuoter(chain)
         self.chain = chain  # Ethereum (Uniswap quoting, approvals)
         self.chains: dict[str, Chain] = {"ethereum": chain, **({"avalanche": avalanche} if avalanche else {})}
@@ -107,7 +120,7 @@ class WalletTools:
 
     @property
     def networks(self) -> list[Network]:
-        return [n for n in NETWORKS if n.key in self.chains]
+        return [merge(n, self.ctx.tokens) for n in NETWORKS if n.key in self.chains]
 
     def supported(self) -> str:
         nets = self.networks
@@ -149,24 +162,47 @@ class WalletTools:
         for net in nets:
             mine = [h for h in holdings if h["network"] == net.name]
             if mine:
-                parts.append(f"{net.name}: " + ", ".join(f"{h['symbol']} {format_units(h['raw'], h['decimals'])} ({format_usd(h['amount'] * h['usdPrice'])})" for h in mine))
-        total = sum(h["amount"] * h["usdPrice"] for h in holdings)
+                parts.append(f"{net.name}: " + ", ".join(f"{h['symbol']} {format_units(h['raw'], h['decimals'])} ({_usd(h)})" for h in mine))
+        total = sum(h["amount"] * h["usdPrice"] for h in holdings if h["usdPrice"] is not None)
         note = f" Not reachable right now: {', '.join(down)}." if down else ""
         return ok(f"Balances shown to the user as a card: {'; '.join(parts)}. Total {format_usd(total)}.{note}")
 
     async def _resolve(self, args: dict, symbols: list[str], amount_text: str, verb: str) -> Network | dict:
         """Which network a request runs on — or an error result (after sending a choice card when it's ambiguous)."""
+        nets = self.networks
         explicit = args.get("network")
         if explicit:
-            net = find_network(str(explicit))
-            if net is None or net.key not in self.chains:
+            named = find_network(str(explicit))
+            nets = [n for n in nets if named is not None and n.key == named.key]
+            if not nets:
                 return err(f"I can use {', '.join(n.name for n in self.networks)} on Sandbox.")
+        try:
+            nets = await self._discover(symbols, nets)
+        except TransferError as e:  # a token posing as a built-in
+            return err(str(e))
+        if explicit:
+            net = nets[0]
             missing = [s for s in symbols if find_token(s, net.tokens) is None]
             if missing:
-                return err(f"{missing[0]} isn't available on {net.name} Sandbox. There I can {verb} {', '.join(t.symbol for t in net.tokens)}.")
+                if ADDRESS.match(missing[0].strip()):
+                    return err(f"That address isn't a token on {net.name} Sandbox.")
+                return err(
+                    f"{missing[0]} isn't available on {net.name} Sandbox, and I couldn't find it with at least "
+                    f"${MIN_RESERVE_USD:,} of liquidity. Ask the user for its contract address."
+                )
             return net
-        cands = candidates(symbols, self.networks)
+        cands = candidates(symbols, nets)
         if not cands:
+            unknown = next((s for s in symbols if not any(find_token(s, n.tokens) for n in nets)), None)
+            if unknown and ADDRESS.match(unknown.strip()):
+                # Only the networks that have the request's other tokens were checked.
+                where = [n for n in nets if all(find_token(s, n.tokens) for s in symbols if s != unknown)] or nets
+                return err(f"That address isn't a token on {' or '.join(n.name for n in where)} Sandbox.")
+            if unknown:
+                return err(
+                    f"I couldn't find {unknown} with at least ${MIN_RESERVE_USD:,} of liquidity on Sandbox. "
+                    f"I can only {verb} {self.supported()} or a token by its contract address — ask the user for it."
+                )
             return err(f"I can only {verb} {self.supported()} on Sandbox.")
         if len(cands) == 1:
             return cands[0]
@@ -198,6 +234,20 @@ class WalletTools:
             f"{symbols[0].upper()} is on {names}, so I showed the user buttons to choose. "
             "Ask which network in one short sentence and wait for their answer; then call the tool again with network set."
         )
+
+    async def _discover(self, symbols: list[str], nets: list[Network]) -> list[Network]:
+        """Adds tokens the user named that aren't built in or saved (a 0x address, else a symbol search) to each
+        network where they're found. Skips a network that lacks a token the user named that exists elsewhere."""
+        known = {s for s in symbols if any(find_token(s, n.tokens) for n in nets)}
+        out = []
+        for net in nets:
+            missing = [s for s in symbols if find_token(s, net.tokens) is None]
+            if missing and not known.intersection(missing):
+                found = [await discover(s, net, self.chains[net.key], self.search) for s in missing]
+                if all(found):
+                    net = replace(net, tokens=net.tokens + tuple(found))
+            out.append(net)
+        return out
 
     async def _send_choice(self, choice: Choice, symbol: str, balances: dict[str, int | None]) -> None:
         options = []
@@ -254,7 +304,11 @@ class WalletTools:
                 "tx": {
                     "title": f"Send {human}",
                     "from": self.ctx.address,
-                    "rows": [{"label": "From", "value": short(self.ctx.address)}, *display_rows(token, amount, to, name, price, gas_cost, native_price, network=net.label)],
+                    "rows": [
+                        {"label": "From", "value": short(self.ctx.address)},
+                        *display_rows(token, amount, to, name, price, gas_cost, native_price, network=net.label),
+                        *token_address_rows(token),
+                    ],
                     "steps": steps,
                 },
             }
@@ -311,7 +365,7 @@ class WalletTools:
         else:
             found = await best_route(self.quoter, currency_of(tin), currency_of(tout), amount)
             if found is None:
-                raise TransferError(f"I couldn't find a Uniswap v4 route for {tin.symbol} → {tout.symbol} on Sandbox.")
+                raise NoRoute(f"I couldn't find a Uniswap v4 route for {tin.symbol} → {tout.symbol} on Sandbox.")
             route, expected = found
             probe_in = max(amount // 1000, 1)
             impact = price_impact(amount, expected, probe_in, await self.quoter.quote(route, probe_in) or 0)
@@ -352,6 +406,20 @@ class WalletTools:
 
         return dexalot_steps(tin, tout, quote, allowance), rows, DEXALOT_REVERT_HINT, received
 
+    async def _swap_plan(self, net: Network, tin, tout, amount: int, bps: int, slippage: str | None):
+        """The network's venue for built-in pairs it can quote; KyberSwap for custom tokens and everything else."""
+        if not (tin.custom or tout.custom):
+            try:
+                if net.swap_venue == "dexalot":
+                    return await self._dexalot_plan(net, tin, tout, amount)
+                return await self._uniswap_plan(tin, tout, amount, bps)
+            except NoRoute:
+                if self.kyber is None:
+                    raise
+        if self.kyber is None:
+            raise TransferError("Swaps for tokens outside the built-in list aren't set up on this Sandbox.")
+        return await kyber_plan(self.kyber, self.chains[net.key], net, tin, tout, amount, self.ctx.address, slippage)
+
     async def _approvals(self, token, amount: int, now: int) -> list[Step]:
         erc20 = int.from_bytes((await self.chain.call(token.address, encode_erc20_allowance(self.ctx.address, PERMIT2)))[:32], "big")
         p2_amount, p2_exp = decode_permit2_allowance(
@@ -377,10 +445,7 @@ class WalletTools:
             balance = await self._balance_on(net, tin)
             if amount > balance:
                 raise TransferError(f"You only have {format_units(balance, tin.decimals)} {tin.symbol}.")
-            if net.swap_venue == "dexalot":
-                steps, rows, hint, exact = await self._dexalot_plan(net, tin, tout, amount)
-            else:
-                steps, rows, hint, exact = await self._uniswap_plan(tin, tout, amount, bps)
+            steps, rows, hint, exact = await self._swap_plan(net, tin, tout, amount, bps, args.get("slippage_percent"))
             reserve = gas_reserve(steps, await chain.gas_price())
             check_swap_funds(tin, amount, balance, native_balance, reserve, native=net.native.symbol)
             fee_usd = float(Decimal(reserve // FEE_HEADROOM).scaleb(-18)) * await chain.price_usd(net.native)
@@ -392,14 +457,11 @@ class WalletTools:
 
         human_in = f"{format_units(amount, tin.decimals)} {tin.symbol}"
         steps_json = self._steps_json([s.to_json() for s in steps], net)
+        tx = {"title": f"Swap {human_in} → {tout.symbol}", "from": self.ctx.address, "rows": rows(fee_usd), "steps": steps_json}
+        if tout.custom:  # the wallet remembers it after the swap succeeds
+            tx["addToken"] = {"chainId": net.chain_id, "address": tout.address, "symbol": tout.symbol, "decimals": tout.decimals}
         pid, fut = self.proposals.new()
-        await self.send(
-            {
-                "type": "confirm",
-                "id": pid,
-                "tx": {"title": f"Swap {human_in} → {tout.symbol}", "from": self.ctx.address, "rows": rows(fee_usd), "steps": steps_json},
-            }
-        )
+        await self.send({"type": "confirm", "id": pid, "tx": tx})
         result = await self.proposals.wait(pid, fut, self.approval_timeout)
         success = ""
         if _succeeded(result):
@@ -448,11 +510,11 @@ def build_mcp_server(t: WalletTools):
             )(t.resolve_recipient),
             tool(
                 "propose_transfer",
-                "Propose sending ETH or a supported token. Shows a confirmation card and waits for the user to approve or reject; returns the outcome.",
+                "Propose sending a native coin or any token. Shows a confirmation card and waits for the user to approve or reject; returns the outcome.",
                 {
                     "type": "object",
                     "properties": {
-                        "token": {"type": "string", "description": f"One of {t.supported()}"},
+                        "token": {"type": "string", "description": f"Symbol (built in: {t.supported()}; or a token the user bought) or the token's 0x contract address"},
                         "amount": {"type": "string", "description": "Decimal amount in whole tokens, e.g. '0.1'"},
                         "to": {"type": "string", "description": "Address-book name or 0x address"},
                         "network": {"type": "string", "description": "Only if the user named a network or answered a network choice: 'ethereum' or 'avalanche'"},
@@ -462,12 +524,12 @@ def build_mcp_server(t: WalletTools):
             )(t.propose_transfer),
             tool(
                 "propose_swap",
-                "Propose swapping one supported token for another on Uniswap v4 (exact input). Finds the best route, shows one confirmation card with any approval steps, waits for approve/reject, and returns the amount received.",
+                "Propose swapping one token for another (exact input): Uniswap v4 on Ethereum, Dexalot on Avalanche, KyberSwap for any other token or pair. Shows one confirmation card with any approval steps, waits for approve/reject, and returns the amount received.",
                 {
                     "type": "object",
                     "properties": {
-                        "token_in": {"type": "string", "description": f"Token to pay, one of {t.supported()}"},
-                        "token_out": {"type": "string", "description": f"Token to receive, one of {t.supported()}"},
+                        "token_in": {"type": "string", "description": f"Token to pay: symbol (built in: {t.supported()}) or 0x contract address"},
+                        "token_out": {"type": "string", "description": "Token to receive: symbol or 0x contract address (any token, e.g. a memecoin)"},
                         "amount": {"type": "string", "description": "Decimal amount of token_in, e.g. '100'"},
                         "slippage_percent": {"type": "string", "description": "Only if the user stated one, e.g. '0.5'"},
                         "network": {"type": "string", "description": "Only if the user named a network or answered a network choice: 'ethereum' or 'avalanche'"},

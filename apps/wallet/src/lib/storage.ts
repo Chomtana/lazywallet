@@ -3,6 +3,7 @@ export const KEYS = {
   active: 'lw.active',
   contacts: 'lw.contacts',
   tasks: 'lw.tasks',
+  tokens: 'lw.tokens',
   speak: 'lw.speak',
 } as const
 

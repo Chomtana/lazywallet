@@ -1,4 +1,4 @@
-import type { TxRequest, TxStep } from '@/types'
+import type { CustomToken, TxDraft, TxRequest, TxStep } from '@/types'
 import { networkName } from './networks'
 
 type Hash = `0x${string}`
@@ -51,4 +51,9 @@ export function statusPatch(o: StepsOutcome, steps: TxStep[]): { state: 'success
 
 export function progressText(index: number, steps: TxStep[]): string {
   return steps.length > 1 ? `Step ${index + 1} of ${steps.length}: ${steps[index].label}…` : `Submitting to ${networkName(steps[index].request.chainId)} (Sandbox)…`
+}
+
+/** The token a swap card asked to remember — only once every step succeeded. */
+export function tokenToSave(o: StepsOutcome, tx: TxDraft): CustomToken | undefined {
+  return o.status === 'success' && !o.error ? tx.addToken : undefined
 }

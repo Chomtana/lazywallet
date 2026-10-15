@@ -1,4 +1,4 @@
-import type { Address, BalanceChange, ChoiceOption, Holding, TxDraft, TxStep } from '@/types'
+import type { Address, BalanceChange, ChoiceOption, CustomToken, Holding, TxDraft, TxStep } from '@/types'
 
 export type ClientMsg =
   | { type: 'tx_started'; id: string }
@@ -8,6 +8,7 @@ export type ClientMsg =
       spoken: boolean
       address: Address
       contacts: { name: string; address: Address }[]
+      tokens: CustomToken[]
     }
   | {
       type: 'tx_result'
