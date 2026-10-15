@@ -23,6 +23,10 @@ function expireAgentCards(messages: Message[]): Message[] {
   return messages.map((m) => (m.kind === 'confirm' && m.state === 'waiting' && m.tx.steps ? { ...m, state: 'expired' } : m))
 }
 
+function closeChoices(messages: Message[]): Message[] {
+  return messages.map((m) => (m.kind === 'choice' && !m.closed ? { ...m, closed: true } : m))
+}
+
 function onServer(s: ChatState, msg: ServerMsg): ChatState {
   const nextId = `a${s.seq}`
   switch (msg.type) {
@@ -54,6 +58,12 @@ function onServer(s: ChatState, msg: ServerMsg): ChatState {
         streamingId: null,
         messages: [...s.messages, { id: msg.id, role: 'assistant', kind: 'confirm', tx: msg.tx, state: 'waiting' }],
       }
+    case 'choice':
+      return {
+        ...s,
+        streamingId: null,
+        messages: [...s.messages, { id: msg.id, role: 'assistant', kind: 'choice', question: msg.question, options: msg.options }],
+      }
     case 'error':
       return {
         ...s,
@@ -68,8 +78,10 @@ function onServer(s: ChatState, msg: ServerMsg): ChatState {
 
 export function chatReducer(s: ChatState, e: ChatEvent): ChatState {
   switch (e.type) {
-    case 'local':
-      return { ...s, messages: [...s.messages, ...e.messages] }
+    case 'local': {
+      const answered = e.messages.some((m) => m.role === 'user')
+      return { ...s, messages: [...(answered ? closeChoices(s.messages) : s.messages), ...e.messages] }
+    }
     case 'server':
       return onServer(s, e.msg)
     case 'busy':

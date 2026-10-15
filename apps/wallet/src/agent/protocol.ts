@@ -1,4 +1,4 @@
-import type { Address, Holding, TxDraft, TxStep } from '@/types'
+import type { Address, ChoiceOption, Holding, TxDraft, TxStep } from '@/types'
 
 export type ClientMsg =
   | { type: 'tx_started'; id: string }
@@ -25,5 +25,6 @@ export type ServerMsg =
   | { type: 'text_done' }
   | { type: 'balances'; holdings: Holding[] }
   | { type: 'confirm'; id: string; tx: TxDraft & { steps: TxStep[]; from: Address } }
+  | { type: 'choice'; id: string; question: string; options: ChoiceOption[] }
   | { type: 'error'; message: string }
   | { type: 'turn_end' }

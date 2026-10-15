@@ -9,8 +9,11 @@ export function BalanceCard({ holdings }: { holdings: Holding[] }) {
       <p className="mt-1 font-mono text-3xl font-semibold">{formatUsd(total)}</p>
       <ul className="mt-4 divide-y">
         {holdings.map((h) => (
-          <li key={h.symbol} className="flex items-center justify-between py-2.5">
-            <span className="font-medium">{h.symbol}</span>
+          <li key={`${h.network ?? ''}:${h.symbol}`} className="flex items-center justify-between py-2.5">
+            <span>
+              <span className="block font-medium">{h.symbol}</span>
+              {h.network && <span className="block text-xs text-muted-foreground">{h.network}</span>}
+            </span>
             <span className="text-right">
               <span className="block font-mono">{formatAmount(h.amount)}</span>
               <span className="block text-xs text-muted-foreground">{formatUsd(h.amount * h.usdPrice)}</span>

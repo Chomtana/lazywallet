@@ -4,7 +4,7 @@ import { executeSteps, progressText, statusPatch } from '@/chain/executeTx'
 import { txDepsFor } from '@/chain/client'
 import { shortAddress, txHash, uid } from '@/lib/format'
 import { say } from '@/mock/agent'
-import type { Address, AgentReply, Contact, Message } from '@/types'
+import type { Address, AgentReply, ChoiceOption, Contact, Message } from '@/types'
 import { speak } from '@/voice/speech'
 import { chatReducer, initialChat } from './chatReducer'
 import type { ClientMsg, ServerMsg } from './protocol'
@@ -168,5 +168,12 @@ export function useAgentChat(options: Options) {
     else deliver({ messages: [say('Cancelled — nothing was sent.')] })
   }
 
-  return { messages: state.messages, busy: state.busy, online: state.online, send, approve, reject, deliver }
+  function choose(id: string, option: ChoiceOption) {
+    const m = stateRef.current.messages.find((x) => x.id === id)
+    if (!m || m.kind !== 'choice' || m.closed) return
+    dispatch({ type: 'update', id, patch: { chosen: option.label } })
+    send(option.reply)
+  }
+
+  return { messages: state.messages, busy: state.busy, online: state.online, send, approve, reject, choose, deliver }
 }

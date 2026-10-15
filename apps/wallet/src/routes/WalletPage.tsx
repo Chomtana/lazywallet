@@ -101,6 +101,7 @@ export default function WalletPage() {
           onPick={(t) => chat.send(t)}
           onApprove={chat.approve}
           onReject={chat.reject}
+          onChoose={chat.choose}
         />
       </main>
       <div className="mx-auto w-full max-w-[720px] space-y-2 px-4 pb-4">

@@ -1,6 +1,7 @@
 import { Mic } from 'lucide-react'
-import type { AssistantMessage, Message, Task } from '@/types'
+import type { AssistantMessage, ChoiceOption, Message, Task } from '@/types'
 import { BalanceCard } from './cards/BalanceCard'
+import { ChoiceCard } from './cards/ChoiceCard'
 import { ConfirmCard } from './cards/ConfirmCard'
 import { StatusCard } from './cards/StatusCard'
 import { TaskCard } from './cards/TaskCard'
@@ -10,9 +11,10 @@ export type MessageActions = {
   onApprove: (id: string) => void
   onReject: (id: string) => void
   onSimulate?: (task: Task) => void
+  onChoose?: (id: string, option: ChoiceOption) => void
 }
 
-function AssistantBody({ message, onApprove, onReject, onSimulate }: { message: AssistantMessage } & MessageActions) {
+function AssistantBody({ message, onApprove, onReject, onSimulate, onChoose }: { message: AssistantMessage } & MessageActions) {
   switch (message.kind) {
     case 'text':
       return <TextBubble text={message.text} />
@@ -31,6 +33,16 @@ function AssistantBody({ message, onApprove, onReject, onSimulate }: { message: 
       return <StatusCard state={message.state} text={message.text} hash={message.hash} />
     case 'task':
       return <TaskCard task={message.task} onSimulate={onSimulate} />
+    case 'choice':
+      return (
+        <ChoiceCard
+          question={message.question}
+          options={message.options}
+          chosen={message.chosen}
+          closed={message.closed}
+          onChoose={(o) => onChoose?.(message.id, o)}
+        />
+      )
   }
 }
 

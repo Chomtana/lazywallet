@@ -63,4 +63,26 @@ describe('chatReducer', () => {
     const s = run([confirmMsg, { type: 'update', id: 'p1', patch: { state: 'approved' } }])
     expect(s.messages[0]).toMatchObject({ state: 'approved' })
   })
+
+  const choiceMsg = server({
+    type: 'choice',
+    id: 'c1',
+    question: 'Which network for USDC?',
+    options: [
+      { label: 'Ethereum', detail: '500 USDC', reply: 'Use Ethereum for that.' },
+      { label: 'Avalanche', detail: '20 USDC', reply: 'Use Avalanche for that.' },
+    ],
+  })
+
+  it('adds a choice card that stays open after the turn ends', () => {
+    const s = run([choiceMsg, server({ type: 'turn_end' })])
+    expect(s.messages[0]).toMatchObject({ id: 'c1', kind: 'choice', question: 'Which network for USDC?' })
+    expect(s.messages[0]).not.toHaveProperty('closed', true)
+  })
+
+  it('closes open choice cards when the user answers in any way', () => {
+    const user: Message = { id: 'u1', role: 'user', kind: 'text', text: 'avalanche' }
+    const s = run([choiceMsg, { type: 'local', messages: [user] }])
+    expect(s.messages[0]).toMatchObject({ kind: 'choice', closed: true })
+  })
 })

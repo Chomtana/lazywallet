@@ -118,4 +118,22 @@ describe('useAgentChat', () => {
     expect(live.sent.map((s) => JSON.parse(s).type)).toEqual(['tx_started', 'tx_result'])
     expect(JSON.parse(live.sent[1])).toMatchObject({ id: 'pmine', status: 'success', hashes: ['0x1'] })
   })
+
+  it('choose() marks the option and sends its reply as a user message', async () => {
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    const option = { label: 'Avalanche', detail: '20 USDC', reply: 'Use Avalanche for that.' }
+    act(() =>
+      live.onmessage?.({ data: JSON.stringify({ type: 'choice', id: 'c1', question: 'Which network for USDC?', options: [option] }) }),
+    )
+    act(() => result.current.choose('c1', option))
+    expect(JSON.parse(live.sent.at(-1)!)).toMatchObject({ type: 'user', text: 'Use Avalanche for that.' })
+    expect(result.current.messages[0]).toMatchObject({ kind: 'choice', chosen: 'Avalanche', closed: true })
+    act(() => result.current.choose('c1', option))
+    expect(live.sent).toHaveLength(1) // a closed card can't send twice
+  })
 })
