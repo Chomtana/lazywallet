@@ -72,7 +72,7 @@ struct Call { address target; uint256 value; bytes data; }
 - `run(tokenIn, tokenOut, owner, calls)` — only the scheduler. Executes each `target.call{value}(data)`; any failure reverts the whole execution.
 - Afterwards sends its whole `tokenIn` and `tokenOut` balance, and any native balance, to `owner`. Routes that pay the caller (Dexalot taker, Universal Router `MSG_SENDER`) therefore work unchanged, and unspent input returns to the user.
 - `receive()` accepts native (for unwrap-then-swap routes, e.g. WAVAX → AVAX → Dexalot).
-- Holds no allowances or balances outside a single `run`: a malicious call list can only touch the in-flight `amountIn`, and step 4's `minOut` check bounds that.
+- Holds no *user* allowances and no balances between runs (everything is swept to the owner); approvals it grants during a run may persist. A malicious call list can only touch the in-flight `amountIn`, and step 4's `minOut` check bounds that.
 
 ### Build settings (address stability)
 
@@ -124,6 +124,7 @@ New `agent/lazyagent/scheduler.py`: pinned addresses, ABI, calldata builders (th
 - **Uncapped rebate:** `tx.gasprice` is executor-chosen; a block producer acting as executor can inflate it and drain the owner's gas deposit. Acceptable on private forks; a real deploy would cap it (e.g. by `block.basefee`).
 - `minOut` is fixed for the order's lifetime; a large price move pauses execution until it recovers or the user cancels.
 - Fee-on-transfer and rebasing tokens are not supported.
+- A persisting Swapper approval could be used by a later run's route that calls untrusted code to divert that run's in-flight input; the owner's output is still protected by `minOut`.
 - The standing allowance (`amountIn × count`) is spendable only through `executeSwap` on the user's own orders.
 
 ## 9. Testing

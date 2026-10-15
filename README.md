@@ -2,7 +2,7 @@
 
 A voice-powered AI wallet for newcomers and degens. Say what you want — check balances, send, swap, set price alerts, recurring buys or conditional orders — and approve each transaction in the chat. Runs in the browser; keys stay on your device.
 
-> **Status: Phase 4 — Avalanche + Dexalot.** The chat runs on a real Claude agent. Balances, sends and swaps are real on "Sandbox" (Anvil forks of Ethereum mainnet and Avalanche C-Chain): Ethereum swaps go through Uniswap v4, Avalanche swaps through Dexalot. Bridges are still "coming soon"; scheduled tasks and WalletConnect are still mocked.
+> **Status: Phase 4 — Avalanche + Dexalot.** The chat runs on a real Claude agent. Balances, sends and swaps are real on "Sandbox" (Anvil forks of Ethereum mainnet and Avalanche C-Chain): Ethereum swaps go through Uniswap v4, Avalanche swaps through Dexalot. Bridges are still "coming soon"; scheduled swaps are real (on-chain `SwapScheduler` run by the executor service); WalletConnect is still mocked.
 
 ## Repo layout
 
@@ -11,6 +11,7 @@ A voice-powered AI wallet for newcomers and degens. Say what you want — check 
 | `apps/landing` | Landing page (Vite + React + Tailwind) — http://localhost:5173 |
 | `apps/wallet` | Wallet app (Vite + React + Tailwind + shadcn/ui + viem + wagmi) — http://localhost:5174 |
 | `agent/` | Python agent (FastAPI + Claude Agent SDK) — ws://localhost:8787/ws |
+| `contracts/` | Foundry: `SwapScheduler` + `Swapper` (on-chain scheduled swaps) |
 | `anvil/` | Anvil forks: Ethereum :8545 + Avalanche :8546, faucet/sandbox service :8547 |
 | `docs/superpowers/` | Design specs and implementation plans |
 
@@ -23,7 +24,8 @@ cp .env.example .env   # set ETH_RPC_URL to an Ethereum mainnet archive RPC; AVA
 pnpm install
 pnpm dev:sandbox       # terminal 1: Anvil forks (Ethereum :8545, Avalanche :8546) + faucet :8547
 pnpm dev:agent         # terminal 2: AI agent
-pnpm dev               # terminal 3: landing :5173, wallet :5174
+pnpm dev:executor      # terminal 3: scheduled-swap executor
+pnpm dev               # terminal 4: landing :5173, wallet :5174
 pnpm test && pnpm test:py
 ```
 
@@ -49,4 +51,4 @@ To try the (still mocked) dApp flow: QR button → Connect dApp → paste any Wa
 2. **Minimum viable AI wallet** — Python agent, Anvil sandbox, real balances and transfers. ✅
 3. **Uniswap v4 swaps** — best hookless route, approvals in one card. ✅
 4. **Avalanche + Dexalot swaps** (current) — Dexalot RFQ on Avalanche; balances and sends across both networks.
-5. Next — other protocols, real WalletConnect (Reown WalletKit), scheduled tasks, more chains, x402 payments.
+5. Next — other protocols, real WalletConnect (Reown WalletKit), more chains, x402 payments.
