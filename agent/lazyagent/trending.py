@@ -386,3 +386,31 @@ class TrendingTokens:
 
 
 TRENDING = TrendingTokens(GeckoTerminalSource())
+
+
+# --- agent tool ---
+
+TRENDING_TOOL = (
+    "list_trending_tokens",
+    "Live mainnet token lists (read-only). category 'meme' (default): top trending Avalanche memecoins. "
+    "category 'rwa': top RWA project tokens (ONDO, PLUME, SYRUP, …) on Ethereum and Avalanche, with XAUt0 "
+    "(tokenized gold) pinned first as the Avalanche showcase. Each token: symbol, name, contract address, "
+    "network, USD price, 24h volume, 24h change, liquidity, main DEX, buyable, note.",
+    {
+        "type": "object",
+        "properties": {
+            "category": {"type": "string", "enum": list(CATEGORY_NETWORKS), "description": "Default 'meme'"},
+            "network": {"type": "string", "enum": list(GT_NETWORKS), "description": "Only if the user named a network"},
+        },
+    },
+)
+
+
+async def trending_reply(trending: TrendingTokens, args: dict) -> str:
+    """The tool's answer as JSON text. Raises TrendingError with text for the model."""
+    category, network = parse_args(args)
+    try:
+        items = await trending.fetch(category, network)
+    except Exception as e:
+        raise TrendingError(UNAVAILABLE) from e
+    return to_json(items)
