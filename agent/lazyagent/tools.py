@@ -44,6 +44,7 @@ from .transfers import (
     token_address_rows,
     validate,
 )
+from .trending import TRENDING, TRENDING_TOOL, TrendingError, TrendingTokens, trending_reply
 from .uniswap import (
     PERMIT2,
     UNIVERSAL_ROUTER,
@@ -64,7 +65,7 @@ Fund = Callable[[str], Awaitable[str]]
 SERVER_NAME = "wallet"
 TOOL_NAMES = [
     f"mcp__{SERVER_NAME}__{n}"
-    for n in ("get_balances", "resolve_recipient", "propose_transfer", "propose_swap", "unsupported_action", "request_test_funds")
+    for n in ("get_balances", "resolve_recipient", "propose_transfer", "propose_swap", "unsupported_action", "request_test_funds", "list_trending_tokens")
 ]
 
 
@@ -492,6 +493,14 @@ class WalletTools:
         balances = await self.get_balances({})
         return ok(f"Added {summary} to the wallet. {balances['content'][0]['text']}")
 
+    trending: TrendingTokens = TRENDING  # shared 60 s cache; tests assign their own
+
+    async def list_trending_tokens(self, args: dict) -> dict:
+        try:
+            return ok(await trending_reply(self.trending, args))
+        except TrendingError as e:
+            return err(str(e))
+
     async def unsupported_action(self, args: dict) -> dict:
         action = str(args.get("action", "That"))
         return ok(f"{action} is coming soon. Right now LazyWallet can check balances, send and swap on Sandbox ({self.supported()}).")
@@ -542,6 +551,7 @@ def build_mcp_server(t: WalletTools):
                 "Sandbox faucet: give the active wallet free test funds on every Sandbox network (100 ETH / 100 AVAX plus test tokens). Use when the user asks for test funds, the faucet, or ETH to get started.",
                 {"type": "object", "properties": {}},
             )(t.request_test_funds),
+            tool(*TRENDING_TOOL)(t.list_trending_tokens),
             tool(
                 "unsupported_action",
                 "Use for bridging, scheduling, price alerts, dApps or anything other than balances, sends, swaps and test funds.",

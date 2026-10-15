@@ -183,6 +183,7 @@ def test_mcp_server_and_names():
         "mcp__wallet__propose_swap",
         "mcp__wallet__unsupported_action",
         "mcp__wallet__request_test_funds",
+        "mcp__wallet__list_trending_tokens",
     ]
 
 

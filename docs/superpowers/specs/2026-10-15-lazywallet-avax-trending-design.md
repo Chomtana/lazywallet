@@ -1,7 +1,7 @@
 # LazyWallet — Trending Avalanche Tokens (Memecoins + RWAs) Spec
 
 Date: 2026-10-15
-Status: Approved design (rev. 4: RWA = RWA *project* tokens, pinned XAUt0) — not yet implemented
+Status: Implemented on feat-trending-avax
 Builds on: `2026-10-15-lazywallet-avalanche-dexalot-design.md` (Phase 4, merged to `main`)
 Branch: `feat-trending-avax` (worktree, from `main`)
 Sibling: `2026-10-15-lazywallet-kyber-custom-tokens-design.md` (built in parallel; buying a listed token goes through it **by contract address**)
@@ -33,7 +33,7 @@ Sibling: `2026-10-15-lazywallet-kyber-custom-tokens-design.md` (built in paralle
 | Ranking | Meme: trending order first, then the rest by 24h volume. RWA: `PINNED` first, then 24h DEX volume, then CoinGecko market cap |
 | Caching | 60 s for computed lists (per category + network). RWA addresses come from the checked-in snapshot (refresh by rerunning the script). Errors are never cached |
 | UI | None new; chat text only |
-| Buying | Not in this branch. The prompt tells the model to buy via `propose_swap` with the contract address; until the Kyber branch lands, that returns the normal unsupported-token error |
+| Buying | The prompt tells the model to buy via `propose_swap` with the contract address; KyberSwap (already merged into the base) handles the swap |
 | Out of scope | Ethereum memecoins, charts, alerts, a Trending screen, Arena bonding-curve (pre-graduation) tokens, KYC/permissioned RWA purchase flows |
 
 ## 3. Research step (first task)
@@ -65,3 +65,12 @@ New `agent/lazyagent/trending.py`:
 ## 6. Merge plan
 
 The Kyber branch merges first; this branch then rebases. Expected conflicts: tool registration in `tools.py`, `prompt.py`, `test_tools.py` (`TOOL_NAMES`) and the end of `fakes.py` — all additive, keep both sides.
+
+## 7. Decisions made while planning
+
+- Asset tokens are excluded via one CoinGecko category, `tokenized-products` ("Tokenized Assets"): verified 2026-10-15 it contains every tokenized-stock/ETF/gold/silver/commodity/treasury/T-bill/money-market/credit/pre-IPO sub-category (their union adds no id).
+- `NOT_RWA` also lists MPRA, ACRED and VBILL — asset tokens CoinGecko filed only under RWA (MPRA would otherwise rank #2 on Ethereum). USD stablecoins are dropped by symbol ("usd"), so only USAT needs an entry.
+- GeckoTerminal `tokens/multi` takes at most 30 addresses, so per network we look up `PINNED`, the 15 busiest by CoinGecko volume, then the largest by market cap.
+- RWA `dex` is GeckoTerminal's dex id (`tokens/multi` can't include dex names); `price_usd` / `change_24h` are `null` when unknown; 24h change is used only when the token is its deepest pool's base token.
+- Tool arguments, schema and reply live in `trending.py` (`parse_args`, `TRENDING_TOOL`, `trending_reply`); `tools.py` only registers them. The cache is one process-wide `TrendingTokens` read through a `WalletTools` class attribute, so `WalletTools.__init__`, `Session` and `server.py` are unchanged.
+- KyberSwap is already merged into the base branch, so buying a listed token goes through `propose_swap` with the contract address (KyberSwap), not the unsupported-token error.
