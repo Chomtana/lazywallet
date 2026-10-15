@@ -78,6 +78,14 @@ async def test_ambiguous_token_sends_choice_and_asks_model_to_wait():
     assert not out.of_type("confirm")
 
 
+async def test_neither_network_has_enough_says_so_without_a_choice():
+    tools, out = make()
+    result = await tools.propose_transfer({"token": "USDC", "amount": "1000", "to": "Alice"})
+    assert result["is_error"] is True
+    assert text(result) == "You only have 500 USDC on Ethereum and 20 USDC on Avalanche."
+    assert not out.of_type("choice") and not out.of_type("confirm")
+
+
 async def test_explicit_network_wins_and_is_validated():
     tools, out = make()
     task = asyncio.create_task(tools.propose_transfer({"token": "USDC", "amount": "10", "to": "Alice", "network": "avalanche"}))
@@ -104,16 +112,18 @@ AVAX_USDC = "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E"
 
 
 class FakeQuotes:
-    def __init__(self, fail: str | None = None):
+    def __init__(self, fail: str | None = None, maker_amount: str = "9574000", tamper: dict | None = None):
         self.calls = []
         self.fail = fail
+        self.maker_amount = maker_amount
+        self.tamper = tamper or {}
 
     async def quote(self, token_in, token_out, amount_in, taker):
         self.calls.append((token_in, token_out, amount_in, taker))
         if self.fail:
             raise TransferError(self.fail)
         order = {"nonceAndMeta": "7", "expiry": "9999999999", "makerAsset": token_out, "takerAsset": token_in, "maker": MAKER,
-                 "taker": taker, "makerAmount": "9574000", "takerAmount": str(amount_in)}
+                 "taker": taker, "makerAmount": self.maker_amount, "takerAmount": str(amount_in), **self.tamper}
         return {"maker": MAKER, "order": order, "signature": "0x" + "11" * 65}
 
 
@@ -154,3 +164,21 @@ async def test_avalanche_swap_errors_send_no_card():
     result = await tools.propose_swap({"token_in": "AVAX", "token_out": "BTC.b", "amount": "1"})
     assert result["is_error"] is True and "Available: AVAX/USDC" in text(result)
     assert not out.of_type("confirm")
+
+
+async def test_avalanche_native_out_reports_the_signed_amount_exactly():
+    tools, out, proposals, avax = make_swap(FakeQuotes(maker_amount=str(4 * 10**17)))
+    task = asyncio.create_task(tools.propose_swap({"token_in": "USDC", "token_out": "AVAX", "amount": "10"}))
+    confirm = await confirm_of(out)
+    avax.eth += 4 * 10**17 - 3 * 10**15  # gas paid in AVAX makes the balance delta smaller
+    proposals.resolve(confirm["id"], {"outcome": "approved", "status": "success", "hash": "0xs"})
+    result = text(await task)
+    assert "Swapped 10 USDC for 0.4 AVAX." in result and "about" not in result
+
+
+async def test_avalanche_quote_that_doesnt_match_the_request_sends_no_card():
+    for tamper in ({"takerAmount": "1"}, {"makerAsset": ALICE}, {"takerAsset": ALICE}, {"taker": ALICE}, {"maker": ALICE}):
+        tools, out, _, _ = make_swap(FakeQuotes(tamper=tamper))
+        result = await tools.propose_swap({"token_in": "AVAX", "token_out": "USDC", "amount": "1"})
+        assert result["is_error"] is True and "didn't match your request" in text(result), tamper
+        assert not out.of_type("confirm")

@@ -186,6 +186,12 @@ class WalletTools:
         picked = pick_network(cands, enough)
         if isinstance(picked, Network):
             return picked
+        if not any(enough.values()) and None not in balances.values():
+            have = []
+            for n in cands:
+                token = find_token(symbols[0], n.tokens)
+                have.append(f"{format_units(balances[n.key], token.decimals)} {token.symbol} on {n.name}")
+            return err(f"You only have {' and '.join(have)}.")
         await self._send_choice(picked, symbols[0], balances)
         names = " or ".join(n.name for n in picked.networks)
         return err(
@@ -299,12 +305,21 @@ class WalletTools:
         def rows(fee_usd: float) -> list[dict]:
             return swap_rows(self.ctx.address, tin, tout, amount, expected, minimum, label, impact, fee_usd, network=ETHEREUM.label)
 
-        return steps, rows, f" The price probably moved more than the {bps / 100:g}% slippage — ask again for a fresh quote."
+        return steps, rows, f" The price probably moved more than the {bps / 100:g}% slippage — ask again for a fresh quote.", None
 
     async def _dexalot_plan(self, net: Network, tin, tout, amount: int):
         if self.dexalot is None:
             raise TransferError("Dexalot swaps aren't set up on this Sandbox.")
         quote = await self.dexalot.quote(asset_of(tin), asset_of(tout), amount, self.ctx.address)
+        order = quote["order"]
+        if (
+            int(order["takerAmount"]) != amount
+            or order["takerAsset"].lower() != asset_of(tin).lower()
+            or order["makerAsset"].lower() != asset_of(tout).lower()
+            or order["taker"].lower() != self.ctx.address.lower()
+            or order["maker"].lower() != quote["maker"].lower()
+        ):
+            raise TransferError("The Sandbox quote didn't match your request — try again.")
         allowance = 0
         if tin.address is not None:
             raw = await self.chains[net.key].call(tin.address, encode_erc20_allowance(self.ctx.address, quote["maker"]))
@@ -314,7 +329,7 @@ class WalletTools:
         def rows(fee_usd: float) -> list[dict]:
             return dexalot_rows(self.ctx.address, tin, tout, amount, received, fee_usd, net.label)
 
-        return dexalot_steps(tin, tout, quote, allowance), rows, DEXALOT_REVERT_HINT
+        return dexalot_steps(tin, tout, quote, allowance), rows, DEXALOT_REVERT_HINT, received
 
     async def _approvals(self, token, amount: int, now: int) -> list[Step]:
         erc20 = int.from_bytes((await self.chain.call(token.address, encode_erc20_allowance(self.ctx.address, PERMIT2)))[:32], "big")
@@ -342,9 +357,9 @@ class WalletTools:
             if amount > balance:
                 raise TransferError(f"You only have {format_units(balance, tin.decimals)} {tin.symbol}.")
             if net.swap_venue == "dexalot":
-                steps, rows, hint = await self._dexalot_plan(net, tin, tout, amount)
+                steps, rows, hint, exact = await self._dexalot_plan(net, tin, tout, amount)
             else:
-                steps, rows, hint = await self._uniswap_plan(tin, tout, amount, bps)
+                steps, rows, hint, exact = await self._uniswap_plan(tin, tout, amount, bps)
             reserve = gas_reserve(steps, await chain.gas_price())
             check_swap_funds(tin, amount, balance, native_balance, reserve, native=net.native.symbol)
             fee_usd = float(Decimal(reserve // FEE_HEADROOM).scaleb(-18)) * await chain.price_usd(net.native)
@@ -367,15 +382,18 @@ class WalletTools:
         result = await self.proposals.wait(pid, fut, self.approval_timeout)
         success = ""
         if _succeeded(result):
-            try:
-                received = max(await self._balance_on(net, tout) - out_before, 0)
-            except Exception:
-                received = None
+            if exact is not None:  # a signed RFQ order pays exactly its makerAmount
+                received = exact
+            else:
+                try:
+                    received = max(await self._balance_on(net, tout) - out_before, 0)
+                except Exception:
+                    received = None
             if received is None:
                 got = f"{tout.symbol} (I couldn't read the received amount right now — don't swap again; check the balance instead)"
             else:
                 got = f"{display_units(received, tout.decimals)} {tout.symbol}"
-                got = f"about {got} (after network fees)" if tout.address is None else got
+                got = f"about {got} (after network fees)" if tout.address is None and exact is None else got
             success = f"Swapped {human_in} for {got}. Confirmed on {net.label}, tx {result.get('hash')}." + await self._fresh_balances()
         return ok(outcome_text(result, steps_json, "swap", success, revert_hint=hint))
 
