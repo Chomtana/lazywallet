@@ -6,13 +6,22 @@ import urllib.request
 TIMEOUT_S = 30
 
 
+def _json(raw: bytes) -> dict:
+    """A non-JSON body (e.g. a plain-text 500) reads as {} so callers report the status."""
+    try:
+        body = json.loads(raw or b"{}")
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
 def _post(url: str, payload: dict) -> tuple[int, dict]:
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={"content-type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_S) as res:
-            return res.status, json.loads(res.read() or b"{}")
+            return res.status, _json(res.read())
     except urllib.error.HTTPError as e:
-        return e.code, json.loads(e.read() or b"{}")
+        return e.code, _json(e.read())
     except (urllib.error.URLError, OSError) as e:
         raise ConnectionError(f"Faucet unreachable: {e}") from e
 

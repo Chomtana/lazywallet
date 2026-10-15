@@ -7,14 +7,14 @@ import pytest
 from lazyagent.faucet import request_funds
 
 
-def serve(status: int, body: dict):
+def serve(status: int, body: dict | bytes):
     received = {}
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
             received["path"] = self.path
             received["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            payload = json.dumps(body).encode()
+            payload = body if isinstance(body, bytes) else json.dumps(body).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
@@ -51,3 +51,12 @@ async def test_surfaces_faucet_error_detail():
 async def test_unreachable_faucet_raises_connection_error():
     with pytest.raises(ConnectionError):
         await request_funds("http://127.0.0.1:1", "0xabc")
+
+
+async def test_non_json_error_body_reports_the_status():
+    server, _ = serve(500, b"Internal Server Error")
+    try:
+        with pytest.raises(RuntimeError, match=r"Faucet error \(500\)"):
+            await request_funds(f"http://127.0.0.1:{server.server_port}", "0xabc")
+    finally:
+        server.shutdown()
