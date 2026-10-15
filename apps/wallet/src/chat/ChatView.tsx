@@ -1,15 +1,21 @@
 import { useEffect, useRef } from 'react'
 import { EXAMPLES } from '@/mock/fixtures'
 import type { Message } from '@/types'
+import { ProgressBubble } from './cards/ProgressBubble'
 import { MessageItem, type MessageActions } from './MessageItem'
 
-type Props = { messages: Message[]; onPick: (text: string) => void } & MessageActions
+type Props = {
+  messages: Message[]
+  progress?: string | null // the agent's current step, while it works
+  queue?: Message[] // prompts waiting for the current turn to end
+  onPick: (text: string) => void
+} & MessageActions
 
-export function ChatView({ messages, onPick, ...actions }: Props) {
+export function ChatView({ messages, progress, queue = [], onPick, ...actions }: Props) {
   const endRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages])
+  }, [messages, progress, queue])
 
   if (messages.length === 0) {
     return (
@@ -38,6 +44,10 @@ export function ChatView({ messages, onPick, ...actions }: Props) {
     <div className="mx-auto flex max-w-[720px] flex-col gap-3 px-4 py-6">
       {messages.map((m) => (
         <MessageItem key={m.id} message={m} {...actions} />
+      ))}
+      {progress && <ProgressBubble label={progress} />}
+      {queue.map((m) => (
+        <MessageItem key={m.id} message={m} queued {...actions} />
       ))}
       <div ref={endRef} />
     </div>

@@ -45,7 +45,7 @@ export type Task = {
 }
 export type ConfirmState = 'waiting' | 'approved' | 'rejected' | 'expired'
 export type Message =
-  | { id: string; role: 'user'; kind: 'text'; text: string; spoken?: boolean }
+  | { id: string; role: 'user'; kind: 'text'; text: string; spoken?: boolean; unsent?: boolean }
   | { id: string; role: 'assistant'; kind: 'text'; text: string }
   | { id: string; role: 'assistant'; kind: 'balance'; holdings: Holding[] }
   | { id: string; role: 'assistant'; kind: 'balance_change'; changes: BalanceChange[] }

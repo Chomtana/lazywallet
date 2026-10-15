@@ -98,6 +98,8 @@ export default function WalletPage() {
       <main className="flex-1 overflow-y-auto">
         <ChatView
           messages={chat.messages}
+          progress={chat.progress}
+          queue={chat.queue}
           onPick={(t) => chat.send(t)}
           onApprove={chat.approve}
           onReject={chat.reject}

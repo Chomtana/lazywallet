@@ -24,6 +24,7 @@ export type ClientMsg =
 export type ServerMsg =
   | { type: 'text_delta'; text: string }
   | { type: 'text_done' }
+  | { type: 'progress'; label: string }
   | { type: 'balances'; holdings: Holding[] }
   | { type: 'balance_change'; changes: BalanceChange[] }
   | { type: 'tokens'; title: string; items: TrendingToken[] }

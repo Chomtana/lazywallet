@@ -7,12 +7,11 @@ import { savedTokens, saveToken } from '@/lib/tokens'
 import { say } from '@/mock/agent'
 import type { Address, AgentReply, ChoiceOption, Contact, Message } from '@/types'
 import { speak } from '@/voice/speech'
-import { chatReducer, initialChat } from './chatReducer'
+import { chatReducer, initialChat, progressLabel, type UserText } from './chatReducer'
 import type { ClientMsg, ServerMsg } from './protocol'
 
 const AGENT_WS_URL: string = import.meta.env.VITE_AGENT_WS_URL ?? 'ws://localhost:8787/ws'
 const OFFLINE_TEXT = 'Agent offline — run `pnpm dev:agent`, then try again.'
-const BUSY_TEXT = 'Still working on your last request — approve or reject any open card first.'
 const THINK_MS = 500
 const MOCK_CONFIRM_MS = 1500
 const MAX_RETRY_MS = 10_000
@@ -85,6 +84,27 @@ export function useAgentChat(options: Options) {
     return true
   }
 
+  // Send one user prompt to the agent; false when there is no wallet or no live socket.
+  function transmit(m: UserText): boolean {
+    const { address, contacts } = optsRef.current
+    if (!address) return false
+    return sendJson({
+      type: 'user',
+      text: m.text,
+      spoken: !!m.spoken,
+      address,
+      contacts: contacts.map((c) => ({ name: c.name, address: c.address })),
+      tokens: savedTokens(address),
+    })
+  }
+
+  // After each turn, send the oldest queued prompt (one at a time).
+  const nextQueued = state.queue[0]
+  useEffect(() => {
+    if (state.busy || !state.online || !nextQueued) return
+    if (transmit(nextQueued)) dispatch({ type: 'dequeue' })
+  }, [state.busy, state.online, nextQueued])
+
   function deliver(reply: AgentReply) {
     window.setTimeout(() => {
       dispatch({ type: 'local', messages: reply.messages })
@@ -95,19 +115,12 @@ export function useAgentChat(options: Options) {
 
   function send(text: string, spoken = false) {
     const t = text.trim()
-    const { address, contacts } = optsRef.current
-    if (!t || !address) return
-    dispatch({ type: 'local', messages: [{ id: uid(), role: 'user', kind: 'text', text: t, spoken }] })
-    if (stateRef.current.busy) return deliver({ messages: [say(BUSY_TEXT)] })
-    const sent = sendJson({
-      type: 'user',
-      text: t,
-      spoken,
-      address,
-      contacts: contacts.map((c) => ({ name: c.name, address: c.address })),
-      tokens: savedTokens(address),
-    })
-    if (!sent) return deliver({ messages: [say(OFFLINE_TEXT)] })
+    if (!t || !optsRef.current.address) return
+    const message: UserText = { id: uid(), role: 'user', kind: 'text', text: t, spoken }
+    // While the agent works, hold the prompt and send it after the turn ends.
+    if (stateRef.current.busy) return dispatch({ type: 'enqueue', message })
+    dispatch({ type: 'local', messages: [message] })
+    if (!transmit(message)) return deliver({ messages: [say(OFFLINE_TEXT)] })
     dispatch({ type: 'busy', busy: true })
   }
 
@@ -192,5 +205,16 @@ export function useAgentChat(options: Options) {
     if (canReply()) send(text)
   }
 
-  return { messages: state.messages, busy: state.busy, online: state.online, send, approve, reject, choose, buy, deliver }
+  return {
+    messages: state.messages,
+    queue: state.queue,
+    progress: progressLabel(state),
+    busy: state.busy,
+    online: state.online,
+    send, approve,
+    reject,
+    choose,
+    buy,
+    deliver,
+  }
 }

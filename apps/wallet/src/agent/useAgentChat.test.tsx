@@ -208,4 +208,74 @@ describe('useAgentChat', () => {
     act(() => result.current.send('sell all my COQ'))
     expect(JSON.parse(live.sent.at(-1)!)).toMatchObject({ type: 'user', text: 'sell all my COQ', tokens: [COQ] })
   })
+
+  it('queues a prompt sent while busy and sends queued prompts one at a time after each turn_end', async () => {
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    const turnEnd = () => act(() => live.onmessage?.({ data: JSON.stringify({ type: 'turn_end' }) }))
+    const sentTexts = () => live.sent.map((x) => JSON.parse(x).text)
+    act(() => result.current.send('one'))
+    act(() => result.current.send('two', true))
+    act(() => result.current.send('three'))
+    expect(sentTexts()).toEqual(['one'])
+    expect(result.current.messages.map((m) => (m.kind === 'text' ? m.text : ''))).toEqual(['one']) // no busy reply
+    expect(result.current.queue.map((m) => m.text)).toEqual(['two', 'three'])
+    turnEnd()
+    expect(sentTexts()).toEqual(['one', 'two'])
+    expect(JSON.parse(live.sent[1])).toMatchObject({ type: 'user', spoken: true })
+    expect(result.current.messages.at(-1)).toMatchObject({ role: 'user', text: 'two' })
+    expect(result.current.queue.map((m) => m.text)).toEqual(['three'])
+    expect(result.current.busy).toBe(true)
+    turnEnd()
+    expect(sentTexts()).toEqual(['one', 'two', 'three'])
+    expect(result.current.queue).toEqual([])
+  })
+
+  it('shows progress labels from the agent while busy', async () => {
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    act(() => result.current.send('balance?'))
+    act(() => live.onmessage?.({ data: JSON.stringify({ type: 'progress', label: 'Checking your balances' }) }))
+    expect(result.current.progress).toBe('Checking your balances')
+  })
+
+  it('marks queued prompts "Not sent" on disconnect and never sends them later', async () => {
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    act(() => result.current.send('one'))
+    act(() => result.current.send('two'))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await act(async () => {
+        live.close()
+        await Promise.resolve()
+      })
+      expect(result.current.queue).toEqual([])
+      expect(result.current.messages.find((m) => m.role === 'user' && m.text === 'two')).toMatchObject({ unsent: true })
+      await act(async () => {
+        vi.advanceTimersByTime(1000)
+      })
+      const next = FakeWebSocket.instances.at(-1)!
+      expect(next).not.toBe(live)
+      await act(async () => {
+        next.open()
+        await Promise.resolve()
+      })
+      expect(next.sent).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
