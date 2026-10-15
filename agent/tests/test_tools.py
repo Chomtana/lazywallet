@@ -9,11 +9,19 @@ ME = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 ALICE = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
 
 
-def make(chain=None, timeout=5.0):
+async def fake_fund(address):
+    fake_fund.calls.append(address)
+    return "100 ETH, 10,000 USDC"
+
+
+fake_fund.calls = []
+
+
+def make(chain=None, timeout=5.0, fund=fake_fund):
     out = Outbox()
     ctx = WalletContext(address=ME, contacts=[{"name": "Alice", "address": ALICE}])
     proposals = Proposals()
-    tools = WalletTools(chain or FakeChain(tokens={"USDC": 500 * 10**6}), out, ctx, proposals, approval_timeout=timeout)
+    tools = WalletTools(chain or FakeChain(tokens={"USDC": 500 * 10**6}), out, ctx, proposals, approval_timeout=timeout, fund=fund)
     return tools, out, proposals
 
 
@@ -130,6 +138,36 @@ async def test_propose_transfer_chain_unreachable():
     assert "Sandbox chain" in text(result)
 
 
+async def test_request_test_funds_on_sandbox():
+    fake_fund.calls.clear()
+    tools, out, _ = make()
+    result = await tools.request_test_funds({})
+    assert fake_fund.calls == [ME]
+    assert "100 ETH, 10,000 USDC" in text(result)
+    assert out.of_type("balances")
+
+
+async def test_request_test_funds_refused_off_sandbox():
+    fake_fund.calls.clear()
+    chain = FakeChain()
+    chain.sandbox = False
+    tools, out, _ = make(chain=chain)
+    result = await tools.request_test_funds({})
+    assert result["is_error"] is True
+    assert "only works on Sandbox" in text(result)
+    assert fake_fund.calls == []
+
+
+async def test_request_test_funds_faucet_down():
+    async def down(address):
+        raise ConnectionError("refused")
+
+    tools, _, _ = make(fund=down)
+    result = await tools.request_test_funds({})
+    assert result["is_error"] is True
+    assert "pnpm dev:sandbox" in text(result)
+
+
 async def test_unsupported_action():
     tools, _, _ = make()
     assert "coming soon" in text(await tools.unsupported_action({"action": "swap"})).lower()
@@ -143,4 +181,5 @@ def test_mcp_server_and_names():
         "mcp__wallet__resolve_recipient",
         "mcp__wallet__propose_transfer",
         "mcp__wallet__unsupported_action",
+        "mcp__wallet__request_test_funds",
     ]

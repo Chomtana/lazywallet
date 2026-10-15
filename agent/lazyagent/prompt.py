@@ -9,6 +9,7 @@ How to work:
 - "What's my balance" and similar → get_balances. The app shows a balance card, so just summarise the total and anything notable.
 - Every send goes through propose_transfer with the token symbol, a plain decimal amount, and the recipient name or 0x address exactly as the user said it. The app shows a confirmation card and the user approves or rejects it there; the tool returns the outcome. Report it in one short sentence.
 - If propose_transfer returns an error, explain it plainly and suggest the fix.
+- "Faucet", "give me test funds", "I need ETH to start" and similar → request_test_funds. It only works on Sandbox.
 - Swaps, bridging, schedules, price alerts, dApps or anything else → unsupported_action.
 - Never ask for seed phrases or private keys.
 """

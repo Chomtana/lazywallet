@@ -6,10 +6,18 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from .chain import Chain, RpcChain
 from .claude import connect_claude
 from .config import load_settings
+from .faucet import request_funds
 from .session import ClientFactory, Session
+from .tools import Fund
 
 
-def create_app(chain: Chain, client_factory: ClientFactory, allowed_origins: tuple[str, ...], approval_timeout: float = 300) -> FastAPI:
+def create_app(
+    chain: Chain,
+    client_factory: ClientFactory,
+    allowed_origins: tuple[str, ...],
+    approval_timeout: float = 300,
+    fund: Fund | None = None,
+) -> FastAPI:
     app = FastAPI(title="LazyWallet Agent")
 
     @app.get("/health")
@@ -22,7 +30,7 @@ def create_app(chain: Chain, client_factory: ClientFactory, allowed_origins: tup
             await ws.close(code=1008)
             return
         await ws.accept()
-        session = Session(ws.send_json, chain, client_factory, approval_timeout)
+        session = Session(ws.send_json, chain, client_factory, approval_timeout, fund)
         try:
             while True:
                 try:
@@ -46,6 +54,9 @@ def main() -> None:
     async def factory(tools):
         return await connect_claude(tools, settings)
 
-    app = create_app(RpcChain(settings.rpc_url), factory, settings.allowed_origins)
+    async def fund(address: str) -> str:
+        return await request_funds(settings.faucet_url, address)
+
+    app = create_app(RpcChain(settings.rpc_url), factory, settings.allowed_origins, fund=fund)
     print(f"LazyWallet agent on ws://127.0.0.1:{settings.port}/ws (model {settings.model}, chain {settings.rpc_url})", flush=True)
     uvicorn.run(app, host="127.0.0.1", port=settings.port)

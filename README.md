@@ -31,8 +31,9 @@ Voice input uses the browser's Web Speech API — use Chrome or Edge. Other brow
 
 ## Try it
 
-Create a wallet, open Receive (QR button) → **Get test funds**, then say or type:
+Create a wallet, then say or type:
 
+- "Give me test funds" (Sandbox faucet: 100 ETH + test tokens — also on Receive → **Get test funds**)
 - "What's my balance?"
 - "Send 0.1 ETH to Alice"
 - "Send 50 USDC to Bob"

@@ -9,4 +9,4 @@ uv run --directory anvil python scripts/reset.py   # reset the fork
 uv run --directory anvil pytest -q                 # tests (fork tests skip without ETH_RPC_URL)
 ```
 
-Faucet: `POST http://localhost:8547/fund {"address": "0x…"}` → 10 ETH, 10,000 USDC/USDT/DAI, 1 WBTC, 5 WETH (balances written directly into token storage).
+Faucet: `POST http://localhost:8547/fund {"address": "0x…"}` → 100 ETH, 10,000 USDC/USDT/DAI, 1 WBTC, 5 WETH (balances written directly into token storage).

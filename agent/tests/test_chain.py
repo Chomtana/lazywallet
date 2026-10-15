@@ -17,3 +17,8 @@ async def test_balances_prices_and_gas(fork_rpc):
     assert 1_000 < await chain.price_usd(find_token("WBTC")) < 1_000_000
     assert await chain.price_usd(find_token("DAI")) == 1.0
     assert await chain.gas_price() > 0
+    assert await chain.is_sandbox() is True
+
+
+async def test_is_sandbox_false_when_unreachable():
+    assert await RpcChain("http://127.0.0.1:1").is_sandbox() is False

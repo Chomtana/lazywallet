@@ -15,6 +15,7 @@ export const DEFAULT_CONTACTS: Contact[] = [
 ]
 
 export const EXAMPLES = [
+  'Give me test funds',
   "What's my balance?",
   'Send 0.1 ETH to Alice',
   'Swap 100 USDC to ETH',

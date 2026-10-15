@@ -14,6 +14,7 @@ class Settings:
     model: str
     allowed_origins: tuple[str, ...]
     port: int
+    faucet_url: str
 
 
 def load_settings() -> Settings:
@@ -23,4 +24,5 @@ def load_settings() -> Settings:
         model=os.environ.get("AGENT_MODEL") or DEFAULT_MODEL,
         allowed_origins=tuple((os.environ.get("WALLET_ORIGINS") or "http://localhost:5174").split(",")),
         port=int(os.environ.get("AGENT_PORT") or 8787),
+        faucet_url=os.environ.get("FAUCET_URL") or "http://127.0.0.1:8547",
     )

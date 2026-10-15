@@ -33,7 +33,7 @@ async def test_fund_sets_eth_and_token_balances(fork_rpc):
     w3 = AsyncWeb3(AsyncHTTPProvider(fork_rpc))
     address = Account.create().address
     funded = await fund(w3, address)
-    assert funded["ETH"] == 10 * 10**18
-    assert await w3.eth.get_balance(address) == 10 * 10**18
+    assert funded["ETH"] == 100 * 10**18
+    assert await w3.eth.get_balance(address) == 100 * 10**18
     for t in TOKENS:
         assert funded[t.symbol] == t.faucet_amount * 10**t.decimals

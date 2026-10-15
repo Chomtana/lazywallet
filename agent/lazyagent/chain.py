@@ -36,6 +36,7 @@ class Chain(Protocol):
     async def token_balance(self, token: Token, address: str) -> int: ...
     async def price_usd(self, token: Token) -> float: ...
     async def gas_price(self) -> int: ...
+    async def is_sandbox(self) -> bool: ...
 
 
 class RpcChain:
@@ -58,3 +59,11 @@ class RpcChain:
 
     async def gas_price(self) -> int:
         return await self.w3.eth.gas_price
+
+    async def is_sandbox(self) -> bool:
+        """True only for a local Anvil node — the faucet must never run against a real network."""
+        try:
+            res = await self.w3.provider.make_request("web3_clientVersion", [])
+        except Exception:
+            return False
+        return str(res.get("result", "")).lower().startswith("anvil")

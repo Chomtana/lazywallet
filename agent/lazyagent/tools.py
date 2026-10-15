@@ -21,9 +21,11 @@ from .transfers import (
 )
 
 Send = Callable[[dict], Awaitable[None]]
+Fund = Callable[[str], Awaitable[str]]
 SERVER_NAME = "wallet"
 TOOL_NAMES = [
-    f"mcp__{SERVER_NAME}__{n}" for n in ("get_balances", "resolve_recipient", "propose_transfer", "unsupported_action")
+    f"mcp__{SERVER_NAME}__{n}"
+    for n in ("get_balances", "resolve_recipient", "propose_transfer", "unsupported_action", "request_test_funds")
 ]
 SUPPORTED = ", ".join(t.symbol for t in TOKENS)
 
@@ -43,7 +45,16 @@ class WalletContext:
 
 
 class WalletTools:
-    def __init__(self, chain: Chain, send: Send, ctx: WalletContext, proposals: Proposals, approval_timeout: float = 300):
+    def __init__(
+        self,
+        chain: Chain,
+        send: Send,
+        ctx: WalletContext,
+        proposals: Proposals,
+        approval_timeout: float = 300,
+        fund: Fund | None = None,
+    ):
+        self.fund = fund
         self.chain = chain
         self.send = send
         self.ctx = ctx
@@ -125,6 +136,20 @@ class WalletTools:
             return ok(f"The transfer of {human} to {label} was mined but reverted. Tx {result.get('hash')}.")
         return ok(f"Sent {human} to {label}. Confirmed on Sandbox, tx {result.get('hash')}.")
 
+    async def request_test_funds(self, args: dict) -> dict:
+        if not self.ctx.address:
+            return err("No wallet is active in the app.")
+        if not await self.chain.is_sandbox():
+            return err("The faucet only works on Sandbox, and this network isn't Sandbox.")
+        if self.fund is None:
+            return err("The faucet isn't configured.")
+        try:
+            summary = await self.fund(self.ctx.address)
+        except Exception as e:
+            return err(f"The Sandbox faucet isn't reachable ({e}). Start it with `pnpm dev:sandbox`.")
+        balances = await self.get_balances({})
+        return ok(f"Added {summary} to the wallet. {balances['content'][0]['text']}")
+
     async def unsupported_action(self, args: dict) -> dict:
         action = str(args.get("action", "That"))
         return ok(f"{action} is coming soon. Right now LazyWallet can check balances and send {SUPPORTED} on Sandbox.")
@@ -154,6 +179,11 @@ def build_mcp_server(t: WalletTools):
                     "required": ["token", "amount", "to"],
                 },
             )(t.propose_transfer),
+            tool(
+                "request_test_funds",
+                "Sandbox faucet: give the active wallet free test funds (100 ETH plus test tokens). Use when the user asks for test funds, the faucet, or ETH to get started.",
+                {"type": "object", "properties": {}},
+            )(t.request_test_funds),
             tool(
                 "unsupported_action",
                 "Use for swaps, bridging, scheduling, price alerts, dApps or anything other than balances and sends.",

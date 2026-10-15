@@ -9,6 +9,7 @@ class FakeChain:
         self.tokens = tokens or {}
         self.gp = gas_price
         self.fail = False
+        self.sandbox = True
 
     async def eth_balance(self, address: str) -> int:
         if self.fail:
@@ -23,6 +24,9 @@ class FakeChain:
 
     async def gas_price(self) -> int:
         return self.gp
+
+    async def is_sandbox(self) -> bool:
+        return self.sandbox
 
 
 class Outbox:

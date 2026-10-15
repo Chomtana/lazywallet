@@ -7,7 +7,7 @@ from typing import Any, Protocol
 from .chain import Chain
 from .proposals import Proposals
 from .stream import translate
-from .tools import Send, WalletContext, WalletTools
+from .tools import Fund, Send, WalletContext, WalletTools
 
 log = logging.getLogger(__name__)
 BUSY = "Still working on your last request."
@@ -25,12 +25,19 @@ ClientFactory = Callable[[WalletTools], Awaitable[AgentClient]]
 class Session:
     """One browser connection: wallet context, pending approvals and a lazily created Claude client."""
 
-    def __init__(self, send: Send, chain: Chain, client_factory: ClientFactory, approval_timeout: float = 300):
+    def __init__(
+        self,
+        send: Send,
+        chain: Chain,
+        client_factory: ClientFactory,
+        approval_timeout: float = 300,
+        fund: Fund | None = None,
+    ):
         self._send = send
         self._factory = client_factory
         self.ctx = WalletContext()
         self.proposals = Proposals()
-        self.tools = WalletTools(chain, send, self.ctx, self.proposals, approval_timeout)
+        self.tools = WalletTools(chain, send, self.ctx, self.proposals, approval_timeout, fund)
         self._client: AgentClient | None = None
         self._turn: asyncio.Task | None = None
 
