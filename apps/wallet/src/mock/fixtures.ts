@@ -19,6 +19,7 @@ export const EXAMPLES = [
   "What's my balance?",
   'Send 0.1 ETH to Alice',
   'Swap 100 USDC to ETH',
+  'What RWA airdrops can I farm?',
   'Alert me if ETH drops below 3000',
   'Buy ETH every Monday with 50 USDC',
   'If ETH < 3000, swap 500 USDC to ETH',

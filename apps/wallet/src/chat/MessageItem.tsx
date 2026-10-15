@@ -1,5 +1,6 @@
 import { Mic } from 'lucide-react'
 import type { AssistantMessage, ChoiceOption, Message, Task } from '@/types'
+import { AirdropCard } from './cards/AirdropCard'
 import { BalanceCard } from './cards/BalanceCard'
 import { BalanceChangeCard } from './cards/BalanceChangeCard'
 import { ChoiceCard } from './cards/ChoiceCard'
@@ -14,7 +15,7 @@ export type MessageActions = {
   onReject: (id: string) => void
   onSimulate?: (task: Task) => void
   onChoose?: (id: string, option: ChoiceOption) => void
-  onBuy?: (text: string) => void
+  onBuy?: (text: string) => void // sends a card chip's message (token Buy, airdrop Farm/Buy) as the user
   choicesEnabled?: boolean // choice and Buy buttons (off while the agent is busy or offline)
 }
 
@@ -52,6 +53,8 @@ function AssistantBody({ message, onApprove, onReject, onSimulate, onChoose, onB
           onChoose={(o) => onChoose?.(message.id, o)}
         />
       )
+    case 'airdrops':
+      return <AirdropCard title={message.title} items={message.items} enabled={choicesEnabled} onSend={(text) => onBuy?.(text)} />
   }
 }
 
