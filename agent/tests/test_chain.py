@@ -35,3 +35,15 @@ async def test_call_and_block_timestamp(fork_rpc):
 async def test_lit_price_comes_from_v4_pool(fork_rpc):
     price = await RpcChain(fork_rpc).price_usd(find_token("LIT"))
     assert 0.01 < price < 1_000
+
+
+async def test_custom_token_price_comes_from_the_price_source():
+    from lazyagent.tokens import Token
+
+    coq = Token("COQ", "0x420FcA0121DC28039145009570975747295f2329", 18, custom=True)
+    assert await RpcChain("http://127.0.0.1:1").price_usd(coq) is None  # no source: unknown, never $0
+
+    async def source(token):
+        return 1.5e-7 if token is coq else None
+
+    assert await RpcChain("http://127.0.0.1:1", custom_price=source).price_usd(coq) == 1.5e-7

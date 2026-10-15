@@ -1,3 +1,5 @@
+from eth_abi import encode
+
 from lazyagent.tokens import Token
 
 PRICES = {"ETH": 3200.0, "WETH": 3200.0, "WBTC": 64000.0}
@@ -13,6 +15,11 @@ class FakeChain:
         self.fail_balance_reads = False
         self.call_responses: dict[str, bytes] = {}
         self.now = 1_700_000_000
+        self.prices: dict[str, float | None] = dict(PRICES)
+        self.sim_out: int | Exception = 0  # what a simulated Kyber swap returns (or raises)
+        self.sim_calls: list[tuple[dict, dict | None]] = []
+        self.access_keys: list[str] = []  # storage slots eth_createAccessList reports
+        self.allowance_slot: str | None = None  # the one that really holds allowance(owner, ROUTER)
 
     async def eth_balance(self, address: str) -> int:
         if self.fail:
@@ -24,8 +31,8 @@ class FakeChain:
             raise ConnectionError("rpc hiccup")
         return self.tokens.get(token.symbol, 0)
 
-    async def price_usd(self, token: Token) -> float:
-        return PRICES.get(token.symbol, 1.0)
+    async def price_usd(self, token: Token) -> float | None:
+        return self.prices.get(token.symbol, 1.0)
 
     async def gas_price(self) -> int:
         return self.gp
@@ -38,6 +45,18 @@ class FakeChain:
 
     async def block_timestamp(self) -> int:
         return self.now
+
+    async def simulate(self, tx: dict, overrides: dict | None = None) -> bytes:
+        self.sim_calls.append((tx, overrides))
+        if tx["data"].startswith("0xdd62ed3e"):  # allowance(): only an override of the real slot counts
+            diff = next(iter((overrides or {}).values()), {}).get("stateDiff", {})
+            return int(diff.get(self.allowance_slot, "0x0"), 16).to_bytes(32, "big")
+        if isinstance(self.sim_out, Exception):
+            raise self.sim_out
+        return encode(["uint256", "uint256"], [self.sim_out, 150_000])
+
+    async def storage_keys(self, to: str, data: str) -> list[str]:
+        return self.access_keys
 
 
 class FakeQuoter:

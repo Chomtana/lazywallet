@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from typing import Protocol
 
 from web3 import AsyncHTTPProvider, AsyncWeb3, Web3
@@ -31,21 +32,25 @@ AGGREGATOR_ABI = [
     }
 ]
 FEED_DECIMALS = 8
+PriceSource = Callable[[Token], Awaitable[float | None]]  # USD price of a custom token, None if unknown
 
 
 class Chain(Protocol):
     async def eth_balance(self, address: str) -> int: ...
     async def token_balance(self, token: Token, address: str) -> int: ...
-    async def price_usd(self, token: Token) -> float: ...
+    async def price_usd(self, token: Token) -> float | None: ...
     async def gas_price(self) -> int: ...
     async def is_sandbox(self) -> bool: ...
     async def call(self, to: str, data: str, gas: int | None = None) -> bytes: ...
     async def block_timestamp(self) -> int: ...
+    async def simulate(self, tx: dict, overrides: dict | None = None) -> bytes: ...
+    async def storage_keys(self, to: str, data: str) -> list[str]: ...
 
 
 class RpcChain:
-    def __init__(self, rpc_url: str, poa: bool = False):
+    def __init__(self, rpc_url: str, poa: bool = False, custom_price: PriceSource | None = None):
         self.w3 = AsyncWeb3(AsyncHTTPProvider(rpc_url))
+        self.custom_price = custom_price
         if poa:
             self.w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)  # Avalanche blocks carry long extraData
 
@@ -56,7 +61,9 @@ class RpcChain:
         contract = self.w3.eth.contract(address=Web3.to_checksum_address(token.address), abi=ERC20_ABI)
         return await contract.functions.balanceOf(Web3.to_checksum_address(address)).call()
 
-    async def price_usd(self, token: Token) -> float:
+    async def price_usd(self, token: Token) -> float | None:
+        if token.custom:
+            return await self.custom_price(token) if self.custom_price else None
         if token.fixed_price is not None:
             return token.fixed_price
         if token.price_feed is None:
@@ -80,6 +87,17 @@ class RpcChain:
         if gas is not None:
             tx["gas"] = gas
         return bytes(await self.w3.eth.call(tx))
+
+    async def simulate(self, tx: dict, overrides: dict | None = None) -> bytes:
+        """eth_call with `from`/`value` and optional state overrides ({address: {"stateDiff": {slot: value}}})."""
+        params = {k: Web3.to_checksum_address(v) if k in ("from", "to") else v for k, v in tx.items()}
+        return bytes(await self.w3.eth.call(params, "latest", overrides))
+
+    async def storage_keys(self, to: str, data: str) -> list[str]:
+        """Storage slots of `to` that a call to it reads (eth_createAccessList)."""
+        res = await self.w3.eth.create_access_list({"to": Web3.to_checksum_address(to), "data": data})
+        keys = [k for e in res["accessList"] if e["address"].lower() == to.lower() for k in e["storageKeys"]]
+        return [k if isinstance(k, str) else k.to_0x_hex() for k in keys]
 
     async def block_timestamp(self) -> int:
         """Timestamp the next block will get — Anvil mines only on transactions, so `latest` goes stale while idle."""
