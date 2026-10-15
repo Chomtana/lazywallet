@@ -4,8 +4,9 @@ export type Vault = { wallets: StoredWallet[] }
 export type EncryptedVault = { v: 1; salt: string; iv: string; data: string }
 export type Contact = { id: string; name: string; address: Address }
 // usdPrice null = price unknown (a custom token with no route to USDC) — shown as such, left out of totals.
-export type Holding = { symbol: string; amount: number; usdPrice: number | null; network?: string }
-export type BalanceChange = { network?: string; symbol: string; before: number; after: number; delta: number; usdPrice: number | null }
+// logo: an image URL, or null/absent → initials.
+export type Holding = { symbol: string; amount: number; usdPrice: number | null; network?: string; logo?: string | null }
+export type BalanceChange = { network?: string; symbol: string; before: number; after: number; delta: number; usdPrice: number | null; logo?: string | null }
 // A row of the agent's token list card (list_trending_tokens). network is a display name ("Ethereum").
 export type TrendingToken = {
   symbol: string
@@ -20,7 +21,7 @@ export type TrendingToken = {
   note: string | null
   image: string | null
 }
-export type CustomToken = { chainId: number; address: Address; symbol: string; decimals: number }
+export type CustomToken = { chainId: number; address: Address; symbol: string; decimals: number; logo?: string }
 // One row of the airdrops card (agent list_airdrops). farm = short name for "Farm <farm> with N USDC"; buy = a farm token to buy.
 export type AirdropItem = {
   id: string
@@ -37,8 +38,23 @@ export type ChoiceOption = { label: string; detail?: string; reply: string }
 export type DappInfo = { name: string; url: string; icon: string }
 export type TxRequest = { to: Address; value: string; data: `0x${string}`; chainId?: number }
 export type TxStep = { label: string; request: TxRequest }
+// The friendly top half of a swap/farm confirm card (agent swaps.py swap_summary / airdrops.py farm_summary).
+// amount is a display string ("≈ 41.3" when estimated); usd/logo are null when unknown.
+export type SummaryToken = { symbol: string; amount: string; usd: number | null; logo: string | null }
+export type TxSummary = {
+  kind: 'swap' | 'farm'
+  network: string
+  pay: SummaryToken
+  swap?: { symbol: string; amount: string; via: string; logo: string | null } // farm only: the token it swaps into
+  receive: SummaryToken & { note: string | null }
+  via?: string // swap only
+  fee: string
+  program?: string // farm only
+  warning: string | null
+}
 export type TxDraft = {
   title: string
+  summary?: TxSummary
   rows: { label: string; value: string }[]
   dapp?: DappInfo
   explanation?: string
