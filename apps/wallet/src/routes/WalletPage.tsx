@@ -115,7 +115,7 @@ export default function WalletPage() {
           progress={chat.progress}
           queue={chat.queue}
           onPick={(t) => chat.send(t)}
-          action={offerFunds && <GetFundsButton address={active.address} onFunded={refreshBalance} />}
+          action={offerFunds && <GetFundsButton address={active.address} onFunded={refreshBalance} agentOnline={chat.online} busy={chat.busy} onAsk={(t) => chat.send(t)} />}
           onApprove={chat.approve}
           onReject={chat.reject}
           onChoose={chat.choose}
@@ -126,7 +126,7 @@ export default function WalletPage() {
       <div className="mx-auto w-full max-w-[720px] space-y-2 px-4 pb-4">
         {session && <ConnectedBar dapp={session} onDisconnect={disconnect} />}
         {offerFunds && !emptyChat && (
-          <GetFundsButton address={active.address} onFunded={refreshBalance} className="w-full" />
+          <GetFundsButton address={active.address} onFunded={refreshBalance} className="w-full" agentOnline={chat.online} busy={chat.busy} onAsk={(t) => chat.send(t)} />
         )}
         <QuickActionBar onPick={(t) => chat.send(t)} disabled={!chat.online} />
         <InputBar onSend={chat.send} speakEnabled={speakEnabled} onToggleSpeak={() => setSpeakEnabled((v) => !v)} />

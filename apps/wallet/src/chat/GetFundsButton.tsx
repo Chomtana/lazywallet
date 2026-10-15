@@ -6,13 +6,25 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { Address } from '@/types'
 
-type Props = { address: Address; onFunded: () => Promise<void> | void; className?: string }
+// Sent through the chat so the agent adds funds and shows the new balance card.
+export const FUND_PROMPT = 'Add funds to my wallet'
 
-// One tap tops the wallet up from the faucet, then re-reads the balance.
-export function GetFundsButton({ address, onFunded, className }: Props) {
+type Props = {
+  address: Address
+  onFunded: () => Promise<void> | void
+  agentOnline: boolean
+  busy: boolean
+  onAsk: (text: string) => void
+  className?: string
+}
+
+// One tap tops the wallet up. With the agent online it goes through the chat (new balance card);
+// otherwise it calls the faucet directly and re-reads the balance.
+export function GetFundsButton({ address, onFunded, agentOnline, busy, onAsk, className }: Props) {
   const [funding, setFunding] = useState(false)
 
   async function fund() {
+    if (agentOnline) return onAsk(FUND_PROMPT)
     setFunding(true)
     try {
       toast.success(`Added ${await requestFunds(address)}`)
@@ -24,10 +36,11 @@ export function GetFundsButton({ address, onFunded, className }: Props) {
     }
   }
 
+  const working = funding || (agentOnline && busy)
   return (
-    <Button size="lg" className={cn('h-11 rounded-full px-5 text-base', className)} onClick={fund} disabled={funding}>
-      {funding ? <Loader2 className="animate-spin" /> : <Wallet />}
-      {funding ? 'Adding funds…' : 'Get funds'}
+    <Button size="lg" className={cn('h-11 rounded-full px-5 text-base', className)} onClick={fund} disabled={working}>
+      {working ? <Loader2 className="animate-spin" /> : <Wallet />}
+      {working ? 'Adding funds…' : 'Get funds'}
     </Button>
   )
 }
