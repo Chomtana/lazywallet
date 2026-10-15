@@ -12,6 +12,7 @@ export type TxDraft = {
   dapp?: DappInfo
   explanation?: string
   request?: TxRequest
+  from?: Address
 }
 export type TaskKind = 'dca' | 'alert' | 'conditional'
 export type Task = {

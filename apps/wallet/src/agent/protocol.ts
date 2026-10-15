@@ -21,6 +21,6 @@ export type ServerMsg =
   | { type: 'text_delta'; text: string }
   | { type: 'text_done' }
   | { type: 'balances'; holdings: Holding[] }
-  | { type: 'confirm'; id: string; tx: TxDraft & { request: TxRequest } }
+  | { type: 'confirm'; id: string; tx: TxDraft & { request: TxRequest; from: Address } }
   | { type: 'error'; message: string }
   | { type: 'turn_end' }

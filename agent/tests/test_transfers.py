@@ -24,10 +24,19 @@ def test_parse_amount_valid(text, decimals, expected):
     assert parse_amount(text, decimals) == expected
 
 
-@pytest.mark.parametrize("text", ["0", "0.000", "-1", "1e18", "abc", "", "1.2.3"])
+@pytest.mark.parametrize("text", ["0", "0.000", "-1", "1e18", "abc", "", "1.2.3", "0,5", "1,5", "12,34", "٣"])
 def test_parse_amount_invalid(text):
     with pytest.raises(TransferError):
         parse_amount(text, 18)
+
+
+def test_parse_amount_thousands_separators():
+    assert parse_amount("1,000,000.5", 6) == 1_000_000_500_000
+
+
+def test_parse_amount_never_rounds_long_inputs():
+    with pytest.raises(TransferError, match="18 decimal places"):
+        parse_amount("0.1000000000000000000000000000001", 18)
 
 
 def test_parse_amount_too_many_decimals():
@@ -64,6 +73,12 @@ def test_validate_eth_over_balance():
 def test_validate_eth_whole_balance_leaves_no_gas():
     with pytest.raises(TransferError, match="network fee"):
         validate(ETH, 10**18, 10**18, 10**18, 21_000 * 10**9)
+
+
+def test_validate_eth_keeps_headroom_for_fee_spikes():
+    gas = 21_000 * 10**9
+    with pytest.raises(TransferError, match="network fee"):
+        validate(ETH, 10**18 - gas, 10**18, 10**18, gas)
 
 
 def test_validate_token_over_balance():

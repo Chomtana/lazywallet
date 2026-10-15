@@ -1,4 +1,5 @@
 import asyncio
+import secrets
 
 
 class Proposals:
@@ -6,11 +7,10 @@ class Proposals:
 
     def __init__(self) -> None:
         self._pending: dict[str, asyncio.Future] = {}
-        self._seq = 0
 
     def new(self) -> tuple[str, asyncio.Future]:
-        self._seq += 1
-        pid = f"p{self._seq}"
+        # Random, not sequential: the browser keeps cards from earlier sessions across reconnects.
+        pid = f"p{secrets.token_hex(8)}"
         fut = asyncio.get_running_loop().create_future()
         self._pending[pid] = fut
         return pid, fut

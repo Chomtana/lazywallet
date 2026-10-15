@@ -103,7 +103,8 @@ class WalletTools:
                 "id": pid,
                 "tx": {
                     "title": f"Send {human}",
-                    "rows": display_rows(token, amount, to, name, price, gas_cost, eth_price),
+                    "from": self.ctx.address,
+                    "rows": [{"label": "From", "value": short(self.ctx.address)}, *display_rows(token, amount, to, name, price, gas_cost, eth_price)],
                     "request": build_request(token, to, amount),
                 },
             }
@@ -113,6 +114,11 @@ class WalletTools:
             return ok("The user didn't respond to the confirmation within 5 minutes, so nothing was sent.")
         if result.get("outcome") == "rejected":
             return ok("The user rejected the transfer. Nothing was sent.")
+        if result.get("error") and result.get("hash"):
+            return ok(
+                f"The transfer of {human} to {label} was broadcast (tx {result['hash']}) but its confirmation couldn't be read "
+                f"({result['error']}). Don't resend — ask the user to check their balance first."
+            )
         if result.get("error"):
             return ok(f"The transfer failed before it was sent: {result['error']}")
         if result.get("status") == "reverted":

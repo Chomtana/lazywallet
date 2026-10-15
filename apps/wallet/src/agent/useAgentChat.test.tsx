@@ -70,4 +70,26 @@ describe('useAgentChat', () => {
     expect(result.current.messages.at(-1)).toMatchObject({ kind: 'text', text: 'Hi' })
     expect(result.current.online).toBe(true)
   })
+
+  it('refuses to approve a card quoted for a different wallet', async () => {
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    const otherWallet = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
+    act(() =>
+      live.onmessage?.({
+        data: JSON.stringify({
+          type: 'confirm',
+          id: 'pabc',
+          tx: { title: 'Send 1 ETH', from: otherWallet, rows: [], request: { to: otherWallet, value: '1', data: '0x' } },
+        }),
+      }),
+    )
+    await act(() => result.current.approve('pabc'))
+    expect(result.current.messages.find((m) => m.id === 'pabc')).toMatchObject({ state: 'waiting' })
+    expect(live.sent).toHaveLength(0)
+  })
 })

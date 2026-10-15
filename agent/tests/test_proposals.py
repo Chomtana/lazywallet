@@ -8,9 +8,13 @@ from lazyagent.proposals import Proposals
 async def test_resolve_delivers_result():
     p = Proposals()
     pid, fut = p.new()
-    assert pid == "p1"
     asyncio.get_running_loop().call_soon(p.resolve, pid, {"outcome": "approved"})
     assert await p.wait(pid, fut, 1) == {"outcome": "approved"}
+
+
+async def test_ids_are_unique_across_sessions():
+    # The browser keeps old cards across reconnects; a new session must never reuse their ids.
+    assert Proposals().new()[0] != Proposals().new()[0]
 
 
 async def test_wait_times_out_with_none():

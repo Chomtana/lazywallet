@@ -1,7 +1,8 @@
 import { useEffect, useReducer, useRef } from 'react'
+import { mnemonicToAccount } from 'viem/accounts'
 import { executeTx, statusPatch } from '@/chain/executeTx'
 import { txDepsFor } from '@/chain/client'
-import { txHash, uid } from '@/lib/format'
+import { shortAddress, txHash, uid } from '@/lib/format'
 import { say } from '@/mock/agent'
 import type { Address, AgentReply, Contact, Message } from '@/types'
 import { speak } from '@/voice/speech'
@@ -116,6 +117,12 @@ export function useAgentChat(options: Options) {
   async function approve(id: string) {
     const m = findWaitingConfirm(id)
     if (!m) return
+    const { mnemonic } = optsRef.current
+    // The agent quoted this card for one wallet; never sign it from another.
+    if (m.tx.from && (!mnemonic || mnemonicToAccount(mnemonic).address.toLowerCase() !== m.tx.from.toLowerCase())) {
+      deliver({ messages: [say(`This card is for wallet ${shortAddress(m.tx.from)} — switch back to it to approve.`)] })
+      return
+    }
     dispatch({ type: 'update', id, patch: { state: 'approved' } })
     const statusId = uid()
     const pending: Message = { id: statusId, role: 'assistant', kind: 'status', state: 'pending', text: 'Submitting to Sandbox…' }
@@ -128,7 +135,6 @@ export function useAgentChat(options: Options) {
       )
       return
     }
-    const { mnemonic } = optsRef.current
     const outcome = mnemonic ? await executeTx(m.tx.request, txDepsFor(mnemonic)) : { error: 'No wallet is unlocked.' }
     dispatch({ type: 'update', id: statusId, patch: statusPatch(outcome) })
     sendJson({ type: 'tx_result', id, outcome: 'approved', ...outcome })

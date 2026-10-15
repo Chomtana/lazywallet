@@ -58,6 +58,7 @@ async def test_propose_transfer_approved_flow():
     task = asyncio.create_task(tools.propose_transfer({"token": "ETH", "amount": "0.1", "to": "Alice"}))
     confirm = await wait_for_confirm(out)
     assert confirm["tx"]["title"] == "Send 0.1 ETH"
+    assert confirm["tx"]["from"] == ME
     assert confirm["tx"]["request"] == {"to": ALICE, "value": str(10**17), "data": "0x"}
     proposals.resolve(confirm["id"], {"outcome": "approved", "hash": "0xabc", "status": "success"})
     result = await task
@@ -85,6 +86,16 @@ async def test_propose_transfer_reverted_and_send_error():
     confirm = await wait_for_confirm(out)
     proposals.resolve(confirm["id"], {"outcome": "approved", "error": "insufficient funds"})
     assert "insufficient funds" in text(await task)
+
+
+async def test_propose_transfer_receipt_error_after_broadcast():
+    tools, out, proposals = make()
+    task = asyncio.create_task(tools.propose_transfer({"token": "ETH", "amount": "1", "to": "Alice"}))
+    confirm = await wait_for_confirm(out)
+    proposals.resolve(confirm["id"], {"outcome": "approved", "hash": "0xfeed", "error": "timeout"})
+    result = text(await task)
+    assert "0xfeed" in result
+    assert "failed before it was sent" not in result
 
 
 async def test_propose_transfer_timeout():

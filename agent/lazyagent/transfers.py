@@ -1,5 +1,5 @@
 import re
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 from eth_abi import encode
 from web3 import Web3
@@ -7,7 +7,9 @@ from web3 import Web3
 from .tokens import Token
 
 ERC20_TRANSFER_SELECTOR = "a9059cbb"
-_AMOUNT = re.compile(r"^\d*\.?\d+$")
+_AMOUNT = re.compile(r"^[0-9]*\.?[0-9]+$")
+_THOUSANDS = re.compile(r"^[0-9]{1,3}(,[0-9]{3})+(\.[0-9]+)?$")
+FEE_HEADROOM = 2  # wallets sign EIP-1559 with maxFeePerGas well above the current gas price
 
 
 class TransferError(Exception):
@@ -15,16 +17,21 @@ class TransferError(Exception):
 
 
 def parse_amount(text: str, decimals: int) -> int:
-    cleaned = text.strip().replace(",", "")
+    cleaned = text.strip()
+    if "," in cleaned:
+        # Only thousands separators ("1,000.5"); "0,5" is a decimal comma and must not become 5.
+        if not _THOUSANDS.match(cleaned):
+            raise TransferError(f'"{text}" isn\'t a valid amount. Use a dot for decimals, like 0.5.')
+        cleaned = cleaned.replace(",", "")
     if not _AMOUNT.match(cleaned):
         raise TransferError(f'"{text}" isn\'t a valid amount.')
     value = Decimal(cleaned)
     if value <= 0:
         raise TransferError("The amount needs to be more than 0.")
-    base = value.scaleb(decimals)
-    if base != base.to_integral_value():
+    if -value.as_tuple().exponent > decimals:
         raise TransferError(f"That token supports at most {decimals} decimal places.")
-    return int(base)
+    with localcontext(prec=100):
+        return int(value.scaleb(decimals))
 
 
 def format_units(amount: int, decimals: int) -> str:
@@ -59,12 +66,13 @@ def validate(token: Token, amount: int, balance: int, eth_balance: int, gas_cost
     have = f"{format_units(balance, token.decimals)} {token.symbol}"
     if amount > balance:
         raise TransferError(f"You only have {have}.")
+    reserve = gas_cost * FEE_HEADROOM
     if token.address is None:
-        if amount + gas_cost > eth_balance:
+        if amount + reserve > eth_balance:
             raise TransferError(
-                f"That leaves nothing for the network fee (~{format_units(gas_cost, 18)} ETH). Try a slightly smaller amount."
+                f"That leaves too little for the network fee (keep ~{format_units(reserve, 18)} ETH). Try a slightly smaller amount."
             )
-    elif gas_cost > eth_balance:
+    elif reserve > eth_balance:
         raise TransferError("You need a little ETH for the network fee. Get test funds from the Receive screen.")
 
 
