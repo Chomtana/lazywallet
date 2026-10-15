@@ -121,6 +121,8 @@ export function respond(input: string, ctx: AgentContext): AgentReply {
     const [, watch, price, amount, from, to] = m
     const trigger = swapDraft(ctx, Number(amount), from, to)
     if (typeof trigger === 'string') return { messages: [say(trigger)] }
+    const holding = checkSpend(ctx, Number(amount), from)
+    if (typeof holding === 'string') return { messages: [say(holding)] }
     return newTask({
       kind: 'conditional',
       description: `${trigger.title} when ${watch.toUpperCase()} < ${usdLabel(Number(price))}`,

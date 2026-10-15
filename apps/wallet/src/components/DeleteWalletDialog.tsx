@@ -1,3 +1,4 @@
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useWallet } from '@/state/wallet-context'
@@ -7,7 +8,7 @@ export function DeleteWalletDialog({ open, onOpenChange }: { open: boolean; onOp
   const isLast = wallets.length === 1
 
   async function confirmDelete() {
-    if (active) await deleteWallet(active.id)
+    if (active && !(await deleteWallet(active.id))) toast.error("Couldn't delete — browser storage is unavailable.")
     onOpenChange(false)
   }
 

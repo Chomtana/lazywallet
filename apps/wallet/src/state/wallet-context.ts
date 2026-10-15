@@ -12,7 +12,7 @@ export type WalletCtx = {
   verifyPassword(password: string): Promise<boolean>
   lock(): void
   setActive(id: string): void
-  deleteWallet(id: string): Promise<void>
+  deleteWallet(id: string): Promise<boolean>
   resetAll(): void
 }
 

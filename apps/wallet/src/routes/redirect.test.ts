@@ -17,6 +17,11 @@ describe('redirectFor', () => {
     ['unlocked', '/create', null],
     ['locked', '/import', '/unlock'],
     ['unlocked', '/import', null],
+    ['locked', '/create/', '/unlock'],
+    ['locked', '/Create', '/unlock'],
+    ['locked', '/IMPORT/', '/unlock'],
+    ['none', '/Welcome/', null],
+    ['unlocked', '/UNLOCK', '/'],
   ] as const)('%s at %s → %s', (status, path, expected) => {
     expect(redirectFor(status, path)).toBe(expected)
   })

@@ -81,6 +81,14 @@ describe('respond', () => {
     expect(confirmOf(fired).title).toBe('Swap 500 USDC → ETH')
   })
 
+  it('refuses conditional orders with zero or more than the balance', () => {
+    for (const input of ['If ETH < 3000, swap 0 USDC to ETH', 'If ETH < 3000, swap 99999 USDC to ETH']) {
+      const r = respond(input, ctx)
+      expect(r.newTask).toBeUndefined()
+      expect(hasConfirm(r)).toBe(false)
+    }
+  })
+
   it('falls back with examples', () => {
     expect(textOf(respond('make me rich', ctx))).toMatch(/Try:/)
   })

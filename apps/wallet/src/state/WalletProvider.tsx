@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { KEYS, readJSON, removeKey, writeJSON } from '@/lib/storage'
 import { decryptVault, encryptVault, walletFromMnemonic } from '@/lib/vault'
 import type { EncryptedVault, Vault } from '@/types'
@@ -16,6 +16,18 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const wallets = vault?.wallets ?? []
   const active = wallets.find((w) => w.id === activeId) ?? wallets[0] ?? null
 
+  // Another tab changed the vault: drop our in-memory copy so we never write over its changes.
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (e.key !== null && e.key !== KEYS.vault) return
+      setVault(null)
+      setPassword(null)
+      setHasStored(loadEncrypted() !== null)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
   function setActive(id: string) {
     setActiveId(id)
     writeJSON(KEYS.active, id)
@@ -32,6 +44,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }
 
   async function addWallet(name: string, mnemonic: string, newPassword?: string) {
+    // Without an unlocked session this creates a fresh vault, which must never replace an existing one.
+    if (!password && loadEncrypted() !== null) return false
     const pw = password ?? newPassword
     if (!pw) throw new Error('A password is required to create the vault')
     const wallet = walletFromMnemonic(name, mnemonic)
@@ -74,8 +88,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   async function deleteWallet(id: string) {
     const rest = wallets.filter((w) => w.id !== id)
-    if (rest.length === 0) return resetAll()
-    if (password) await persist({ wallets: rest }, password)
+    if (rest.length === 0) {
+      resetAll()
+      return true
+    }
+    return password ? persist({ wallets: rest }, password) : false
   }
 
   const value: WalletCtx = {
