@@ -6,6 +6,7 @@ runs it on the Sandbox fork, before any card is shown. Router ABI from the verif
 
 import asyncio
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -45,6 +46,7 @@ DEX_NAMES = {
     "traderjoe": "LFJ", "traderjoe-v21": "LFJ", "traderjoe-v22": "LFJ", "pangolin": "Pangolin", "pharaoh": "Pharaoh",
     "uniswap": "Uniswap", "uniswapv3": "Uniswap", "uniswap-v4": "Uniswap", "sushiswap": "SushiSwap",
     "pancake-v3": "PancakeSwap", "balancer-v2-weighted": "Balancer", "curve-stable-ng": "Curve",
+    "arenadex": "Arena DEX", "blackhole": "Blackhole", "fluid": "Fluid", "curve": "Curve", "balancer": "Balancer",
 }
 
 
@@ -206,7 +208,8 @@ async def simulate(chain: Chain, user: str, v: Verified, override: dict | None) 
 
 def _dex(exchange: str) -> str:
     key = exchange.split("/")[-1]  # "pmm-8/uniswap" → "uniswap"
-    return DEX_NAMES.get(key, key)
+    base = re.sub(r"-(v\d+|\d+)$", "", key)  # "arenadex-v2" → "arenadex", "pharaoh-2" → "pharaoh"
+    return DEX_NAMES.get(key) or DEX_NAMES.get(base) or base.replace("-", " ").title()
 
 
 def kyber_label(summary: dict) -> str:

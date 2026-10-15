@@ -108,7 +108,8 @@ def test_kyber_slippage_defaults_to_the_sandbox_value():
 
 def test_kyber_label_and_impact():
     summary = {"route": [[{"exchange": "traderjoe-v22"}, {"exchange": "pmm-8/uniswap"}], [{"exchange": "traderjoe"}, {"exchange": "weird-dex"}]]}
-    assert kyber_label(summary) == "KyberSwap via LFJ, Uniswap, weird-dex"
+    assert kyber_label(summary) == "KyberSwap via LFJ, Uniswap, Weird Dex"
+    assert kyber_label({"route": [[{"exchange": "arenadex-v2"}, {"exchange": "pharaoh-2"}]]}) == "KyberSwap via Arena DEX, Pharaoh"
     assert kyber_label({}) == "KyberSwap"
     assert usd_impact({"amountInUsd": "10", "amountOutUsd": "9.9"}) == pytest.approx(0.01)
     assert usd_impact({"amountInUsd": "0", "amountOutUsd": "9.9"}) is None
