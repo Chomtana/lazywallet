@@ -23,11 +23,11 @@ Add Avalanche C-Chain next to Ethereum in the Sandbox so the user can hold, send
 |---|---|
 | Networks | Ethereum (chain 1, :8545, as today) and Avalanche C-Chain mainnet fork (chain 43114, :8546). Both always on; no network picker |
 | Avalanche fork RPC | `AVAX_RPC_URL` in root `.env`, default `https://api.avax.network/ext/bc/C/rpc` (verified to fork) |
-| Avalanche tokens | AVAX (native), USDC, USDT (Avalanche symbol `USDt`), BTC.b, WETH.e — see §3 |
+| Avalanche tokens | AVAX (native), USDC, USDT (on-chain symbol `USDt`; shown in the app as `USDT`), BTC.b, WETH.e — see §3 |
 | Prices (Avalanche) | Chainlink: AVAX/USD, BTC/USD (BTC.b), ETH/USD (WETH.e); USDC/USDT fixed $1 |
 | Avalanche swap venue | Dexalot SimpleSwap only. Ethereum keeps Uniswap v4 |
 | Quote source | **Sandbox-signed only.** Live indicative price from Dexalot's public `pairprice` (no funds needed); order signed by a sandbox key that the forked Dexalot RFQ contracts are patched to trust. Real Dexalot firm quotes are deferred to a future real-network mode (on a fork they add nothing, and the patch makes them invalid there) |
-| Quote expiry | Fork block timestamp + 15 min (covers the 5-min approval timeout). No "quote on approve" protocol needed |
+| Quote expiry | Pending-block timestamp + 15 min (covers the 5-min approval timeout). No "quote on approve" protocol needed. Anvil mines only on transactions, so `latest` goes stale while idle; the pending block's timestamp follows the wall clock (also used for Phase 3's Uniswap deadline and Permit2 expiry) |
 | Slippage | None: the contract pays exactly the signed `makerAmount`. Card shows "Receive exactly X" |
 | Network choice | Explicit network → native token → token on one network only → network with enough balance → else ask with a choice card |
 | Choice UI | New generic `choice` message: buttons + still answerable by voice/text; tap sends the option's reply text as a normal user message |
@@ -41,7 +41,7 @@ Checked on mainnet 2026-10-15 (`symbol()`, `decimals()`, feed `description()`).
 | Token | Address | Decimals |
 |---|---|---|
 | USDC | `0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E` | 6 |
-| USDt | `0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7` | 6 |
+| USDt (app symbol `USDT`) | `0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7` | 6 |
 | BTC.b | `0x152b9d0FdC40C096757F570A51E494bd4b943E50` | 8 |
 | WETH.e | `0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB` | 18 |
 
@@ -80,9 +80,9 @@ Source: `Dexalot/contracts` `contracts/DexalotRFQ.sol`.
 - `tokens.py` gains a per-network token list (address, decimals, balance slot, faucet amount). Avalanche faucet: 100 AVAX, 10,000 USDC, 10,000 USDt, 1 BTC.b, 5 WETH.e.
 - `POST /fund {address}` funds both networks; response `summary` groups by network: `"Ethereum: 100 ETH, 10,000 USDC, … · Avalanche: 100 AVAX, 10,000 USDC, …"`.
 - New `dexalot.py` (sandbox side):
-  - At startup: generate a sandbox signer key (process memory only), read `getAllowedRFQs()`, and patch each maker whose `swapSigner()` is in its runtime bytecode, then assert `swapSigner()` equals the sandbox address. Makers that can't be patched (e.g. an EIP-1967 proxy maker, or a failed assertion) are skipped. If none can be patched, log loudly and mark Dexalot unavailable (quote endpoint returns 503).
-  - `POST /dexalot/quote {pair, side, amount, taker}` → fetch `pairprice`; pick the patched maker holding the most of the output token; refuse if it holds less than `makerAmount` (409, "not enough liquidity on Sandbox"); build and sign the order (expiry = fork timestamp + 15 min) → `{maker, order, signature, price}`.
-- All sandbox endpoints keep refusing when the target RPC isn't Anvil.
+  - At startup: generate a sandbox signer key (process memory only), read `getAllowedRFQs()`, and patch each maker whose `swapSigner()` is in its runtime bytecode, then assert `swapSigner()` equals the sandbox address. Makers that can't be patched (e.g. an EIP-1967 proxy maker, a patch RPC error, or a failed assertion) are skipped; the skipped makers and reasons are logged at startup and included in the error. If none can be patched, log loudly and mark Dexalot unavailable (quote endpoint returns 503). While unavailable, each quote retries the setup once (serialized), so a transient public-RPC failure at startup doesn't need a restart.
+  - `POST /dexalot/quote {token_in, token_out, amount_in (raw units, decimal string), taker}` → match the pair and fetch `pairprice`; pick the patched maker holding the most of the output token; refuse if it holds less than `makerAmount` (409, "not enough liquidity on Sandbox"); build and sign the order (expiry = pending-block timestamp + 15 min) → `{maker, order, signature, pair, price}`.
+- The sandbox service only targets the forks it started itself; its `anvil_*` calls fail against any other node. (The agent's faucet guard separately checks that the Ethereum chain is Anvil.)
 
 ## 6. Agent (`agent/`)
 
@@ -99,11 +99,11 @@ Source: `Dexalot/contracts` `contracts/DexalotRFQ.sol`.
 - `propose_transfer`: resolve network, then the existing flow on that network's chain (gas in its native token).
 - `propose_swap`: resolve network; Ethereum → existing Uniswap v4 path; Avalanche → Dexalot path:
   1. Check balance and gas reserve (AVAX); pair lookup happens in the sandbox service (404 lists available pairs).
-  2. `POST /dexalot/quote` on the sandbox.
+  2. `POST /dexalot/quote` on the sandbox; reject the reply unless the order matches the request (taker amount, assets, taker, maker).
   3. Steps: optional `Approve {token}` then `Swap {in} → {out}` (`simpleSwap` calldata, value for AVAX input). Each step carries `chainId`.
   4. Rows: Network, From, Pay, Receive exactly, Rate, Route "Dexalot · sandbox-signed at live price", Network fee.
-  5. After success: report received amount (balance delta) and fresh balances.
-- On ambiguity the tool sends a `choice` message itself, then returns an error telling the model it asked the user to choose.
+  5. After success: report the signed `makerAmount` exactly (Uniswap swaps keep the balance delta) and fresh balances.
+- On ambiguity the tool sends a `choice` message itself, then returns an error telling the model it asked the user to choose. If no network has enough (and every balance read succeeded) it returns "You only have X on Ethereum and Y on Avalanche." instead.
 - `request_test_funds`: one call, summary by network.
 - `unsupported_action` text updated (bridging still unsupported).
 
@@ -125,9 +125,9 @@ Sandbox is two forks (Ethereum and Avalanche); same address on both. Pass `netwo
 - `lib/wagmi.ts`: `sandboxChains = { 1: ethereumFork, 43114: avalancheFork }` (RPC from `VITE_SANDBOX_RPC_URL` / `VITE_SANDBOX_AVAX_RPC_URL`, defaults :8545 / :8546).
 - `chain/client.ts`: `txDepsFor(mnemonic)` sends/waits on the client for each request's `chainId`.
 - `executeSteps` unchanged in shape; `statusPatch` / `progressText` name the network ("Confirmed on Avalanche (Sandbox).").
-- Confirm card: network shown in the card's Network row from the steps' `chainId`.
+- Confirm card: network shown in the card's Network row, which the agent authors in `tx.rows` (the steps' `chainId` picks the client to send on).
 - Balance card: network label per row, combined total.
-- New `ChoiceCard` (shadcn `Button`s): question, one button per option (label + detail). Tap → send `reply` as a user message; card then locks with the chosen option highlighted. Any other user message also locks open choice cards.
+- New `ChoiceCard` (shadcn `Button`s): question, one button per option (label + detail). Tap → send `reply` as a user message; card then locks with the chosen option highlighted. Any other user message also locks open choice cards, as does losing the agent connection (a new session has no context). Buttons are disabled while the chat is busy or offline.
 - `types.ts`: `TxRequest.chainId`, `Holding.network`, message kind `choice` `{ question; options; chosen? }`.
 
 ## 9. Error handling
@@ -142,7 +142,7 @@ Sandbox is two forks (Ethereum and Avalanche); same address on both. Pass `netwo
 | Not enough native gas | Existing reserve checks with AVAX/ETH as appropriate |
 | Revert `RF-QE-02` / `RF-IS-01` / `RF-IN-01` | Reverted outcome + "ask again for a fresh quote" |
 | Signer patch failed at startup | Loud log; Dexalot swaps say "Dexalot swaps are unavailable on this Sandbox" |
-| Target RPC isn't Anvil | Faucet and signer refuse (existing `is_sandbox`, per network) |
+| Target RPC isn't Anvil | Agent: the faucet tool refuses unless the Ethereum chain is Anvil (`is_sandbox`). Sandbox service: only targets the forks it started; `anvil_*` calls fail elsewhere |
 
 ## 10. Code layout
 
