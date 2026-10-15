@@ -20,15 +20,13 @@ export function PremiumPane({ subscription, onChoosePlan, onResults }: Props) {
             <Bot className="size-4 shrink-0 text-primary" />
             {planOf(subscription.plan).paneTitle}
             <span className="size-2 shrink-0 animate-pulse rounded-full bg-primary" aria-label="Running" />
+            <Button variant="ghost" size="icon" className="size-7 shrink-0 rounded-full" aria-label="Change plan" onClick={onChoosePlan}>
+              <RefreshCw className="size-3.5" />
+            </Button>
           </p>
-          <div className="flex gap-2">
-            <Button variant="outline" size="icon" className="size-10 shrink-0 rounded-full" aria-label="Change plan" onClick={onChoosePlan}>
-              <RefreshCw />
-            </Button>
-            <Button className={`flex-1 ${ACTION}`} onClick={onResults}>
-              Airdrop Hunting Results
-            </Button>
-          </div>
+          <Button className={`w-full ${ACTION}`} onClick={onResults}>
+            Airdrop Hunting Results
+          </Button>
         </>
       ) : (
         <>
