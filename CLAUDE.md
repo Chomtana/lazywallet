@@ -11,7 +11,7 @@ Phase 4: Avalanche + Dexalot. Spec: `docs/superpowers/specs/2026-10-15-lazywalle
 - pnpm workspace. `apps/landing` (Vite, React, TS, Tailwind v4), `apps/wallet` (+ shadcn/ui Radix, React Router, viem, wagmi, Vitest). Linting is oxlint (create-vite default).
 - `agent/` — Python (uv), FastAPI WebSocket + `claude-agent-sdk`. Auth is the developer's Claude Code login (no API key). Built-in Claude Code tools are disabled; only the in-process `wallet` MCP tools exist.
 - `anvil/` — Python (uv): Anvil forks of Ethereum mainnet (chain id 1, :8545, from `ETH_RPC_URL`) and Avalanche C-Chain (chain id 43114, :8546, from `AVAX_RPC_URL`, default public RPC), plus a faucet/sandbox service (:8547) that writes token balances and serves sandbox-signed Dexalot quotes.
-- x402 is out of scope for the first phases.
+- x402 is deferred to a later phase (still a core story).
 - Use official / well-known frameworks at their latest stable versions. Don't reinvent what a framework provides.
 
 ## Commands

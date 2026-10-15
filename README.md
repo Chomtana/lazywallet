@@ -19,9 +19,9 @@ A voice-powered AI wallet for newcomers and degens. Say what you want — check 
 Requires Node.js LTS, pnpm, [uv](https://docs.astral.sh/uv/), [Foundry](https://getfoundry.sh) (Anvil) and a logged-in [Claude Code](https://code.claude.com).
 
 ```bash
-cp .env.example .env   # set ETH_RPC_URL to an Ethereum mainnet archive RPC
+cp .env.example .env   # set ETH_RPC_URL to an Ethereum mainnet archive RPC; AVAX_RPC_URL is optional (default public Avalanche RPC)
 pnpm install
-pnpm dev:sandbox       # terminal 1: Anvil fork + faucet
+pnpm dev:sandbox       # terminal 1: Anvil forks (Ethereum :8545, Avalanche :8546) + faucet :8547
 pnpm dev:agent         # terminal 2: AI agent
 pnpm dev               # terminal 3: landing :5173, wallet :5174
 pnpm test && pnpm test:py

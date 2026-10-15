@@ -80,8 +80,7 @@ Source: `Dexalot/contracts` `contracts/DexalotRFQ.sol`.
 - `tokens.py` gains a per-network token list (address, decimals, balance slot, faucet amount). Avalanche faucet: 100 AVAX, 10,000 USDC, 10,000 USDt, 1 BTC.b, 5 WETH.e.
 - `POST /fund {address}` funds both networks; response `summary` groups by network: `"Ethereum: 100 ETH, 10,000 USDC, … · Avalanche: 100 AVAX, 10,000 USDC, …"`.
 - New `dexalot.py` (sandbox side):
-  - At startup: generate a sandbox signer key (process memory only), read `getAllowedRFQs()`, and for each maker that has `swapSigner()`: patch bytecode, then assert `swapSigner()` equals the sandbox address. Any failure → log loudly and mark Dexalot unavailable (quote endpoint returns 503).
-  - Makers whose signer isn't in their runtime bytecode (e.g. an EIP-1967 proxy maker) are skipped; startup fails only if no maker can be patched.
+  - At startup: generate a sandbox signer key (process memory only), read `getAllowedRFQs()`, and patch each maker whose `swapSigner()` is in its runtime bytecode, then assert `swapSigner()` equals the sandbox address. Makers that can't be patched (e.g. an EIP-1967 proxy maker, or a failed assertion) are skipped. If none can be patched, log loudly and mark Dexalot unavailable (quote endpoint returns 503).
   - `POST /dexalot/quote {pair, side, amount, taker}` → fetch `pairprice`; pick the patched maker holding the most of the output token; refuse if it holds less than `makerAmount` (409, "not enough liquidity on Sandbox"); build and sign the order (expiry = fork timestamp + 15 min) → `{maker, order, signature, price}`.
 - All sandbox endpoints keep refusing when the target RPC isn't Anvil.
 
@@ -109,7 +108,7 @@ Source: `Dexalot/contracts` `contracts/DexalotRFQ.sol`.
 - `unsupported_action` text updated (bridging still unsupported).
 
 ### 6.3 New module `dexalot.py` (agent side)
-Pure helpers: pair lookup, order → `simpleSwap` calldata, approval step, outcome hints for `RF-QE-02` / `RF-IS-01` / `RF-IN-01`. HTTP client for `/api/rfq/pairs` and the sandbox quote endpoint.
+Pure helpers: order → `simpleSwap` calldata, approval step, step/row builders, revert hint for `RF-QE-02` / `RF-IS-01` / `RF-IN-01`. `SandboxQuotes` client for the sandbox's `POST /dexalot/quote`; pair lookup and pricing live in the sandbox (§5).
 
 ### 6.4 Prompt
 Sandbox is two forks (Ethereum and Avalanche); same address on both. Pass `network` only if the user named one or answered a network choice. Swaps on Avalanche use Dexalot; quotes are sandbox-signed at Dexalot's live price. When a tool says it asked the user to choose, ask the question in one sentence and stop.
@@ -123,7 +122,7 @@ Sandbox is two forks (Ethereum and Avalanche); same address on both. Pass `netwo
 
 ## 8. Wallet (`apps/wallet/`)
 
-- `lib/wagmi.ts`: `sandboxChains = { 1: ethereumFork, 43114: avalancheFork }` (RPC from `VITE_SANDBOX_RPC_URL` / `VITE_AVAX_RPC_URL`, defaults :8545 / :8546).
+- `lib/wagmi.ts`: `sandboxChains = { 1: ethereumFork, 43114: avalancheFork }` (RPC from `VITE_SANDBOX_RPC_URL` / `VITE_SANDBOX_AVAX_RPC_URL`, defaults :8545 / :8546).
 - `chain/client.ts`: `txDepsFor(mnemonic)` sends/waits on the client for each request's `chainId`.
 - `executeSteps` unchanged in shape; `statusPatch` / `progressText` name the network ("Confirmed on Avalanche (Sandbox).").
 - Confirm card: network shown in the card's Network row from the steps' `chainId`.
