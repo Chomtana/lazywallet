@@ -1,6 +1,7 @@
 from typing import Protocol
 
 from web3 import AsyncHTTPProvider, AsyncWeb3, Web3
+from web3.middleware import ExtraDataToPOAMiddleware
 
 from .tokens import ETH, Token
 from .uniswap import ZERO, ChainQuoter, best_route, currency_of
@@ -43,8 +44,10 @@ class Chain(Protocol):
 
 
 class RpcChain:
-    def __init__(self, rpc_url: str):
+    def __init__(self, rpc_url: str, poa: bool = False):
         self.w3 = AsyncWeb3(AsyncHTTPProvider(rpc_url))
+        if poa:
+            self.w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)  # Avalanche blocks carry long extraData
 
     async def eth_balance(self, address: str) -> int:
         return await self.w3.eth.get_balance(Web3.to_checksum_address(address))
