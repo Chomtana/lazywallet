@@ -676,7 +676,7 @@ def build_mcp_server(t: WalletTools):
             tool(*DEPOSIT_TOOL)(t.propose_deposit),
             tool(
                 "unsupported_action",
-                "Use for bridging, scheduling, price alerts, dApps or anything other than balances, sends, swaps and test funds.",
+                "Use for bridging, scheduling, price alerts, other dApps, withdrawals/unstaking or anything other than balances, sends, swaps, test funds, trending tokens and airdrops/farming.",
                 {"type": "object", "properties": {"action": {"type": "string"}}, "required": ["action"]},
             )(t.unsupported_action),
         ],
