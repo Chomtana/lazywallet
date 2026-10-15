@@ -5,6 +5,7 @@ export type EncryptedVault = { v: 1; salt: string; iv: string; data: string }
 export type Contact = { id: string; name: string; address: Address }
 export type Holding = { symbol: string; amount: number; usdPrice: number; network?: string }
 export type BalanceChange = { network?: string; symbol: string; before: number; after: number; delta: number; usdPrice: number }
+export type CustomToken = { chainId: number; address: Address; symbol: string; decimals: number }
 export type ChoiceOption = { label: string; detail?: string; reply: string }
 export type DappInfo = { name: string; url: string; icon: string }
 export type TxRequest = { to: Address; value: string; data: `0x${string}`; chainId?: number }
@@ -16,6 +17,7 @@ export type TxDraft = {
   explanation?: string
   steps?: TxStep[]
   from?: Address
+  addToken?: CustomToken // a token this swap buys; saved to lw.tokens once every step succeeded
 }
 export type TaskKind = 'dca' | 'alert' | 'conditional'
 export type Task = {
