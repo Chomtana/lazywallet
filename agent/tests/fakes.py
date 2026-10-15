@@ -196,3 +196,51 @@ def assert_friendly(tx: dict) -> dict:
     assert not any(word in rows for word in ("sandbox", "minimum", "slippage")), tx["rows"]
     assert "sandbox" not in json.dumps(tx["summary"]).lower() and "sandbox" not in tx["title"].lower()
     return tx["summary"]
+
+
+class FakeTokenomist:
+    """Tokenomist stand-in for unlocks.py: bodies from fixtures; buyback/burn keyed by token id (missing raises)."""
+
+    def __init__(self, upcoming: dict, token_list: dict | None = None, buybacks: dict | None = None, burns: dict | None = None):
+        self.upcoming_body, self.token_list_body = upcoming, token_list
+        self.buybacks, self.burns = buybacks or {}, burns or {}
+        self.calls: list[tuple] = []
+        self.fail = False
+
+    async def upcoming(self, start, end):
+        self.calls.append(("upcoming", start, end))
+        if self.fail:
+            raise ConnectionError("Tokenomist answered 429")
+        return self.upcoming_body
+
+    async def token_list(self, ids):
+        self.calls.append(("token_list", tuple(ids)))
+        if self.token_list_body is None:
+            raise ConnectionError("Tokenomist answered 500")
+        return self.token_list_body
+
+    async def buyback(self, token_id, start, end):
+        self.calls.append(("buyback", token_id, start, end))
+        if token_id not in self.buybacks:
+            raise ConnectionError("Tokenomist answered 403")
+        return self.buybacks[token_id]
+
+    async def burn(self, token_id, start, end):
+        self.calls.append(("burn", token_id, start, end))
+        if token_id not in self.burns:
+            raise ConnectionError("Tokenomist answered 403")
+        return self.burns[token_id]
+
+
+class FakeCoinList:
+    """CoinGecko coins/list?include_platform=true stand-in."""
+
+    def __init__(self, coins: list | None):
+        self.coins = coins
+        self.calls = 0
+
+    async def coin_list(self):
+        self.calls += 1
+        if self.coins is None:
+            raise ConnectionError("HTTP Error 429: Too Many Requests")
+        return self.coins
