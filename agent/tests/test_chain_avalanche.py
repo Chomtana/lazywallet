@@ -11,3 +11,10 @@ async def test_avalanche_prices_blocks_and_calls(avax_fork_rpc):
     assert await chain.is_sandbox() is True
     usdc = find_token("USDC", AVAX_TOKENS)
     assert int.from_bytes(await chain.call(usdc.address, "0x313ce567"), "big") == 6
+
+
+async def test_block_timestamp_tracks_next_block_without_mining(avax_fork_rpc):
+    chain = RpcChain(avax_fork_rpc, poa=True)
+    before = await chain.block_timestamp()
+    await chain.w3.provider.make_request("evm_increaseTime", [1000])  # no mine
+    assert await chain.block_timestamp() >= before + 1000

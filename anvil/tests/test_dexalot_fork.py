@@ -30,10 +30,7 @@ async def test_setup_patches_every_maker(avax_fork_rpc):
         assert await w3.eth.contract(address=m, abi=RFQ_ABI).functions.swapSigner().call() == d.signer.address
 
 
-async def test_sandbox_signed_quote_executes(avax_fork_rpc):
-    w3 = avalanche_w3(avax_fork_rpc)
-    d = DexalotSandbox(w3)
-    await d.setup()
+async def _swap_one_avax(w3, d):
     user = Account.create()
     await w3.provider.make_request("anvil_setBalance", [user.address, hex(10 * 10**18)])
     q = await d.quote(NATIVE, USDC, 10**18, user.address)
@@ -47,3 +44,19 @@ async def test_sandbox_signed_quote_executes(avax_fork_rpc):
     assert receipt["status"] == 1
     usdc = w3.eth.contract(address=USDC, abi=BALANCE_OF)
     assert await usdc.functions.balanceOf(user.address).call() == int(o["makerAmount"])
+
+
+async def test_sandbox_signed_quote_executes(avax_fork_rpc):
+    w3 = avalanche_w3(avax_fork_rpc)
+    d = DexalotSandbox(w3)
+    await d.setup()
+    await _swap_one_avax(w3, d)
+
+
+async def test_quote_after_idle_executes(avax_fork_rpc):
+    """Anvil mines only on transactions: after idle time the next block is far past `latest`."""
+    w3 = avalanche_w3(avax_fork_rpc)
+    d = DexalotSandbox(w3)
+    await d.setup()
+    await w3.provider.make_request("evm_increaseTime", [1000])  # no mine
+    await _swap_one_avax(w3, d)

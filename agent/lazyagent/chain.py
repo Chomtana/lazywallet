@@ -82,7 +82,8 @@ class RpcChain:
         return bytes(await self.w3.eth.call(tx))
 
     async def block_timestamp(self) -> int:
-        return (await self.w3.eth.get_block("latest"))["timestamp"]
+        """Timestamp the next block will get — Anvil mines only on transactions, so `latest` goes stale while idle."""
+        return (await self.w3.eth.get_block("pending"))["timestamp"]
 
     async def is_sandbox(self) -> bool:
         """True only for a local Anvil node — the faucet must never run against a real network."""

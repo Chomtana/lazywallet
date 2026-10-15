@@ -195,7 +195,7 @@ class DexalotSandbox:
         if holding < out:
             symbol = pair.quote_symbol if is_base else pair.base_symbol
             raise QuoteError(409, f"Dexalot doesn't have enough {symbol} on Sandbox for that size — try a smaller amount.")
-        now = (await self.w3.eth.get_block("latest"))["timestamp"]
+        now = (await self.w3.eth.get_block("pending"))["timestamp"]  # Anvil mines only on txs: `latest` goes stale while idle
         order = build_order(maker, taker, token_in, token_out, amount_in, out, now)
         return {
             "maker": order["maker"],
