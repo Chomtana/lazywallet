@@ -141,3 +141,128 @@ def find_program(text: str, programs: list[Program] = PROGRAMS) -> Program | Non
     """By id ("theo-thusd") or by its farm's short name ("Theo"), case-insensitive."""
     q = text.strip().lower()
     return next((p for p in programs if p.id == q or (p.deposit and p.deposit.name.lower() == q)), None)
+
+
+# --- live enrichment: pure ---
+
+
+@dataclass(frozen=True)
+class LiveToken:
+    network: str
+    symbol: str
+    address: str
+    liquidity_usd: float | None  # deepest pool; None = unknown (lookup failed)
+    buyable: bool | None  # deepest pool ≥ $10k; None = unknown
+
+
+@dataclass(frozen=True)
+class Airdrop:
+    program: Program
+    tvl_usd: float | None
+    token_launched: bool
+    farm_tokens: tuple[LiveToken, ...]
+
+    @property
+    def executable(self) -> bool:
+        return self.program.deposit is not None
+
+
+def _num(value) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def deepest_pool_usd(body: dict) -> float:
+    """GeckoTerminal /tokens/{address}/pools → the largest reserve_in_usd (0 when there are no pools)."""
+    return max((_num((p.get("attributes") or {}).get("reserve_in_usd")) for p in body.get("data") or []), default=0.0)
+
+
+def enrich(program: Program, llama: dict | None, pools: dict[str, dict | None]) -> Airdrop:
+    """`llama` = DefiLlama /protocol/{slug} (None if unavailable); `pools` = farm token address (lower-case) →
+    GeckoTerminal pools JSON (None if unavailable)."""
+    tvl, launched = None, False
+    if llama is not None:
+        chains = llama.get("currentChainTvls") or {}
+        found = [_num(chains[CHAIN_NAMES[n]]) for n in program.networks if CHAIN_NAMES[n] in chains]
+        tvl = sum(found) if found else None
+        symbol = str(llama.get("symbol") or "-").strip()
+        launched = program.token == "none" and (bool(llama.get("gecko_id")) or symbol not in ("-", ""))
+    live = []
+    for t in program.farm_tokens:
+        body = pools.get(t.address.lower())
+        liquidity = None if body is None else deepest_pool_usd(body)
+        live.append(LiveToken(t.network, t.symbol, t.address, liquidity, None if liquidity is None else liquidity >= MIN_RESERVE_USD))
+    return Airdrop(program, tvl, launched, tuple(live))
+
+
+def rank(airdrops: list[Airdrop]) -> list[Airdrop]:
+    """Featured first (Avant, for the demo); then RWA; then live → unverified → claim_pending; then executable → buyable → no token yet; then TVL."""
+
+    def key(a: Airdrop):
+        p = a.program
+        return (
+            not p.featured,
+            CATEGORIES.index(p.category),
+            STATUSES.index(p.status),
+            not a.executable,
+            not any(t.buyable for t in a.farm_tokens),
+            p.token != "none",
+            -(a.tvl_usd or 0.0),
+        )
+
+    return sorted(airdrops, key=key)
+
+
+def filter_programs(programs: list[Program], category: str, network: str | None) -> list[Program]:
+    return [p for p in programs if category in ("all", p.category) and (network is None or network in p.networks)]
+
+
+def parse_args(args: dict) -> tuple[str, str | None]:
+    category = str(args.get("category") or "all").strip().lower()
+    network = str(args["network"]).strip().lower() if args.get("network") else None
+    if category not in (*CATEGORIES, "all"):
+        raise AirdropError("category must be one of: rwa, other, all.")
+    if network is not None and network not in CHAIN_NAMES:
+        raise AirdropError("network must be one of: ethereum, avalanche.")
+    return category, network
+
+
+def to_json(airdrops: list[Airdrop]) -> str:
+    entries = []
+    for a in airdrops:
+        p = a.program
+        entries.append(
+            {
+                "id": p.id, "name": p.name, "category": p.category, "networks": list(p.networks), "status": p.status,
+                "reward": p.reward, "token": p.token, "token_launched": a.token_launched, "season_ends": p.season_ends,
+                "action": p.action, "action_kind": p.action_kind, "executable": a.executable, "kyc": p.kyc,
+                "farm_tokens": [
+                    {"network": t.network, "symbol": t.symbol, "address": t.address, "liquidity_usd": t.liquidity_usd, "buyable": t.buyable}
+                    for t in a.farm_tokens
+                ],
+                "tvl_usd": a.tvl_usd, "source_url": p.source_url, "verified_at": p.verified_at,
+                "demo_assumption": p.demo_assumption,
+            }
+        )
+    return json.dumps({"source": "curated list + DefiLlama/GeckoTerminal (live mainnet)", "points": POINTS_NOTICE, "airdrops": entries})
+
+
+def card(airdrops: list[Airdrop], category: str, network: str | None = None) -> dict:
+    """The browser's airdrops card. Titles never name a chain. Buy = the first farm token (on `network`, if one
+    was asked for) that isn't known to be unbuyable; executable programs get Farm instead."""
+    items = []
+    for a in airdrops:
+        p = a.program
+        tokens = [t for t in a.farm_tokens if t.buyable is not False and network in (None, t.network)]
+        buy = None if a.executable or not tokens else tokens[0]
+        items.append(
+            {
+                "id": p.id, "name": p.name, "category": p.category, "networks": [CHAIN_NAMES[n] for n in p.networks],
+                "status": p.status, "action": p.action, "tvlUsd": a.tvl_usd,
+                "farm": p.deposit.name if p.deposit else None,
+                "buy": {"symbol": buy.symbol, "address": buy.address} if buy else None,
+            }
+        )
+    return {"type": "airdrops", "title": "RWA airdrops" if category == "rwa" else "Airdrops", "items": items}
