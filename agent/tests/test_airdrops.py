@@ -1,3 +1,4 @@
+from dataclasses import replace
 import json
 
 import pytest
@@ -39,7 +40,7 @@ def raw(id_: str) -> dict:
 
 def test_the_real_curated_file_is_valid():
     programs = load_curated()
-    assert [p.id for p in programs] == ["theo-thusd", "re", "tori", "avant", "suzaku-s2", "aave-v4-avax"]
+    assert [p.id for p in programs] == ["theo-thusd", "re", "tori", "avant"]
     for p in programs:
         for t in p.farm_tokens:
             assert Web3.is_checksum_address(t.address)
@@ -138,22 +139,23 @@ def test_buyable_at_the_10k_rule_and_unknown_when_lookup_failed():
 
 def test_rank_featured_then_rwa_then_status_then_executable_then_tvl():
     items = [enrich(p, llama({"Ethereum": 1e9, "Avalanche": 1e9}), {}) for p in PROGRAMS]
-    assert [a.program.id for a in rank(items)] == ["avant", "theo-thusd", "re", "tori", "aave-v4-avax", "suzaku-s2"]
-    # Without enrichment the curated order still holds: RWA → other, live → unverified → claim_pending.
+    assert [a.program.id for a in rank(items)] == ["avant", "theo-thusd", "re", "tori"]
+    # Without enrichment the curated order still holds: featured, then RWA → other.
     plain = [a.program.id for a in rank([enrich(p, None, {}) for p in PROGRAMS])]
-    assert plain[:3] == ["avant", "theo-thusd", "re"] and plain[-1] == "suzaku-s2"
+    assert plain == ["avant", "theo-thusd", "re", "tori"]
 
 
 def test_rank_puts_buyable_and_tokenless_ahead_at_equal_status():
     tori = enrich(program("tori"), llama({"Ethereum": 1}), {"0xd0580192e98ea6ceb9c7b6191ed2e27560911697": pools(2.6e6)})
-    aave = enrich(program("aave-v4-avax"), llama({"Avalanche": 1e9}), {})
-    assert [a.program.id for a in rank([aave, tori])] == ["tori", "aave-v4-avax"]
+    # Same category/status, more TVL, but a live token and nothing buyable → after Tori.
+    other = enrich(replace(program("tori"), id="other", token="live: X", farm_tokens=()), llama({"Ethereum": 1e9}), {})
+    assert [a.program.id for a in rank([other, tori])] == ["tori", "other"]
 
 
 def test_filter_and_args():
     assert [p.id for p in filter_programs(PROGRAMS, "rwa", None)] == ["theo-thusd", "re"]
-    assert [p.id for p in filter_programs(PROGRAMS, "all", "avalanche")] == ["re", "avant", "suzaku-s2", "aave-v4-avax"]
-    assert [p.id for p in filter_programs(PROGRAMS, "other", "avalanche")] == ["avant", "suzaku-s2", "aave-v4-avax"]
+    assert [p.id for p in filter_programs(PROGRAMS, "all", "avalanche")] == ["re", "avant"]
+    assert [p.id for p in filter_programs(PROGRAMS, "other", "avalanche")] == ["avant"]
     assert [p.id for p in filter_programs(PROGRAMS, "rwa", "avalanche")] == ["re"]
     assert parse_args({}) == ("all", None)
     assert parse_args({"category": "RWA", "network": "Avalanche"}) == ("rwa", "avalanche")

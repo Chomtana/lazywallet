@@ -90,41 +90,5 @@
     "demo_assumption": "Season 1 treated as running for the hackathon demo; it actually ended 2026-05-15 and the AVANT claim is pending",
     "source_url": "https://docs.avantprotocol.com/rewards-program/avant-season-1-airdrop",
     "verified_at": "2026-10-15"
-  },
-  {
-    "id": "suzaku-s2",
-    "name": "Suzaku Points Season 2",
-    "category": "other",
-    "networks": ["avalanche"],
-    "status": "unverified",
-    "reward": "Suzaku points — paid in SUZ",
-    "token": "live: SUZ",
-    "season_ends": null,
-    "action": "Deposit into Suzaku restaking vaults",
-    "action_kind": "deposit",
-    "kyc": "none",
-    "farm_tokens": [],
-    "defillama_slug": "suzaku",
-    "deposit": null,
-    "source_url": "https://docs.suzaku.network",
-    "verified_at": "2026-10-15"
-  },
-  {
-    "id": "aave-v4-avax",
-    "name": "Aave V4 WAVAX incentives",
-    "category": "other",
-    "networks": ["avalanche"],
-    "status": "live",
-    "reward": "Weekly WAVAX incentives (paid directly, not points)",
-    "token": "n/a",
-    "season_ends": null,
-    "action": "Supply USDt or USDC on Aave V4",
-    "action_kind": "deposit",
-    "kyc": "none",
-    "farm_tokens": [],
-    "defillama_slug": "aave-v4",
-    "deposit": null,
-    "source_url": "https://api.merkl.xyz/v4/opportunities?chainId=43114&status=LIVE",
-    "verified_at": "2026-10-15"
   }
 ]
