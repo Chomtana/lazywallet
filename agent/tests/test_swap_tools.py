@@ -1,7 +1,7 @@
 import asyncio
 
 from eth_abi import encode
-from fakes import FakeChain, FakeQuoter, Outbox
+from fakes import FakeChain, FakeQuoter, Outbox, assert_friendly
 
 from lazyagent.proposals import Proposals
 from lazyagent.tokens import ETH, find_token
@@ -51,13 +51,24 @@ async def test_eth_to_usdc_single_step_and_reports_received():
     tools, out, proposals, chain = make()
     task = asyncio.create_task(tools.propose_swap({"token_in": "ETH", "token_out": "USDC", "amount": "1"}))
     confirm = await confirm_of(out)
-    assert confirm["tx"]["title"] == "Swap 1 ETH → USDC"
+    assert confirm["tx"]["title"] == "Swap"
+    summary = assert_friendly(confirm["tx"])
+    assert summary == {
+        "kind": "swap",
+        "network": "Ethereum",
+        "pay": {"symbol": "ETH", "amount": "1", "usd": 3200.0, "logo": ETH.logo},
+        "receive": {"symbol": "USDC", "amount": "≈ 2358", "usd": 2358.0, "logo": find_token("USDC").logo, "note": None},
+        "via": "Uniswap v4",
+        "fee": summary["fee"],
+        "warning": None,
+    }
+    assert summary["fee"].startswith("≈ $")
     assert labels(confirm) == ["Swap ETH → USDC"]
     step = confirm["tx"]["steps"][0]["request"]
     assert step["to"] == UNIVERSAL_ROUTER and step["value"] == str(10**18) and step["data"].startswith("0x3593564c")
     rows = {r["label"]: r["value"] for r in confirm["tx"]["rows"]}
     assert rows["Route"] == "ETH → USDC · Uniswap v4 0.05%"
-    assert rows["Minimum received"] == "2334.42 USDC"  # 1% slippage
+    assert rows["Price impact"]
     chain.tokens["USDC"] += 2_358 * 10**6
     proposals.resolve(confirm["id"], {"outcome": "approved", "status": "success", "hash": "0xs", "hashes": ["0xs"]})
     assert "Swapped 1 ETH for 2358 USDC" in text(await task)

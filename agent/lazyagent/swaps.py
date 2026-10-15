@@ -25,6 +25,19 @@ class Step:
         return {"label": self.label, "request": self.request}
 
 
+@dataclass(frozen=True)
+class SwapPlan:
+    """A venue's answer for propose_swap: the steps, the card's Details rows and what its summary needs."""
+
+    steps: list[Step]
+    rows: list[dict]
+    hint: str  # appended when the swap reverts
+    expected: int
+    via: str
+    impact: float | None
+    exact: bool = False  # a signed RFQ order: pays exactly `expected`
+
+
 def parse_slippage(text: str | None) -> int:
     if text is None or not str(text).strip():
         return DEFAULT_SLIPPAGE_BPS
@@ -103,29 +116,50 @@ def check_swap_funds(token_in: Token, amount: int, balance: int, eth_balance: in
     needed = reserve + (amount if token_in.address is None else 0)
     if needed > eth_balance:
         raise TransferError(
-            f"Not enough {native} left for the network fees (keep ~{format_units(reserve, 18)} {native}). Try a smaller amount or get test funds."
+            f"Not enough {native} left for the network fees (keep ~{format_units(reserve, 18)} {native}). Try a smaller amount or add funds."
         )
 
 
-def swap_rows(
-    sender: str,
-    token_in: Token,
-    token_out: Token,
-    amount: int,
-    expected: int,
-    minimum: int,
-    label: str,
-    impact: float | None,
-    fee_usd: float,
-    network: str = "Sandbox",
-) -> list[dict]:
+WARN_PRICE_IMPACT = 0.05
+
+
+def swap_rows(sender: str, label: str, impact: float | None) -> list[dict]:
+    """The card's Details: what the summary above it doesn't already show."""
     return [
         {"label": "From", "value": short(sender)},
-        {"label": "You pay", "value": f"{format_units(amount, token_in.decimals)} {token_in.symbol}"},
-        {"label": "Expected", "value": f"≈ {display_units(expected, token_out.decimals)} {token_out.symbol}"},
-        {"label": "Minimum received", "value": f"{display_units(minimum, token_out.decimals)} {token_out.symbol}"},
         {"label": "Route", "value": label},
         {"label": "Price impact", "value": "unknown" if impact is None else f"{impact * 100:.2f}%"},
-        {"label": "Network fee", "value": f"~{format_usd(fee_usd)}"},
-        {"label": "Network", "value": network},
     ]
+
+
+def fee_text(fee_usd: float) -> str:
+    return "< $0.01" if fee_usd < 0.005 else f"≈ {format_usd(fee_usd)}"
+
+
+def impact_warning(impact: float | None) -> str | None:
+    return f"Price impact {impact * 100:.1f}%" if impact is not None and impact > WARN_PRICE_IMPACT else None
+
+
+def usd_value(amount: int, token: Token, price: float | None) -> float | None:
+    return None if price is None else round(float(Decimal(amount).scaleb(-token.decimals)) * price, 2)
+
+
+def side(token: Token, amount: int, display: str, price: float | None) -> dict:
+    return {"symbol": token.symbol, "amount": display, "usd": usd_value(amount, token, price), "logo": token.logo}
+
+
+def swap_summary(
+    network: str, tin: Token, tout: Token, amount: int, expected: int, *, via: str, fee_usd: float, impact: float | None,
+    prices: tuple[float | None, float | None], exact: bool = False,
+) -> dict:
+    """The confirm card's friendly top half (tx.summary). `exact` = a signed quote that pays exactly `expected`."""
+    out = display_units(expected, tout.decimals)
+    return {
+        "kind": "swap",
+        "network": network,
+        "pay": side(tin, amount, format_units(amount, tin.decimals), prices[0]),
+        "receive": {**side(tout, expected, out if exact else f"≈ {out}", prices[1]), "note": None},
+        "via": via,
+        "fee": fee_text(fee_usd),
+        "warning": impact_warning(impact),
+    }

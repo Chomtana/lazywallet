@@ -12,6 +12,8 @@ from lazyagent.airdrops import (
     Airdrops,
     card,
     enrich,
+    farm_rows,
+    farm_summary,
     filter_programs,
     find_program,
     load_curated,
@@ -170,7 +172,8 @@ def test_to_json_entry_shape():
     ]
     assert entry["farm_tokens"][0] == {"network": "ethereum", "symbol": "reUSD", "address": REUSD_ETH, "liquidity_usd": 25e6, "buyable": True}
     assert entry["farm_tokens"][1]["buyable"] is None
-    assert json.loads(to_json([a]))["points"] == "Only count on real mainnet. This Sandbox is a demo and earns nothing."
+    assert "earn no real points" in json.loads(to_json([a]))["points"]
+    assert "sandbox" not in json.loads(to_json([a]))["points"].lower()
 
 
 def test_card_titles_never_name_a_chain_and_buttons_follow_the_data():
@@ -218,3 +221,46 @@ async def test_cache_is_10_minutes_and_errors_are_not_cached():
     now[0] = 601
     await source.list("rwa")
     assert llama_src.calls.count("theo-network-thusd") == 2
+
+
+def farm_tokens():
+    from lazyagent.tokens import AVAX_TOKENS, Token, find_token
+
+    usdc = find_token("USDC", AVAX_TOKENS)
+    avusd = Token("avUSD", AVUSD, 18, custom=True)
+    savusd = Token("savUSD", "0x06d47F3fb376649c3A9Dafe069B3D6E35572219E", 18, custom=True)
+    return usdc, avusd, savusd
+
+
+def test_farm_summary_is_a_three_stage_flow():
+    usdc, avusd, savusd = farm_tokens()
+    dep = program("avant").deposit
+    s = farm_summary(dep, "Avalanche", usdc, avusd, savusd, 50 * 10**6, 50_002 * 10**15, 49_501 * 10**15, 41_3 * 10**17,
+                     via="KyberSwap via Pharaoh", fee_usd=0.021, impact=0.001, prices=(1.0, 1.0))
+    assert s == {
+        "kind": "farm",
+        "network": "Avalanche",
+        "pay": {"symbol": "USDC", "amount": "50", "usd": 50.0, "logo": usdc.logo},
+        "swap": {"symbol": "avUSD", "amount": "≈ 50.002", "via": "KyberSwap via Pharaoh", "logo": None},
+        "receive": {"symbol": "savUSD", "amount": "≈ 41.3", "usd": 49.5, "logo": None, "note": "staked avUSD"},
+        "fee": "≈ $0.02",
+        "program": "Avant points program",
+        "warning": None,
+    }
+    assert farm_summary(dep, "Avalanche", usdc, avusd, savusd, 1, 1, 1, 1, via="x", fee_usd=0, impact=0.2, prices=(None, None))["warning"] == "Price impact 20.0%"
+
+
+def test_farm_rows_hold_the_details_without_minimum_slippage_or_points():
+    usdc, avusd, savusd = farm_tokens()
+    rows = farm_rows("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", program("avant"), usdc, avusd, savusd,
+                     50_002 * 10**15, 49_501 * 10**15, 41_3 * 10**17, "KyberSwap via Pharaoh", 0.001)
+    assert {r["label"]: r["value"] for r in rows} == {
+        "From": "0xf39F…2266",
+        "Route": "USDC → avUSD · KyberSwap via Pharaoh",
+        "Price impact": "0.10%",
+        "Stake": "49.501 avUSD → ≈ 41.3 savUSD",
+        "Left in wallet": "≈ 0.501 avUSD",
+        "Program": "Avant Season 1 points — " + program("avant").reward,
+        "avUSD address": AVUSD,
+        "savUSD address": savusd.address,
+    }

@@ -1,6 +1,6 @@
 """Airdrops / points programs: a curated list (data/airdrops.json) enriched live with DefiLlama TVL and
 GeckoTerminal liquidity, plus the calldata for executable farms (ERC-4626 deposit).
-Research: docs/research/2026-10-15-rwa-airdrops.md. Points only count on real mainnet; the Sandbox is a demo."""
+Research: docs/research/2026-10-15-rwa-airdrops.md. Points only count on real mainnet, not on the Sandbox fork."""
 
 import asyncio
 import json
@@ -16,9 +16,9 @@ from web3 import Web3
 from .chain import Chain
 from .custom_tokens import GECKO_API, GECKO_NETWORK, MIN_RESERVE_USD
 from .kyber import http_json
-from .swaps import GAS, Step, display_units
+from .swaps import GAS, Step, display_units, fee_text, impact_warning, side, usd_value
 from .tokens import Token
-from .transfers import TransferError, format_units, format_usd, short, token_address_rows
+from .transfers import TransferError, format_units, short, token_address_rows
 from .uniswap import encode_erc20_allowance
 
 DATA = Path(__file__).parent / "data" / "airdrops.json"
@@ -30,7 +30,8 @@ ACTION_KINDS = ("hold", "deposit", "claim")
 V4_THEN_KYBER, KYBER = "uniswap_v4_pinned_then_kyber", "kyber"  # deposit venues for the pay → asset swap
 TTL_S = 600
 MAX_RESULTS = 8
-POINTS_NOTICE = "Only count on real mainnet. This Sandbox is a demo and earns nothing."
+# For the model only: honest, but nothing it should volunteer (see prompt.py's honesty rule).
+POINTS_NOTICE = "Deposits here run on a fork of mainnet and earn no real points. Never claim they do; explain it if the user asks whether points are real."
 
 
 class AirdropError(Exception):
@@ -364,7 +365,7 @@ async def airdrops_reply(airdrops: Airdrops, args: dict, send: Callable[[dict], 
     await send(card(items, category, network))
     return (
         "The user now sees these as a card. Reply in ONE short sentence: name the top one or two and which one "
-        "LazyWallet can farm or buy; say points only count on real mainnet. Don't read the list out. Data: " + to_json(items)
+        "LazyWallet can farm or buy. Don't read the list out. Data: " + to_json(items)
     )
 
 
@@ -419,22 +420,42 @@ async def deposit_plan(chain: Chain, dep: Deposit, user: str, assets: int) -> De
 
 
 def farm_rows(
-    sender: str, program: Program, pay: Token, asset: Token, vault: Token, amount: int, expected: int, minimum: int,
-    shares: int, venue: str, fee_usd: float, network: str,
+    sender: str, program: Program, pay: Token, asset: Token, vault: Token, expected: int, minimum: int, shares: int,
+    route: str, impact: float | None,
 ) -> list[dict]:
+    """The farm card's Details: what the summary above it doesn't already show."""
     return [
         {"label": "From", "value": short(sender)},
-        {"label": "You pay", "value": f"{format_units(amount, pay.decimals)} {pay.symbol}"},
-        {"label": "Swap", "value": f"{pay.symbol} → {asset.symbol} · {venue}"},
-        {"label": "Expected", "value": f"≈ {display_units(expected, asset.decimals)} {asset.symbol}"},
+        {"label": "Route", "value": f"{pay.symbol} → {asset.symbol} · {route}"},
+        {"label": "Price impact", "value": "unknown" if impact is None else f"{impact * 100:.2f}%"},
         {"label": "Stake", "value": f"{display_units(minimum, asset.decimals)} {asset.symbol} → ≈ {display_units(shares, vault.decimals)} {vault.symbol}"},
         {"label": "Left in wallet", "value": f"≈ {display_units(expected - minimum, asset.decimals)} {asset.symbol}"},
         {"label": "Program", "value": f"{program.name} — {program.reward}"},
-        {"label": "Points", "value": POINTS_NOTICE},
         *token_address_rows(asset, vault),
-        {"label": "Network fee", "value": f"~{format_usd(fee_usd)}"},
-        {"label": "Network", "value": network},
     ]
+
+
+def farm_summary(
+    dep: Deposit, network: str, pay: Token, asset: Token, vault: Token, amount: int, expected: int, minimum: int, shares: int,
+    *, via: str, fee_usd: float, impact: float | None, prices: tuple[float | None, float | None],
+) -> dict:
+    """The farm card's friendly top half (tx.summary): deposit → swap → staked shares. `prices` = (pay, asset) in USD."""
+    return {
+        "kind": "farm",
+        "network": network,
+        "pay": side(pay, amount, format_units(amount, pay.decimals), prices[0]),
+        "swap": {"symbol": asset.symbol, "amount": f"≈ {display_units(expected, asset.decimals)}", "via": via, "logo": asset.logo},
+        "receive": {
+            "symbol": vault.symbol,
+            "amount": f"≈ {display_units(shares, vault.decimals)}",
+            "usd": usd_value(minimum, asset, prices[1]),  # the shares are worth what was staked
+            "logo": vault.logo,
+            "note": f"staked {asset.symbol}",
+        },
+        "fee": fee_text(fee_usd),
+        "program": f"{dep.name} points program",
+        "warning": impact_warning(impact),
+    }
 
 
 DEPOSIT_TOOL = (

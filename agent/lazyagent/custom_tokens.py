@@ -123,6 +123,6 @@ def _not_an_impostor(token: Token | None, net: Network) -> Token | None:
     """A discovered token may not use a built-in's symbol on the same network (e.g. a fake "USDC")."""
     if token and any(not t.custom and t.symbol.upper() == token.symbol.upper() for t in net.tokens):
         raise TransferError(
-            f"That token calls itself {token.symbol} but isn't the real {token.symbol} on {net.name} Sandbox, so I won't trade it."
+            f"That token calls itself {token.symbol} but isn't the real {token.symbol} on {net.name}, so I won't trade it."
         )
     return token

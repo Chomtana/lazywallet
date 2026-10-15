@@ -136,7 +136,7 @@ async def test_propose_transfer_chain_unreachable():
     tools, out, _ = make(chain=chain)
     result = await tools.propose_transfer({"token": "ETH", "amount": "0.1", "to": "Alice"})
     assert result["is_error"] is True
-    assert "Sandbox chain" in text(result)
+    assert "isn't reachable" in text(result) and "sandbox" not in text(result).lower()
 
 
 async def test_request_test_funds_on_sandbox():
@@ -155,7 +155,7 @@ async def test_request_test_funds_refused_off_sandbox():
     tools, out, _ = make(chain=chain)
     result = await tools.request_test_funds({})
     assert result["is_error"] is True
-    assert "only works on Sandbox" in text(result)
+    assert text(result) == "Adding funds isn't available on this network."
     assert fake_fund.calls == []
 
 

@@ -14,7 +14,7 @@ class Network:
 
     @property
     def label(self) -> str:
-        return f"{self.name} (Sandbox)"
+        return self.name
 
 
 ETHEREUM = Network("ethereum", "Ethereum", 1, ETH, tuple(TOKENS), "uniswap")

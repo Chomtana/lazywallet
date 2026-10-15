@@ -1,6 +1,6 @@
 import asyncio
 
-from fakes import FakeChain, Outbox
+from fakes import FakeChain, Outbox, assert_friendly
 
 from lazyagent.proposals import Proposals
 from lazyagent.tools import WalletContext, WalletTools
@@ -54,7 +54,7 @@ async def test_native_token_picks_its_network():
     task = asyncio.create_task(tools.propose_transfer({"token": "AVAX", "amount": "1", "to": "Alice"}))
     confirm = await confirm_of(out)
     assert confirm["tx"]["steps"][0]["request"]["chainId"] == 43114
-    assert {"label": "Network", "value": "Avalanche (Sandbox)"} in confirm["tx"]["rows"]
+    assert {"label": "Network", "value": "Avalanche"} in confirm["tx"]["rows"]
     task.cancel()
 
 
@@ -143,12 +143,12 @@ async def test_avalanche_swap_uses_dexalot_and_reports_exact_output():
     assert quotes.calls == [(NATIVE, AVAX_USDC, 10**18, ME)]
     assert [s["label"] for s in confirm["tx"]["steps"]] == ["Swap AVAX → USDC"]
     assert confirm["tx"]["steps"][0]["request"]["chainId"] == 43114
-    rows = {r["label"]: r["value"] for r in confirm["tx"]["rows"]}
-    assert rows["Receive exactly"] == "9.574 USDC" and rows["Network"] == "Avalanche (Sandbox)"
+    summary = assert_friendly(confirm["tx"])
+    assert summary["receive"]["amount"] == "9.574" and summary["network"] == "Avalanche" and summary["via"] == "Dexalot"
     avax.tokens["USDC"] += 9_574_000
     proposals.resolve(confirm["id"], {"outcome": "approved", "status": "success", "hash": "0xs"})
     result = text(await task)
-    assert "Swapped 1 AVAX for 9.574 USDC" in result and "Avalanche (Sandbox)" in result
+    assert "Swapped 1 AVAX for 9.574 USDC. Confirmed on Avalanche, tx" in result
 
 
 async def test_avalanche_erc20_swap_adds_approval():

@@ -1,7 +1,7 @@
 import asyncio
 
 from eth_abi import encode
-from fakes import FakeChain, FakeKyber, FakeQuoter, FakeSearch, Outbox
+from fakes import FakeChain, FakeKyber, FakeQuoter, FakeSearch, Outbox, assert_friendly
 from test_custom_tokens import COQ_ADDR, COQ_SAVED, GT_COQ
 
 from lazyagent.kyber import NATIVE, ROUTER
@@ -55,7 +55,7 @@ async def test_buy_by_contract_address_goes_through_kyber_and_saves_the_token():
     tools, out, proposals, avax, kyber = make()
     task = asyncio.create_task(tools.propose_swap({"token_in": "AVAX", "token_out": COQ_ADDR, "amount": "1"}))
     confirm = await confirm_of(out)
-    assert confirm["tx"]["title"] == "Swap 1 AVAX → COQ"
+    assert confirm["tx"]["title"] == "Swap"
     assert confirm["tx"]["steps"] == [
         {"label": "Swap AVAX → COQ", "request": {"to": ROUTER, "value": str(10**18), "data": confirm["tx"]["steps"][0]["request"]["data"], "chainId": 43114}}
     ]
@@ -64,8 +64,10 @@ async def test_buy_by_contract_address_goes_through_kyber_and_saves_the_token():
     rows = rows_of(confirm)
     assert rows["Route"] == "KyberSwap via LFJ"
     assert rows["COQ address"] == COQ_ADDR
-    assert rows["Expected"] == "≈ 8000000 COQ" and rows["Minimum received"] == "4000000 COQ"
-    assert rows["Network"] == "Avalanche (Sandbox)"
+    summary = assert_friendly(confirm["tx"])
+    assert summary["network"] == "Avalanche" and summary["via"] == "KyberSwap via LFJ"
+    assert summary["pay"]["amount"] == "1" and summary["receive"]["amount"] == "≈ 8000000" and summary["receive"]["symbol"] == "COQ"
+    assert summary["receive"]["logo"] is None  # found by address: no logo without another lookup
     assert kyber.routes == [("avalanche", NATIVE, COQ_ADDR, 10**18)]
     assert kyber.builds == [("avalanche", ME, 5000)]
     assert avax.sim_calls[-1][1] is None  # native input needs no allowance override
@@ -112,7 +114,7 @@ async def test_kyber_failures_send_no_card():
         (dict(kyber=FakeKyber(no_route=True)), "no route"),
         (dict(kyber=FakeKyber(tamper=receiver_alice)), "wrong recipient"),
         (dict(kyber=FakeKyber(out=OUT, build_out=OUT * 98 // 100)), "build quote below the route quote"),
-        (dict(avax=reverting), "fails on the Sandbox fork"),
+        (dict(avax=reverting), "fails in simulation"),
         (dict(avax=off), "doesn't match"),
     ]
     for kwargs, fragment in cases:
@@ -184,7 +186,7 @@ async def test_balances_list_saved_tokens_and_unknown_prices():
 async def test_unknown_tokens_are_explained():
     tools, out, _, _, _ = make(avax=FakeChain())
     bad = await tools.propose_swap({"token_in": "AVAX", "token_out": "0x1111111111111111111111111111111111111111", "amount": "1"})
-    assert bad["is_error"] is True and text(bad) == "That address isn't a token on Avalanche Sandbox."
+    assert bad["is_error"] is True and text(bad) == "That address isn't a token on Avalanche."
     missing = await tools.propose_transfer({"token": "NOPE", "amount": "1", "to": "Alice"})
     assert "with at least $10,000 of liquidity" in text(missing) and "contract address" in text(missing)
     named = await tools.propose_transfer({"token": "NOPE", "amount": "1", "to": "Alice", "network": "avalanche"})
@@ -209,7 +211,7 @@ async def test_token_posing_as_a_builtin_is_refused_by_address():
     tools, out, _, _, kyber = make(avax=fake)
     result = await tools.propose_swap({"token_in": "AVAX", "token_out": "0x1111111111111111111111111111111111111111", "amount": "1"})
     assert result["is_error"] is True
-    assert text(result) == "That token calls itself USDC but isn't the real USDC on Avalanche Sandbox, so I won't trade it."
+    assert text(result) == "That token calls itself USDC but isn't the real USDC on Avalanche, so I won't trade it."
     assert not out.of_type("confirm") and kyber.routes == []
 
 

@@ -1,3 +1,5 @@
+import json
+
 from eth_abi import encode
 
 from lazyagent.kyber import DESC, EXECUTION, NATIVE, ROUTER, SIMPLE_SELECTOR, SWAP_SELECTOR
@@ -185,3 +187,12 @@ class FakeGeckoPools:
         if address.lower() not in self.bodies:
             raise ConnectionError("HTTP Error 429: Too Many Requests")
         return self.bodies[address.lower()]
+
+
+def assert_friendly(tx: dict) -> dict:
+    """A swap/farm confirm card: it has a summary, and neither it nor the rows say Sandbox, minimum or slippage."""
+    assert tx.get("summary"), "no summary"
+    rows = json.dumps(tx["rows"]).lower()
+    assert not any(word in rows for word in ("sandbox", "minimum", "slippage")), tx["rows"]
+    assert "sandbox" not in json.dumps(tx["summary"]).lower() and "sandbox" not in tx["title"].lower()
+    return tx["summary"]

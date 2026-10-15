@@ -147,7 +147,7 @@ async def test_simulate_checks_the_returned_amount():
     with pytest.raises(TransferError, match="doesn't match"):
         await simulate(chain, ME, v, None)
     chain.sim_out = RuntimeError("execution reverted")
-    with pytest.raises(TransferError, match="fails on the Sandbox fork"):
+    with pytest.raises(TransferError, match="fails in simulation"):
         await simulate(chain, ME, v, None)
 
 

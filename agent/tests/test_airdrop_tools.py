@@ -2,7 +2,7 @@ import asyncio
 import json
 
 from eth_abi import decode, encode
-from fakes import FakeChain, FakeGeckoPools, FakeKyber, FakeLlama, FakeQuoter, Outbox
+from fakes import FakeChain, FakeGeckoPools, FakeKyber, FakeLlama, FakeQuoter, Outbox, assert_friendly
 
 from lazyagent.airdrops import AIRDROPS_TOOL, DEPOSIT_TOOL, Airdrops
 from lazyagent.kyber import ROUTER
@@ -107,7 +107,7 @@ async def test_farm_theo_builds_every_step_and_stakes_the_minimum():
     task = asyncio.create_task(tools.propose_deposit({"farm": "theo-thusd", "amount": "100"}))
     confirm = await confirm_of(out)
     tx = confirm["tx"]
-    assert tx["title"] == "Farm Theo points: 100 USDC → sthUSD"
+    assert tx["title"] == "Farm Theo"
     assert [s["label"] for s in tx["steps"]] == STEPS
     assert [s["request"]["to"] for s in tx["steps"]] == [USDC, PERMIT2, UNIVERSAL_ROUTER, THUSD, STHUSD]
     assert all(s["request"]["chainId"] == 1 for s in tx["steps"])
@@ -117,14 +117,17 @@ async def test_farm_theo_builds_every_step_and_stakes_the_minimum():
     allow = tx["steps"][3]["request"]["data"]
     assert decode(["address", "uint256"], bytes.fromhex(allow[10:])) == (STHUSD.lower(), MINIMUM_100)
     rows = rows_of(confirm)
-    assert rows["Swap"] == "USDC → thUSD · Uniswap v4 0.01%"
-    assert rows["Expected"] == "≈ 100.037 thUSD"
+    assert rows["Route"] == "USDC → thUSD · Uniswap v4 0.01%"
     assert rows["Stake"] == "99.0366 thUSD → ≈ 97.2 sthUSD"
     assert rows["Left in wallet"] == "≈ 1.00037 thUSD"
     assert rows["Program"] == "Theo thUSD Points — Theo points — no token announced"
-    assert rows["Points"] == "Only count on real mainnet. This Sandbox is a demo and earns nothing."
     assert rows["thUSD address"] == THUSD and rows["sthUSD address"] == STHUSD
-    assert rows["Network"] == "Ethereum (Sandbox)"
+    summary = assert_friendly(tx)
+    assert summary["kind"] == "farm" and summary["network"] == "Ethereum" and summary["program"] == "Theo points program"
+    assert summary["pay"] == {"symbol": "USDC", "amount": "100", "usd": 100.0, "logo": summary["pay"]["logo"]}
+    assert summary["swap"] == {"symbol": "thUSD", "amount": "≈ 100.037", "via": "Uniswap v4", "logo": None}
+    assert summary["receive"] == {"symbol": "sthUSD", "amount": "≈ 97.2", "usd": 99.04, "logo": None, "note": "staked thUSD"}
+    assert "via" not in summary and summary["warning"] is None
     assert tx["addTokens"] == [
         {"chainId": 1, "address": THUSD, "symbol": "thUSD", "decimals": 6},
         {"chainId": 1, "address": STHUSD, "symbol": "sthUSD", "decimals": 6},
@@ -132,8 +135,8 @@ async def test_farm_theo_builds_every_step_and_stakes_the_minimum():
     chain.tokens.update(USDC=400 * 10**6, thUSD=QUOTE_100 - MINIMUM_100, sthUSD=SHARES)
     proposals.resolve(confirm["id"], {"outcome": "approved", "status": "success", "hash": "0xd"})
     result = text(await task)
-    assert "Staked 99.0366 thUSD into sthUSD, got 97.2 sthUSD; 1.00037 thUSD left. Confirmed on Ethereum (Sandbox), tx 0xd." in result
-    assert "Points only count on real mainnet" in result
+    assert "Staked 99.0366 thUSD into sthUSD, got 97.2 sthUSD; 1.00037 thUSD left. Confirmed on Ethereum, tx 0xd." in result
+    assert "sandbox" not in result.lower()
     assert " Balance change (shown as a card): " in result
     [change] = out.of_type("balance_change")
     assert [c["symbol"] for c in change["changes"]] == ["USDC", "thUSD", "sthUSD"]
@@ -189,7 +192,8 @@ async def test_without_a_v4_quote_kyber_buys_the_thusd_with_its_checks():
     assert confirm["tx"]["steps"][1]["request"]["to"] == ROUTER
     assert kyber.routes == [("ethereum", USDC, THUSD, 100 * 10**6)]
     assert kyber.builds == [("ethereum", ME, 100)]  # 1% — not the Sandbox's 50% default
-    assert rows_of(confirm)["Swap"] == "USDC → thUSD · KyberSwap via LFJ"
+    assert rows_of(confirm)["Route"] == "USDC → thUSD · KyberSwap via LFJ"
+    assert assert_friendly(confirm["tx"])["swap"]["via"] == "KyberSwap via LFJ"
     stake = confirm["tx"]["steps"][-1]["request"]["data"]
     assert decode(["uint256", "address"], bytes.fromhex(stake[10:]))[0] == MINIMUM_100
     task.cancel()
@@ -323,7 +327,7 @@ async def test_farm_avant_swaps_on_kyberswap_and_stakes_on_its_own_network():
     task = asyncio.create_task(tools.propose_deposit({"farm": "Avant", "amount": "100"}))
     confirm = await confirm_of(out)
     tx = confirm["tx"]
-    assert tx["title"] == "Farm Avant points: 100 USDC → savUSD"
+    assert tx["title"] == "Farm Avant"
     assert [s["label"] for s in tx["steps"]] == ["Allow USDC", "Swap USDC → avUSD", "Allow avUSD", "Stake avUSD → savUSD"]
     assert [s["request"]["to"] for s in tx["steps"]] == [AVAX_USDC, ROUTER, AVUSD, SAVUSD]
     assert all(s["request"]["chainId"] == 43114 for s in tx["steps"])
@@ -331,16 +335,17 @@ async def test_farm_avant_swaps_on_kyberswap_and_stakes_on_its_own_network():
     stake = tx["steps"][-1]["request"]["data"]
     assert decode(["uint256", "address"], bytes.fromhex(stake[10:])) == (AVUSD_MIN, ME.lower())
     rows = rows_of(confirm)
-    assert rows["Swap"] == "USDC → avUSD · KyberSwap via LFJ"
-    assert rows["Points"] == "Only count on real mainnet. This Sandbox is a demo and earns nothing."
-    assert rows["Network"] == "Avalanche (Sandbox)"
+    assert rows["Route"] == "USDC → avUSD · KyberSwap via LFJ"
+    summary = assert_friendly(tx)
+    assert summary["network"] == "Avalanche" and summary["program"] == "Avant points program"
+    assert summary["swap"]["via"] == "KyberSwap via LFJ" and summary["receive"]["note"] == "staked avUSD"
     assert tx["addTokens"] == [
         {"chainId": 43114, "address": AVUSD, "symbol": "avUSD", "decimals": 18},
         {"chainId": 43114, "address": SAVUSD, "symbol": "savUSD", "decimals": 18},
     ]
     avax.tokens.update(USDC=400 * 10**6, avUSD=AVUSD_100 - AVUSD_MIN, savUSD=82 * 10**18)
     proposals.resolve(confirm["id"], {"outcome": "approved", "status": "success", "hash": "0xa"})
-    assert "Staked 99.0049 avUSD into savUSD, got 82 savUSD; 1.00005 avUSD left. Confirmed on Avalanche (Sandbox), tx 0xa." in text(await task)
+    assert "Staked 99.0049 avUSD into savUSD, got 82 savUSD; 1.00005 avUSD left. Confirmed on Avalanche, tx 0xa." in text(await task)
     [change] = out.of_type("balance_change")
     assert [c["symbol"] for c in change["changes"]] == ["USDC", "avUSD", "savUSD"]
     assert {c["network"] for c in change["changes"]} == {"Avalanche"}
@@ -349,4 +354,4 @@ async def test_farm_avant_swaps_on_kyberswap_and_stakes_on_its_own_network():
 
 async def test_avant_needs_the_avalanche_sandbox():
     tools = WalletTools(FakeChain(tokens={"USDC": 500 * 10**6}), Outbox(), WalletContext(address=ME), Proposals(), kyber=FakeKyber())
-    assert text(await tools.propose_deposit({"farm": "avant", "amount": "10"})) == "Avant farming isn't set up on this Sandbox."
+    assert text(await tools.propose_deposit({"farm": "avant", "amount": "10"})) == "Avant farming isn't set up here."
