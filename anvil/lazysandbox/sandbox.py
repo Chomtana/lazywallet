@@ -6,6 +6,7 @@ import uvicorn
 
 from .faucet import create_app
 from .rpc import AVAX_CHAIN_ID, AVAX_PUBLIC_RPC, anvil_command, load_env, wait_for_rpc
+from .scheduler import SCHEDULER, ensure_scheduler
 
 ANVIL_PORT = 8545
 AVAX_PORT = 8546
@@ -28,6 +29,12 @@ def main() -> None:
     try:
         wait_for_rpc(rpc, 120)
         wait_for_rpc(avax_rpc, 120, AVAX_CHAIN_ID)
+        for name, url in (("Ethereum", rpc), ("Avalanche", avax_rpc)):
+            try:
+                verb = "deployed" if ensure_scheduler(url) else "already at"
+                print(f"SwapScheduler {verb} {SCHEDULER} on {name}", flush=True)
+            except Exception as e:
+                print(f"SwapScheduler deploy FAILED on {name} — scheduled swaps disabled there: {e}", flush=True)
         print(
             f"Sandbox ready: Ethereum fork {rpc} (chain id 1), Avalanche fork {avax_rpc} (chain id {AVAX_CHAIN_ID}), "
             f"faucet http://127.0.0.1:{FAUCET_PORT}",
