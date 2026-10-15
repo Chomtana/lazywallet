@@ -47,4 +47,6 @@ AVAX_TOKENS = [
 def find_token(symbol: str, tokens: list[Token] | tuple[Token, ...] = TOKENS) -> Token | None:
     """By symbol or by contract address, case-insensitive."""
     s = symbol.strip().upper()
+    if not s:
+        return None
     return next((t for t in tokens if t.symbol.upper() == s or (t.address or "").upper() == s), None)

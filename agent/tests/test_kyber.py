@@ -186,6 +186,12 @@ async def test_client_errors(monkeypatch):
         await KyberClient().route("avalanche", NATIVE, COQ_ADDR, 1)
 
 
+async def test_route_with_non_dict_data_is_no_route(monkeypatch):
+    monkeypatch.setattr(kyber, "http_json", lambda *a: (200, {"code": 0, "data": "x"}))
+    with pytest.raises(NoRoute):
+        await KyberClient().route("avalanche", NATIVE, COQ_ADDR, 1)
+
+
 def test_http_json_reads_error_bodies(monkeypatch):
     import io
     import urllib.error

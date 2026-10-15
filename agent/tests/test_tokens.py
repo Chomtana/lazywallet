@@ -26,3 +26,4 @@ def test_builtins_are_not_custom_and_match_by_address():
     assert not any(t.custom or t.matched_by_symbol for t in TOKENS + AVAX_TOKENS)
     assert find_token("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").symbol == "USDC"
     assert find_token("0x0000000000000000000000000000000000000000") is None  # native coins have no address
+    assert find_token("") is None and find_token("  ") is None

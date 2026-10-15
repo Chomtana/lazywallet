@@ -88,7 +88,9 @@ class KyberClient:
     async def route(self, network: str, token_in: str, token_out: str, amount: int) -> dict:
         query = urllib.parse.urlencode({"tokenIn": token_in, "tokenOut": token_out, "amountIn": str(amount)})
         status, body = await self._call(network, f"routes?{query}")
-        data = body.get("data") or {}
+        data = body.get("data")
+        if not isinstance(data, dict):
+            data = {}
         if status != 200 or _int((data.get("routeSummary") or {}).get("amountOut")) <= 0:
             raise NoRoute(f"KyberSwap has no route for that pair right now ({body.get('message') or status}).")
         return data
