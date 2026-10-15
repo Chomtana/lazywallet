@@ -3,6 +3,7 @@ import { Pencil, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { BOTTOM_SHEET } from '@/components/sheet-styles'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { validateContact } from '@/lib/contacts'
 import { shortAddress, uid } from '@/lib/format'
@@ -53,7 +54,7 @@ export function AddressBookSheet({ open, onOpenChange, contacts, onChange }: Pro
         onOpenChange(v)
       }}
     >
-      <SheetContent side="right" className="w-full sm:max-w-md">
+      <SheetContent side="bottom" className={BOTTOM_SHEET}>
         <SheetHeader>
           <SheetTitle>Address book</SheetTitle>
           <SheetDescription>Say a name — “send 0.1 ETH to Alice” — and I'll use the address saved here.</SheetDescription>

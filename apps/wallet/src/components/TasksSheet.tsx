@@ -2,6 +2,7 @@ import { Pause, Play, Trash2 } from 'lucide-react'
 import { TASK_ICONS } from '@/chat/cards/task-icons'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { BOTTOM_SHEET } from '@/components/sheet-styles'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import type { Task } from '@/types'
 
@@ -13,7 +14,7 @@ export function TasksSheet({ open, onOpenChange, tasks, onChange }: Props) {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-md">
+      <SheetContent side="bottom" className={BOTTOM_SHEET}>
         <SheetHeader>
           <SheetTitle>Scheduled tasks</SheetTitle>
           <SheetDescription>Tasks run only while this tab is open. You approve every transaction.</SheetDescription>

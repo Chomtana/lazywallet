@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { BOTTOM_SHEET } from '@/components/sheet-styles'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { hostOf } from '@/lib/format'
@@ -61,11 +62,11 @@ export function QrSheet({ open, onOpenChange, address, onConnect }: Props) {
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="left" className="w-full sm:max-w-md">
+        <SheetContent side="bottom" className={BOTTOM_SHEET}>
           <SheetHeader>
             <SheetTitle>Receive or connect</SheetTitle>
           </SheetHeader>
-          <Tabs defaultValue="receive" className="px-4 pb-4">
+          <Tabs defaultValue="receive" className="overflow-y-auto px-4 pb-6">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="receive">Receive</TabsTrigger>
               <TabsTrigger value="connect">Connect dApp</TabsTrigger>

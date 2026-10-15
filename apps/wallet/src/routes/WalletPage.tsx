@@ -23,6 +23,8 @@ import type { Contact, DappInfo, Task } from '@/types'
 type Panel = 'qr' | 'contacts' | 'tasks' | 'seed' | 'delete' | null
 
 const DAPP_REQUEST_DELAY_MS = 3000
+// Matches the wallet selector pill in the centre of the top bar.
+const TOPBAR_BUTTON = 'size-9 rounded-full border-border hover:bg-secondary'
 
 export default function WalletPage() {
   const { active } = useWallet()
@@ -60,7 +62,7 @@ export default function WalletPage() {
     <div className="flex h-dvh flex-col">
       <TopBar
         left={
-          <Button variant="ghost" size="icon" aria-label="Receive or connect dApp" onClick={() => setPanel('qr')}>
+          <Button variant="ghost" size="icon" className={TOPBAR_BUTTON} aria-label="Receive or connect dApp" onClick={() => setPanel('qr')}>
             <QrCode />
           </Button>
         }
@@ -72,7 +74,7 @@ export default function WalletPage() {
           />
         }
         right={
-          <Button variant="ghost" size="icon" aria-label="Address book" onClick={() => setPanel('contacts')}>
+          <Button variant="ghost" size="icon" className={TOPBAR_BUTTON} aria-label="Address book" onClick={() => setPanel('contacts')}>
             <BookUser />
           </Button>
         }
