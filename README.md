@@ -2,7 +2,7 @@
 
 A voice-powered AI wallet for newcomers and degens. Say what you want — check balances, send, swap, set price alerts, recurring buys or conditional orders — and approve each transaction in the chat. Runs in the browser; keys stay on your device.
 
-> **Status: Phase 3 — Uniswap v4 swaps.** The chat runs on a real Claude agent. Balances, ETH/ERC-20 sends and Uniswap v4 swaps are real on "Sandbox" (an Anvil fork of Ethereum mainnet). Bridges, scheduled tasks and WalletConnect are still mocked or "coming soon".
+> **Status: Phase 4 — Avalanche + Dexalot.** The chat runs on a real Claude agent. Balances, sends and swaps are real on "Sandbox" (Anvil forks of Ethereum mainnet and Avalanche C-Chain): Ethereum swaps go through Uniswap v4, Avalanche swaps through Dexalot. Bridges are still "coming soon"; scheduled tasks and WalletConnect are still mocked.
 
 ## Repo layout
 
@@ -33,7 +33,7 @@ Voice input uses the browser's Web Speech API — use Chrome or Edge. Other brow
 
 Create a wallet, then say or type:
 
-- "Give me test funds" (Sandbox faucet: 100 ETH + test tokens — also on Receive → **Get test funds**)
+- "Give me test funds" (Sandbox faucet: 100 ETH + 100 AVAX + test tokens — also on Receive → **Get test funds**)
 - "What's my balance?"
 - "Send 0.1 ETH to Alice"
 - "Send 50 USDC to Bob"

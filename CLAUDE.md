@@ -4,13 +4,13 @@ LazyWallet — voice-powered AI wallet (hackathon project). See README.md for ov
 
 ## Current phase
 
-Phase 3: Uniswap v4 swaps. Spec: `docs/superpowers/specs/2026-10-15-lazywallet-uniswap-v4-swap-design.md`.
+Phase 4: Avalanche + Dexalot. Spec: `docs/superpowers/specs/2026-10-15-lazywallet-avalanche-dexalot-design.md`.
 
 ## Stack & layout
 
 - pnpm workspace. `apps/landing` (Vite, React, TS, Tailwind v4), `apps/wallet` (+ shadcn/ui Radix, React Router, viem, wagmi, Vitest). Linting is oxlint (create-vite default).
 - `agent/` — Python (uv), FastAPI WebSocket + `claude-agent-sdk`. Auth is the developer's Claude Code login (no API key). Built-in Claude Code tools are disabled; only the in-process `wallet` MCP tools exist.
-- `anvil/` — Python (uv): Anvil fork of Ethereum mainnet (chain id 1) from `ETH_RPC_URL` in root `.env`, plus a faucet that writes token balances into storage.
+- `anvil/` — Python (uv): Anvil forks of Ethereum mainnet (chain id 1, :8545, from `ETH_RPC_URL`) and Avalanche C-Chain (chain id 43114, :8546, from `AVAX_RPC_URL`, default public RPC), plus a faucet/sandbox service (:8547) that writes token balances and serves sandbox-signed Dexalot quotes.
 - x402 is out of scope for the first phases.
 - Use official / well-known frameworks at their latest stable versions. Don't reinvent what a framework provides.
 
@@ -18,7 +18,7 @@ Phase 3: Uniswap v4 swaps. Spec: `docs/superpowers/specs/2026-10-15-lazywallet-u
 
 ```bash
 pnpm dev                    # both apps (landing :5173, wallet :5174)
-pnpm dev:sandbox            # Anvil fork :8545 + faucet :8547 (needs ETH_RPC_URL)
+pnpm dev:sandbox            # Anvil forks :8545 (Ethereum) + :8546 (Avalanche) + faucet :8547
 pnpm dev:agent              # agent ws://localhost:8787/ws
 pnpm --filter wallet test   # Vitest unit tests
 pnpm test:py                # pytest for anvil/ and agent/
@@ -35,10 +35,11 @@ pnpm build && pnpm lint
   - Mock: `mock/walletconnect.ts` (WalletConnect), scheduled tasks. `mock/agent.ts` now only supplies `say()`/`confirm()` helpers for the WalletConnect mock.
 - Never store a seed phrase unencrypted. Only `lw.vault` (encrypted) holds secrets; other `lw.*` keys are non-secret.
 - Signing model: keys stay in the browser; every transaction goes through an Approve/Reject confirm card. Scheduled tasks only run while the tab is open.
-- Network: Sandbox only (Anvil fork, chain id 1).
+- Networks: Sandbox only — Ethereum fork (1) and Avalanche fork (43114), both always on; every agent step carries `chainId`.
 - The model never builds calldata — `agent/lazyagent/transfers.py` does. Every transfer goes through `propose_transfer` and the browser's Approve card.
 - Agent confirm cards carry `tx.steps` (`[{label, request}]`); the browser runs them in order (`chain/executeTx.ts` `executeSteps`).
 - Uniswap v4 recipe and addresses live in `agent/lazyagent/uniswap.py` (verified on a fork) — change them only with a fork test.
+- Dexalot recipe (Avalanche swaps) lives in `anvil/lazysandbox/dexalot.py` (signer patch, order signing) and `agent/lazyagent/dexalot.py` (calldata) — change only with a fork test.
 - Unit tests cover pure logic (`*.test.ts` next to the module). UI is reviewed manually.
 
 ## Development motto

@@ -81,6 +81,7 @@ Source: `Dexalot/contracts` `contracts/DexalotRFQ.sol`.
 - `POST /fund {address}` funds both networks; response `summary` groups by network: `"Ethereum: 100 ETH, 10,000 USDC, … · Avalanche: 100 AVAX, 10,000 USDC, …"`.
 - New `dexalot.py` (sandbox side):
   - At startup: generate a sandbox signer key (process memory only), read `getAllowedRFQs()`, and for each maker that has `swapSigner()`: patch bytecode, then assert `swapSigner()` equals the sandbox address. Any failure → log loudly and mark Dexalot unavailable (quote endpoint returns 503).
+  - Makers whose signer isn't in their runtime bytecode (e.g. an EIP-1967 proxy maker) are skipped; startup fails only if no maker can be patched.
   - `POST /dexalot/quote {pair, side, amount, taker}` → fetch `pairprice`; pick the patched maker holding the most of the output token; refuse if it holds less than `makerAmount` (409, "not enough liquidity on Sandbox"); build and sign the order (expiry = fork timestamp + 15 min) → `{maker, order, signature, price}`.
 - All sandbox endpoints keep refusing when the target RPC isn't Anvil.
 
@@ -90,15 +91,15 @@ Source: `Dexalot/contracts` `contracts/DexalotRFQ.sol`.
 - New `networks.py`: `Network(key, name, chain_id, rpc_url, native: Token, tokens: list[Token], swap_venue: "uniswap" | "dexalot")`, registry `NETWORKS = [ETHEREUM, AVALANCHE]`.
 - `tokens.py`: `TOKENS` becomes per network; `find_token(symbol, network)`; symbol matching is case-insensitive and accepts `USDT` for Avalanche `USDt`.
 - Pure `resolve_network(symbol, explicit, balances) -> Network | Choice` implementing the rule in §2; `Choice` carries the options with balances.
-- `config.py`: `AVAX_RPC_URL` (sandbox default `http://127.0.0.1:8546`).
+- `config.py`: `SANDBOX_AVAX_RPC_URL` (sandbox default `http://127.0.0.1:8546`).
 - `Session` / `WalletTools` hold one `RpcChain` per network; `RpcChain` injects `ExtraDataToPOAMiddleware` for Avalanche.
 
 ### 6.2 Tools
-- All tools gain optional `network` (`"ethereum"` | `"avalanche"`).
+- `propose_transfer` and `propose_swap` gain optional `network`; balances and faucet always cover both.
 - `get_balances`: both networks in parallel; holdings carry `network`; if a network is unreachable, show the rest and say which is down.
 - `propose_transfer`: resolve network, then the existing flow on that network's chain (gas in its native token).
 - `propose_swap`: resolve network; Ethereum → existing Uniswap v4 path; Avalanche → Dexalot path:
-  1. Validate pair against cached `/api/rfq/pairs` (1 h); check balance and gas reserve (AVAX).
+  1. Check balance and gas reserve (AVAX); pair lookup happens in the sandbox service (404 lists available pairs).
   2. `POST /dexalot/quote` on the sandbox.
   3. Steps: optional `Approve {token}` then `Swap {in} → {out}` (`simpleSwap` calldata, value for AVAX input). Each step carries `chainId`.
   4. Rows: Network, From, Pay, Receive exactly, Rate, Route "Dexalot · sandbox-signed at live price", Network fee.
@@ -125,7 +126,7 @@ Sandbox is two forks (Ethereum and Avalanche); same address on both. Pass `netwo
 - `lib/wagmi.ts`: `sandboxChains = { 1: ethereumFork, 43114: avalancheFork }` (RPC from `VITE_SANDBOX_RPC_URL` / `VITE_AVAX_RPC_URL`, defaults :8545 / :8546).
 - `chain/client.ts`: `txDepsFor(mnemonic)` sends/waits on the client for each request's `chainId`.
 - `executeSteps` unchanged in shape; `statusPatch` / `progressText` name the network ("Confirmed on Avalanche (Sandbox).").
-- Confirm card: network badge from the steps' `chainId`.
+- Confirm card: network shown in the card's Network row from the steps' `chainId`.
 - Balance card: network label per row, combined total.
 - New `ChoiceCard` (shadcn `Button`s): question, one button per option (label + detail). Tap → send `reply` as a user message; card then locks with the chosen option highlighted. Any other user message also locks open choice cards.
 - `types.ts`: `TxRequest.chainId`, `Holding.network`, message kind `choice` `{ question; options; chosen? }`.
