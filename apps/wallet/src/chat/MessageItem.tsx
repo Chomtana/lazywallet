@@ -12,9 +12,10 @@ export type MessageActions = {
   onReject: (id: string) => void
   onSimulate?: (task: Task) => void
   onChoose?: (id: string, option: ChoiceOption) => void
+  choicesEnabled?: boolean
 }
 
-function AssistantBody({ message, onApprove, onReject, onSimulate, onChoose }: { message: AssistantMessage } & MessageActions) {
+function AssistantBody({ message, onApprove, onReject, onSimulate, onChoose, choicesEnabled = true }: { message: AssistantMessage } & MessageActions) {
   switch (message.kind) {
     case 'text':
       return <TextBubble text={message.text} />
@@ -40,6 +41,7 @@ function AssistantBody({ message, onApprove, onReject, onSimulate, onChoose }: {
           options={message.options}
           chosen={message.chosen}
           closed={message.closed}
+          enabled={choicesEnabled}
           onChoose={(o) => onChoose?.(message.id, o)}
         />
       )

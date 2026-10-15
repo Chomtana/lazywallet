@@ -102,6 +102,7 @@ export default function WalletPage() {
           onApprove={chat.approve}
           onReject={chat.reject}
           onChoose={chat.choose}
+          choicesEnabled={chat.online && !chat.busy}
         />
       </main>
       <div className="mx-auto w-full max-w-[720px] space-y-2 px-4 pb-4">

@@ -1,9 +1,9 @@
 import { Button } from '@/components/ui/button'
 import type { ChoiceOption } from '@/types'
 
-type Props = { question: string; options: ChoiceOption[]; chosen?: string; closed?: boolean; onChoose: (option: ChoiceOption) => void }
+type Props = { question: string; options: ChoiceOption[]; chosen?: string; closed?: boolean; enabled: boolean; onChoose: (option: ChoiceOption) => void }
 
-export function ChoiceCard({ question, options, chosen, closed, onChoose }: Props) {
+export function ChoiceCard({ question, options, chosen, closed, enabled, onChoose }: Props) {
   return (
     <div className="rounded-2xl border bg-card p-4">
       <p className="font-semibold">{question}</p>
@@ -12,7 +12,7 @@ export function ChoiceCard({ question, options, chosen, closed, onChoose }: Prop
           <Button
             key={o.label}
             variant={chosen === o.label ? 'default' : 'secondary'}
-            disabled={closed}
+            disabled={closed || !enabled}
             onClick={() => onChoose(o)}
             className="h-auto justify-between py-2.5"
           >
