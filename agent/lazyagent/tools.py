@@ -11,6 +11,23 @@ from .dexalot import DEXALOT_REVERT_HINT, Quotes, asset_of, dexalot_rows, dexalo
 from .networks import ETHEREUM, NETWORKS, Choice, Network, candidates, find_network, pick_network
 from .outcome import outcome_text
 from .proposals import Proposals
+from .scheduler import (
+    MIN_OUT_DISCOUNT_BPS,
+    SCHEDULER,
+    decode_order,
+    describe_order,
+    encode_cancel,
+    encode_get_order,
+    gas_balance,
+    gas_top_up,
+    order_token,
+    parse_schedule,
+    read_orders,
+    routing_token,
+    schedule_label,
+    schedule_rows,
+    schedule_steps,
+)
 from .swaps import (
     DEADLINE_S,
     GAS,
@@ -60,7 +77,7 @@ Fund = Callable[[str], Awaitable[str]]
 SERVER_NAME = "wallet"
 TOOL_NAMES = [
     f"mcp__{SERVER_NAME}__{n}"
-    for n in ("get_balances", "resolve_recipient", "propose_transfer", "propose_swap", "unsupported_action", "request_test_funds")
+    for n in ("get_balances", "resolve_recipient", "propose_transfer", "propose_swap", "propose_scheduled_swap", "list_scheduled_swaps", "cancel_scheduled_swap", "unsupported_action", "request_test_funds")
 ]
 
 
@@ -416,6 +433,130 @@ class WalletTools:
             success = f"Swapped {human_in} for {got}. Confirmed on {net.label}, tx {result.get('hash')}.{change}"
         return ok(outcome_text(result, steps_json, "swap", success, revert_hint=hint))
 
+    async def _quote_out(self, net: Network, tin, tout, amount: int) -> int:
+        """Today's output for one run, from the network's venue (wrapped legs quoted as native)."""
+        a, b = routing_token(tin, net), routing_token(tout, net)
+        if net.swap_venue == "dexalot":
+            if self.dexalot is None:
+                raise TransferError("Dexalot swaps aren't set up on this Sandbox.")
+            return int((await self.dexalot.quote(asset_of(a), asset_of(b), amount, self.ctx.address))["order"]["makerAmount"])
+        found = await best_route(self.quoter, currency_of(a), currency_of(b), amount)
+        if found is None:
+            raise TransferError(f"I couldn't find a Uniswap v4 route for {tin.symbol} → {tout.symbol} on Sandbox.")
+        return found[1]
+
+    async def propose_scheduled_swap(self, args: dict) -> dict:
+        if not self.ctx.address:
+            return err("No wallet is active in the app.")
+        sym_in, sym_out = str(args.get("token_in", "")).strip(), str(args.get("token_out", "")).strip()
+        if sym_in.upper() == sym_out.upper():
+            return err("Pick two different tokens to swap.")
+        net = await self._resolve(args, [sym_in, sym_out], str(args.get("amount", "")), "schedule swaps of")
+        if isinstance(net, dict):
+            return net
+        tin, tout = find_token(sym_in, net.tokens), find_token(sym_out, net.tokens)
+        pay, get = order_token(tin, net), order_token(tout, net)
+        chain = self.chains[net.key]
+        try:
+            if pay.address == get.address:
+                raise TransferError(f"{tin.symbol} and {tout.symbol} are the same token once wrapped — pick two different tokens.")
+            amount = parse_amount(str(args.get("amount", "")), tin.decimals)
+            interval, count, delay = parse_schedule(args.get("interval_seconds"), args.get("count"), args.get("start_delay_seconds"))
+            total = amount * count
+            balance = await self._balance_on(net, tin)
+            if total > balance:
+                raise TransferError(
+                    f"{count} runs of {format_units(amount, tin.decimals)} {tin.symbol} need {format_units(total, tin.decimals)} {tin.symbol}, "
+                    f"but you have {format_units(balance, tin.decimals)}."
+                )
+            if args.get("min_received"):
+                minimum = parse_amount(str(args["min_received"]), get.decimals)
+            else:
+                minimum = min_out(await self._quote_out(net, tin, tout, amount), MIN_OUT_DISCOUNT_BPS)
+            start = await chain.block_timestamp() + delay
+            allowance = int.from_bytes((await chain.call(pay.address, encode_erc20_allowance(self.ctx.address, SCHEDULER)))[:32], "big")
+            gas_price = await chain.gas_price()
+            top_up = gas_top_up(gas_price, count, await gas_balance(chain, self.ctx.address))
+            steps = schedule_steps(tin, tout, net, amount, minimum, start, interval, count, allowance, top_up)
+            needed = gas_reserve(steps, gas_price) + top_up + (total if tin.address is None else 0)
+            native_balance = await chain.eth_balance(self.ctx.address)
+            if needed > native_balance:
+                raise TransferError(
+                    f"Not enough {net.native.symbol} for the wrap, gas deposit and fees (need ~{format_units(needed, 18)} {net.native.symbol}). "
+                    "Try fewer runs or get test funds."
+                )
+            label = schedule_label(interval, count, delay)
+            rows = schedule_rows(self.ctx.address, tin, tout, net, amount, minimum, label, top_up)
+        except TransferError as e:
+            return err(str(e))
+        except Exception as e:
+            return err(f"The {net.name} Sandbox chain isn't reachable right now ({e}).")
+
+        human = f"{format_units(amount, tin.decimals)} {tin.symbol}"
+        steps_json = self._steps_json([s.to_json() for s in steps], net)
+        pid, fut = self.proposals.new()
+        await self.send(
+            {"type": "confirm", "id": pid, "tx": {"title": f"Schedule {human} → {get.symbol}", "from": self.ctx.address, "rows": rows, "steps": steps_json}}
+        )
+        result = await self.proposals.wait(pid, fut, self.approval_timeout)
+        success = ""
+        if _succeeded(result):
+            success = (
+                f"Scheduled {human} → {get.symbol}, {label}, on {net.label} (tx {result.get('hash')}). "
+                "The executor runs it on-chain — the app doesn't need to stay open. It's listed in Scheduled tasks."
+            )
+        return ok(outcome_text(result, steps_json, "scheduled swap", success))
+
+    async def list_scheduled_swaps(self, args: dict) -> dict:
+        if not self.ctx.address:
+            return err("No wallet is active in the app.")
+        lines, down = [], []
+        for net in self.networks:
+            chain = self.chains[net.key]
+            try:
+                orders = await read_orders(chain, self.ctx.address)
+                now = await chain.block_timestamp()
+            except Exception:
+                down.append(net.name)
+                continue
+            lines += [f"{describe_order(o, net, now)} on {net.name}" for o in orders]
+        note = f" Not reachable right now: {', '.join(down)}." if down else ""
+        if not lines:
+            return ok(f"No scheduled swaps yet.{note}")
+        return ok(f"Scheduled swaps: {'; '.join(lines)}.{note}")
+
+    async def cancel_scheduled_swap(self, args: dict) -> dict:
+        if not self.ctx.address:
+            return err("No wallet is active in the app.")
+        net = find_network(str(args.get("network", "")))
+        if net is None or net.key not in self.chains:
+            return err(f"Which network is the scheduled swap on? {', '.join(n.name for n in self.networks)}.")
+        try:
+            oid = int(args.get("order_id"))
+        except (TypeError, ValueError):
+            return err("I need the scheduled swap's number, like 3.")
+        chain = self.chains[net.key]
+        try:
+            order = decode_order(oid, await chain.call(SCHEDULER, encode_get_order(oid)))
+            now = await chain.block_timestamp()
+        except Exception as e:
+            return err(f"The {net.name} Sandbox chain isn't reachable right now ({e}).")
+        if order.owner.lower() != self.ctx.address.lower():
+            return err(f"I can't find a scheduled swap #{oid} of yours on {net.name}.")
+        if not order.active:
+            return err(f"Scheduled swap #{oid} is already {'cancelled' if order.cancelled else 'finished'}.")
+        steps = self._steps_json([{"label": "Cancel scheduled swap", "request": {"to": SCHEDULER, "value": "0", "data": encode_cancel(oid)}}], net)
+        rows = [
+            {"label": "From", "value": short(self.ctx.address)},
+            {"label": "Order", "value": describe_order(order, net, now)},
+            {"label": "Network", "value": net.label},
+        ]
+        pid, fut = self.proposals.new()
+        await self.send({"type": "confirm", "id": pid, "tx": {"title": f"Cancel scheduled swap #{oid}", "from": self.ctx.address, "rows": rows, "steps": steps}})
+        result = await self.proposals.wait(pid, fut, self.approval_timeout)
+        success = f"Cancelled scheduled swap #{oid} on {net.label}, tx {result.get('hash')}." if _succeeded(result) else ""
+        return ok(outcome_text(result, steps, "cancellation", success))
+
     async def request_test_funds(self, args: dict) -> dict:
         if not self.ctx.address:
             return err("No wallet is active in the app.")
@@ -476,13 +617,42 @@ def build_mcp_server(t: WalletTools):
                 },
             )(t.propose_swap),
             tool(
+                "propose_scheduled_swap",
+                "Propose an on-chain scheduled swap: one run now/later or recurring (e.g. every minute × 5). Shows one confirmation card "
+                "(wrap if paying ETH/AVAX, allowance, schedule + gas deposit), waits for approve/reject. The executor runs it later; the app needn't stay open.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "token_in": {"type": "string", "description": f"Token to pay each run, one of {t.supported()}"},
+                        "token_out": {"type": "string", "description": f"Token to receive, one of {t.supported()}"},
+                        "amount": {"type": "string", "description": "Decimal amount of token_in per run, e.g. '10'"},
+                        "interval_seconds": {"type": "integer", "description": "Seconds between runs (≥ 60). Omit for a single run"},
+                        "count": {"type": "integer", "description": "Number of runs (1–100). Default 1"},
+                        "start_delay_seconds": {"type": "integer", "description": "Seconds from now until the first run. Default 0"},
+                        "min_received": {"type": "string", "description": "Only if the user set a limit: minimum token_out per run, decimal"},
+                        "network": {"type": "string", "description": "Only if the user named a network or answered a network choice: 'ethereum' or 'avalanche'"},
+                    },
+                    "required": ["token_in", "token_out", "amount"],
+                },
+            )(t.propose_scheduled_swap),
+            tool("list_scheduled_swaps", "List the user's scheduled swaps on every Sandbox network with progress and next run.", {"type": "object", "properties": {}})(t.list_scheduled_swaps),
+            tool(
+                "cancel_scheduled_swap",
+                "Propose cancelling one of the user's scheduled swaps (confirmation card). Use list_scheduled_swaps first to find its number and network.",
+                {
+                    "type": "object",
+                    "properties": {"order_id": {"type": "integer"}, "network": {"type": "string", "description": "'ethereum' or 'avalanche'"}},
+                    "required": ["order_id", "network"],
+                },
+            )(t.cancel_scheduled_swap),
+            tool(
                 "request_test_funds",
                 "Sandbox faucet: give the active wallet free test funds on every Sandbox network (100 ETH / 100 AVAX plus test tokens). Use when the user asks for test funds, the faucet, or ETH to get started.",
                 {"type": "object", "properties": {}},
             )(t.request_test_funds),
             tool(
                 "unsupported_action",
-                "Use for bridging, scheduling, price alerts, dApps or anything other than balances, sends, swaps and test funds.",
+                "Use for bridging, price alerts, conditional actions, dApps or anything other than balances, sends, swaps, scheduled swaps and test funds.",
                 {"type": "object", "properties": {"action": {"type": "string"}}, "required": ["action"]},
             )(t.unsupported_action),
         ],

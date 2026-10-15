@@ -181,6 +181,9 @@ def test_mcp_server_and_names():
         "mcp__wallet__resolve_recipient",
         "mcp__wallet__propose_transfer",
         "mcp__wallet__propose_swap",
+        "mcp__wallet__propose_scheduled_swap",
+        "mcp__wallet__list_scheduled_swaps",
+        "mcp__wallet__cancel_scheduled_swap",
         "mcp__wallet__unsupported_action",
         "mcp__wallet__request_test_funds",
     ]
