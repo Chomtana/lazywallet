@@ -9,7 +9,7 @@ from .custom_tokens import Search
 from .dexalot import Quotes
 from .kyber import Kyber
 from .proposals import Proposals
-from .stream import translate
+from .stream import THINKING, progress, translate
 from .tools import Fund, Send, WalletContext, WalletTools
 
 log = logging.getLogger(__name__)
@@ -66,6 +66,7 @@ class Session:
             await self._send({"type": "error", "message": f"Unknown message type: {kind}"})
 
     async def _run(self, text: str) -> None:
+        await self._send(progress(THINKING))
         try:
             if self._client is None:
                 self._client = await self._factory(self.tools)

@@ -1,7 +1,7 @@
 import time
 
 import pytest
-from claude_agent_sdk import AssistantMessage, ResultMessage, StreamEvent, TextBlock
+from claude_agent_sdk import AssistantMessage, ResultMessage, StreamEvent, TextBlock, ToolUseBlock
 from fakes import FakeChain
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -12,6 +12,7 @@ from lazyagent.session import Session
 ORIGIN = "http://localhost:5174"
 ME = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 ALICE = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+THINKING = {"type": "progress", "label": "Thinking…"}
 USER = {"type": "user", "text": "send 0.1 eth to alice", "spoken": False, "address": ME, "contacts": [{"name": "Alice", "address": ALICE}]}
 
 
@@ -60,6 +61,7 @@ def test_rejects_other_origins():
 def test_transfer_round_trip():
     with client().websocket_connect("/ws", headers={"origin": ORIGIN}) as ws:
         ws.send_json(USER)
+        assert ws.receive_json() == THINKING
         confirm = ws.receive_json()
         assert confirm["type"] == "confirm"
         assert confirm["tx"]["steps"][0]["request"]["to"] == ALICE
@@ -75,6 +77,7 @@ def test_transfer_round_trip():
 def test_busy_while_waiting_for_approval():
     with client().websocket_connect("/ws", headers={"origin": ORIGIN}) as ws:
         ws.send_json(USER)
+        assert ws.receive_json() == THINKING
         confirm = ws.receive_json()
         ws.send_json(USER)
         assert ws.receive_json() == {"type": "error", "message": "Still working on your last request."}
@@ -91,6 +94,7 @@ def test_invalid_json_is_reported():
 def test_claude_unavailable_reports_error_then_turn_end():
     with client(failing_factory).websocket_connect("/ws", headers={"origin": ORIGIN}) as ws:
         ws.send_json(USER)
+        assert ws.receive_json() == THINKING
         err = ws.receive_json()
         assert err["type"] == "error"
         assert "not logged in" in err["message"]
@@ -101,6 +105,7 @@ def test_disconnect_cancels_pending_and_closes_client():
     ScriptedClient.instances.clear()
     with client().websocket_connect("/ws", headers={"origin": ORIGIN}) as ws:
         ws.send_json(USER)
+        assert ws.receive_json() == THINKING
         assert ws.receive_json()["type"] == "confirm"
     deadline = time.monotonic() + 2
     while not ScriptedClient.instances[0].disconnected and time.monotonic() < deadline:
@@ -116,6 +121,7 @@ def test_tx_started_keeps_the_proposal_alive_past_the_approval_timeout():
     app = create_app(FakeChain(), scripted_factory, (ORIGIN,), approval_timeout=0.2)
     with TestClient(app).websocket_connect("/ws", headers={"origin": ORIGIN}) as ws:
         ws.send_json(USER)
+        assert ws.receive_json() == THINKING
         confirm = ws.receive_json()
         ws.send_json({"type": "tx_started", "id": confirm["id"]})
         time.sleep(0.4)
@@ -159,3 +165,29 @@ async def test_session_stores_saved_tokens_and_passes_kyber():
     await s.handle(USER)  # an older wallet build sends no tokens
     await s._turn
     assert s.ctx.tokens == []
+
+
+async def test_turn_starts_with_thinking_then_a_label_per_tool_call():
+    sent = []
+
+    async def send(m):
+        sent.append(m)
+
+    class ToolClient:
+        async def query(self, text):
+            pass
+
+        async def receive_response(self):
+            yield AssistantMessage(content=[ToolUseBlock(id="t", name="mcp__wallet__get_balances", input={})], model="test")
+
+    async def factory(tools):
+        return ToolClient()
+
+    s = Session(send, FakeChain(), factory)
+    await s.handle(USER)
+    await s._turn
+    assert sent == [
+        {"type": "progress", "label": "Thinking…"},
+        {"type": "progress", "label": "Checking your balances"},
+        {"type": "turn_end"},
+    ]
