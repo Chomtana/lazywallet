@@ -1,0 +1,9 @@
+{
+  "data": [
+    {"id": "avax_0x2775d5105276781b4b85ba6ea6a6653beed1dd32", "type": "token", "attributes": {"address": "0x2775d5105276781b4b85ba6ea6a6653beed1dd32", "name": "XAUt0", "symbol": "XAUt0", "price_usd": "4151.7951702526", "volume_usd": {"h24": "145093.15533864"}}, "relationships": {"top_pools": {"data": [{"id": "avax_0x259dc723d93da1d82d10ed75f3751cd3d3b6d7fa", "type": "pool"}]}}},
+    {"id": "avax_0x644192291cc835a93d6330b24ea5f5fedd0eef9e", "type": "token", "attributes": {"address": "0x644192291cc835a93d6330b24ea5f5fedd0eef9e", "name": "AllianceBlock Nexera Token", "symbol": "NXRA", "price_usd": null, "volume_usd": {"h24": null}}, "relationships": {"top_pools": {"data": []}}}
+  ],
+  "included": [
+    {"id": "avax_0x259dc723d93da1d82d10ed75f3751cd3d3b6d7fa", "type": "pool", "attributes": {"name": "XAUt0 / USDt 0.05%", "reserve_in_usd": "64072.6693", "price_change_percentage": {"h24": "0.241"}}, "relationships": {"base_token": {"data": {"id": "avax_0x2775d5105276781b4b85ba6ea6a6653beed1dd32", "type": "token"}}, "quote_token": {"data": {"id": "avax_0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7", "type": "token"}}, "dex": {"data": {"id": "blackhole-v3", "type": "dex"}}}}
+  ]
+}

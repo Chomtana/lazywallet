@@ -1,0 +1,4 @@
+[
+  {"id": "ondo-finance", "symbol": "ondo", "name": "Ondo", "platforms": {"ethereum": "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3"}},
+  {"id": "tether-gold-tokens", "symbol": "xaut0", "name": "Tether Gold Tokens", "platforms": {"avalanche": "0x2775d5105276781b4b85ba6ea6a6653beed1dd32", "solana": "AymATz4TCL9sWNEEV9Kvyz45CHVhDZ6kUgjTJPzLpU9P"}}
+]

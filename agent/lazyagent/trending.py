@@ -2,8 +2,10 @@
 Ethereum + Avalanche. Research: docs/research/2026-10-15-avalanche-trending-tokens.md.
 Adding a category: an entry in CATEGORY_NETWORKS, a fetcher in TrendingTokens, a line in TRENDING_TOOL's description."""
 
+import html
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
+from pathlib import Path
 
 from .tokens import AVAX_TOKENS
 
@@ -173,3 +175,136 @@ def to_json(items: list[Trending]) -> str:
             "tokens": [asdict(t) for t in items],
         }
     )
+
+
+# --- RWA project tokens (Ethereum + Avalanche) ---
+
+# Hackathon sponsor showcase: always first in rwa results, in this order (network, lower-case address, note).
+# XAUt0 is an asset token, not a project token — pinned deliberately and labelled.
+PINNED = [
+    ("avalanche", "0x2775d5105276781b4b85ba6ea6a6653beed1dd32", "tokenized gold — Avalanche showcase"),  # XAUt0
+]
+# In CoinGecko's RWA category, not in any tokenized-asset sub-category, but not RWA projects:
+# infra / oracle / general-L1 tokens, a USD stablecoin without "USD" in its symbol, and funds CoinGecko left untagged.
+NOT_RWA = {
+    ("ethereum", "0x514910771af9ca656af840dff83e8264ecf986ca"),  # LINK
+    ("avalanche", "0x5947bb275c521040051d82396192181b413227a3"),  # LINK.e
+    ("ethereum", "0x4a220e6096b25eadb88358cb44068a3248254675"),  # QNT
+    ("ethereum", "0xe28b3b32b6c345a34ff64674606124dd5aceca30"),  # INJ
+    ("ethereum", "0xaa7a9ca87d3694b5755f213b5d04094b8d0f0a6f"),  # TRAC
+    ("ethereum", "0xc43c6bfeda065fe2c4c11765bf838789bd0bb5de"),  # RED (RedStone)
+    ("ethereum", "0x84ca8bc7997272c7cfb4d0cd3d55cd942b3c9419"),  # DIA
+    ("ethereum", "0x8a2279d4a90b6fe1c4b30fa660cc9f926797baa2"),  # CHR (Chromia)
+    ("ethereum", "0x07041776f5007aca2a54844f50503a18a72a8b68"),  # USAT (Tether US stablecoin)
+    ("ethereum", "0xec1227bfb3e76d7a2a9bca24d9e98f68de8bf808"),  # MPRA (Maya Preferred — tokenized preferred stock)
+    ("ethereum", "0x17418038ecf73ba4026c4f428547bf099706f27b"),  # ACRED (Apollo credit fund)
+    ("avalanche", "0x7c64925002bfa705834b118a923e9911bee32875"),  # ACRED
+    ("ethereum", "0x2255718832bc9fd3be1caf75084f4803da14ff01"),  # VBILL (VanEck treasury fund)
+    ("avalanche", "0x7f4546ef315efc65336187fe3765ea779ac90183"),  # VBILL
+}
+RWA_SNAPSHOT = Path(__file__).parent / "data" / "rwa_coingecko.json"
+
+
+@dataclass(frozen=True)
+class RwaCoin:
+    network: str
+    address: str  # lower-case
+    coingecko_id: str
+    market_cap: float
+    volume_24h: float  # CoinGecko, all venues — only used to pick which candidates to look up
+
+
+def _opt(value) -> float | None:
+    return None if value is None else _num(value)
+
+
+# --- RWAs: pure ---
+
+
+def rwa_addresses(markets: list[dict], coin_list: list[dict], asset_ids: set[str]) -> list[RwaCoin]:
+    """CoinGecko RWA-category markets + coins/list?include_platform=true → one RwaCoin per
+    (project token, network). Skips coins in a tokenized-asset sub-category (`asset_ids`), USD
+    stablecoins (symbol contains "usd") and coins without an EVM address on a supported network."""
+    platforms = {c.get("id"): c.get("platforms") or {} for c in coin_list}
+    coins = []
+    for m in markets:
+        if m.get("id") in asset_ids or "usd" in str(m.get("symbol", "")).lower():
+            continue
+        for network in GT_NETWORKS:
+            address = str(platforms.get(m.get("id"), {}).get(network) or "").lower()
+            if address.startswith("0x") and len(address) == 42:
+                coins.append(RwaCoin(network, address, m["id"], _num(m.get("market_cap")), _num(m.get("total_volume"))))
+    return coins
+
+
+def rwa_candidates(coins: list[RwaCoin], network: str) -> list[str]:
+    """Addresses to look up on GeckoTerminal for one network (one batch): PINNED first, then half
+    the busiest by CoinGecko volume, then the largest by market cap; NOT_RWA excluded."""
+    out = [a for n, a, _ in PINNED if n == network]
+    pool = [c for c in coins if c.network == network and (network, c.address) not in NOT_RWA]
+    by_volume = sorted(pool, key=lambda c: (-c.volume_24h, -c.market_cap))
+    by_mcap = sorted(pool, key=lambda c: (-c.market_cap, -c.volume_24h))
+    for c in by_volume[: (GT_BATCH - len(out)) // 2] + by_mcap:
+        if len(out) >= GT_BATCH:
+            break
+        if c.address not in out:
+            out.append(c.address)
+    return out
+
+
+def parse_tokens(body: dict, network: str) -> list[Trending]:
+    """GeckoTerminal tokens/multi JSON (include=top_pools) → entries. A token with no pool has
+    price/change None, 0 volume and liquidity, buyable False. 24h change comes from the deepest
+    pool only when the token is that pool's base token."""
+    pools = {i.get("id"): i for i in body.get("included") or [] if i.get("type") == "pool"}
+    out = []
+    for t in body.get("data") or []:
+        a = t.get("attributes") or {}
+        if not a.get("address"):
+            continue
+        ids = [p.get("id") for p in ((t.get("relationships") or {}).get("top_pools") or {}).get("data") or []]
+        top = [pools[i] for i in ids if i in pools]
+        pool = max(top, key=lambda p: _num((p.get("attributes") or {}).get("reserve_in_usd")), default=None)
+        liquidity, change, dex = 0.0, None, ""
+        if pool:
+            pa = pool.get("attributes") or {}
+            liquidity = _num(pa.get("reserve_in_usd"))
+            dex = _rel_id(pool, "dex") or ""
+            if _rel_id(pool, "base_token") == t.get("id"):
+                change = _opt((pa.get("price_change_percentage") or {}).get("h24"))
+        symbol = a.get("symbol") or "?"
+        out.append(
+            Trending(
+                symbol, html.unescape(a.get("name") or symbol), a["address"].lower(), network,
+                _opt(a.get("price_usd")), _num((a.get("volume_usd") or {}).get("h24")), change,
+                liquidity, dex, liquidity >= MIN_LIQUIDITY_USD,
+            )
+        )
+    return out
+
+
+def rank_rwas(items: list[Trending], coins: list[RwaCoin]) -> list[Trending]:
+    """PINNED first (in order, with their note), then 24h DEX volume, then CoinGecko market cap;
+    NOT_RWA and duplicates dropped; top 10."""
+    pin = {(n, a): (i, note) for i, (n, a, note) in enumerate(PINNED)}
+    mcap = {(c.network, c.address): c.market_cap for c in coins}
+    seen, kept = set(), []
+    for t in items:
+        key = (t.network, t.address.lower())
+        if key in seen or (key in NOT_RWA and key not in pin):
+            continue
+        seen.add(key)
+        kept.append(replace(t, note=pin[key][1]) if key in pin else t)
+    kept.sort(
+        key=lambda t: (
+            pin.get((t.network, t.address.lower()), (len(pin), None))[0],
+            -t.volume_24h,
+            -mcap.get((t.network, t.address.lower()), 0.0),
+        )
+    )
+    return kept[:TOP_N]
+
+
+def load_rwa_snapshot(path: Path = RWA_SNAPSHOT) -> list[RwaCoin]:
+    body = json.loads(path.read_text())
+    return [RwaCoin(**c) for c in body["coins"]]
