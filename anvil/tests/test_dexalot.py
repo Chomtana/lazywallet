@@ -1,9 +1,12 @@
 import pytest
 from eth_account import Account
 from eth_account.messages import encode_typed_data
+from fastapi.testclient import TestClient
+from web3 import AsyncHTTPProvider, AsyncWeb3
 
+from lazysandbox.faucet import create_app
 from lazysandbox.dexalot import (
-    NATIVE, Pair, QuoteError, build_order, maker_amount, match_pair, parse_pairs, patch_code, sign_order, to_raw, typed_data,
+    DexalotSandbox, NATIVE, Pair, QuoteError, build_order, maker_amount, match_pair, parse_pairs, patch_code, sign_order, to_raw, typed_data,
 )
 
 USDC = "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E"
@@ -77,3 +80,25 @@ def test_sign_order_recovers_to_signer():
     order = build_order(MAKER, TAKER, NATIVE, USDC, 10**18, 9_574_000, now=1_000, nonce=7)
     sig = sign_order(signer.key, order)
     assert Account.recover_message(encode_typed_data(full_message=typed_data(order)), signature=sig) == signer.address
+
+
+async def test_quote_refuses_while_unavailable():
+    d = DexalotSandbox(AsyncWeb3(AsyncHTTPProvider("http://127.0.0.1:1")))
+    d.error = "signer patch failed"
+    with pytest.raises(QuoteError, match="unavailable") as e:
+        await d.quote(NATIVE, USDC, 10**18, TAKER)
+    assert e.value.status == 503
+
+
+def test_quote_endpoint_without_avalanche_is_503():
+    client = TestClient(create_app("http://127.0.0.1:1", ["http://localhost:5174"]))
+    res = client.post("/dexalot/quote", json={"token_in": NATIVE, "token_out": USDC, "amount_in": "1", "taker": TAKER})
+    assert res.status_code == 503
+
+
+def test_quote_endpoint_validates_input():
+    client = TestClient(create_app("http://127.0.0.1:1", ["http://localhost:5174"], "http://127.0.0.1:1"))
+    res = client.post("/dexalot/quote", json={"token_in": "nope", "token_out": USDC, "amount_in": "1", "taker": TAKER})
+    assert res.status_code == 400
+    res = client.post("/dexalot/quote", json={"token_in": NATIVE, "token_out": USDC, "amount_in": "-1", "taker": TAKER})
+    assert res.status_code == 400

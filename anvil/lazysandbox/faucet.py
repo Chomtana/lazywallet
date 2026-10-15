@@ -1,9 +1,12 @@
+from contextlib import asynccontextmanager
+
 from eth_abi import encode
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from web3 import AsyncHTTPProvider, AsyncWeb3, Web3
 
+from .dexalot import DexalotSandbox, QuoteError, avalanche_w3
 from .tokens import AVAX_FAUCET_AMOUNT, AVAX_TOKENS, ETH_FAUCET_AMOUNT, TOKENS
 
 ERC20_BALANCE_OF = [
@@ -63,11 +66,31 @@ class FundRequest(BaseModel):
     address: str
 
 
+class QuoteRequest(BaseModel):
+    token_in: str
+    token_out: str
+    amount_in: str
+    taker: str
+
+
 def create_app(rpc_url: str, allowed_origins: list[str], avax_rpc_url: str | None = None) -> FastAPI:
-    app = FastAPI(title="LazyWallet Sandbox Faucet")
-    app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_methods=["*"], allow_headers=["*"])
     w3 = AsyncWeb3(AsyncHTTPProvider(rpc_url))
-    avax_w3 = AsyncWeb3(AsyncHTTPProvider(avax_rpc_url)) if avax_rpc_url else None
+    avax_w3 = avalanche_w3(avax_rpc_url) if avax_rpc_url else None
+    dexalot = DexalotSandbox(avax_w3) if avax_w3 else None
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if dexalot:
+            try:
+                await dexalot.setup()
+                print(f"Dexalot RFQ: {len(dexalot.makers)} makers trust sandbox signer {dexalot.signer.address}", flush=True)
+            except Exception as e:
+                dexalot.error = str(e)
+                print(f"Dexalot RFQ signer patch FAILED — Avalanche swaps disabled: {e}", flush=True)
+        yield
+
+    app = FastAPI(title="LazyWallet Sandbox Faucet", lifespan=lifespan)
+    app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_methods=["*"], allow_headers=["*"])
 
     @app.get("/health")
     async def health() -> dict:
@@ -84,5 +107,18 @@ def create_app(rpc_url: str, allowed_origins: list[str], avax_rpc_url: str | Non
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Sandbox chain error: {e}") from e
         return {"funded": {name: {k: str(v) for k, v in f.items()} for name, f in parts}, "summary": summarize_networks(parts)}
+
+    @app.post("/dexalot/quote")
+    async def post_quote(req: QuoteRequest) -> dict:
+        if dexalot is None:
+            raise HTTPException(status_code=503, detail="The Avalanche Sandbox isn't configured.")
+        if not all(Web3.is_address(a) for a in (req.token_in, req.token_out, req.taker)):
+            raise HTTPException(status_code=400, detail="Invalid address")
+        if not req.amount_in.isdigit() or int(req.amount_in) <= 0:
+            raise HTTPException(status_code=400, detail="amount_in must be a positive integer of raw token units")
+        try:
+            return await dexalot.quote(req.token_in, req.token_out, int(req.amount_in), req.taker)
+        except QuoteError as e:
+            raise HTTPException(status_code=e.status, detail=str(e)) from e
 
     return app
