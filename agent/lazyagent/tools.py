@@ -63,6 +63,7 @@ from .transfers import (
     validate,
 )
 from .trending import TRENDING, TRENDING_TOOL, TrendingError, TrendingTokens, trending_reply
+from .unlocks import UNLOCKS, UNLOCKS_TOOL, UnlockError, Unlocks, unlocks_reply
 from .uniswap import (
     PERMIT2,
     UNIVERSAL_ROUTER,
@@ -85,7 +86,7 @@ Fund = Callable[[str], Awaitable[str]]
 SERVER_NAME = "wallet"
 TOOL_NAMES = [
     f"mcp__{SERVER_NAME}__{n}"
-    for n in ("get_balances", "resolve_recipient", "propose_transfer", "propose_swap", "unsupported_action", "request_test_funds", "list_trending_tokens", "list_airdrops", "propose_deposit")
+    for n in ("get_balances", "resolve_recipient", "propose_transfer", "propose_swap", "unsupported_action", "request_test_funds", "list_trending_tokens", "list_airdrops", "propose_deposit", "list_unlocks")
 ]
 
 
@@ -543,6 +544,14 @@ class WalletTools:
         except AirdropError as e:
             return err(str(e))
 
+    unlocks: Unlocks = UNLOCKS  # shared 10 min cache; tests assign their own
+
+    async def list_unlocks(self, args: dict) -> dict:
+        try:
+            return ok(await unlocks_reply(self.unlocks, self.send))
+        except UnlockError as e:
+            return err(str(e))
+
     async def _farm_swap(self, net: Network, dep: Deposit, usdc: Token, asset: Token, amount: int):
         """USDC → the farm's token on the deposit's venue: the pinned Uniswap v4 pool first (V4_THEN_KYBER), else
         KyberSwap with all of kyber.py's checks. Returns (steps, expected, minimum, via, route detail, price impact or None)."""
@@ -693,9 +702,10 @@ def build_mcp_server(t: WalletTools):
             tool(*TRENDING_TOOL)(t.list_trending_tokens),
             tool(*AIRDROPS_TOOL)(t.list_airdrops),
             tool(*DEPOSIT_TOOL)(t.propose_deposit),
+            tool(*UNLOCKS_TOOL)(t.list_unlocks),
             tool(
                 "unsupported_action",
-                "Use for bridging, scheduling, price alerts, other dApps, withdrawals/unstaking or anything other than balances, sends, swaps, adding funds, trending tokens and airdrops/farming.",
+                "Use for bridging, scheduling, price alerts, other dApps, withdrawals/unstaking or anything other than balances, sends, swaps, adding funds, trending tokens, airdrops/farming and token unlocks.",
                 {"type": "object", "properties": {"action": {"type": "string"}}, "required": ["action"]},
             )(t.unsupported_action),
         ],

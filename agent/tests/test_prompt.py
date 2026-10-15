@@ -9,3 +9,8 @@ def test_prompt_never_volunteers_the_environment():
 def test_prompt_answers_honestly_when_asked():
     assert "fork of Ethereum and Avalanche mainnet with real contracts and live prices, and no real funds move" in SYSTEM_PROMPT
     assert "Never claim it's live mainnet" in SYSTEM_PROMPT
+
+
+def test_prompt_routes_unlocks_to_list_unlocks():
+    assert "vesting" in SYSTEM_PROMPT and "→ list_unlocks" in SYSTEM_PROMPT
+    assert "never name a chain in that sentence" in SYSTEM_PROMPT

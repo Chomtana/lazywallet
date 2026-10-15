@@ -11,6 +11,7 @@ TOOL_LABELS = {
     "request_test_funds": "Adding funds",
     "list_airdrops": "Checking airdrops",
     "propose_deposit": "Preparing the farm",
+    "list_unlocks": "Checking upcoming unlocks",
     "unsupported_action": THINKING,
 }
 
