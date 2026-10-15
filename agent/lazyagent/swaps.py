@@ -90,13 +90,13 @@ def gas_reserve(steps: list[Step], gas_price: int) -> int:
     return sum(s.gas for s in steps) * gas_price * FEE_HEADROOM
 
 
-def check_swap_funds(token_in: Token, amount: int, balance: int, eth_balance: int, reserve: int) -> None:
+def check_swap_funds(token_in: Token, amount: int, balance: int, eth_balance: int, reserve: int, native: str = "ETH") -> None:
     if amount > balance:
         raise TransferError(f"You only have {format_units(balance, token_in.decimals)} {token_in.symbol}.")
     needed = reserve + (amount if token_in.address is None else 0)
     if needed > eth_balance:
         raise TransferError(
-            f"Not enough ETH left for the network fees (keep ~{format_units(reserve, 18)} ETH). Try a smaller amount or get test funds."
+            f"Not enough {native} left for the network fees (keep ~{format_units(reserve, 18)} {native}). Try a smaller amount or get test funds."
         )
 
 
@@ -110,6 +110,7 @@ def swap_rows(
     label: str,
     impact: float,
     fee_usd: float,
+    network: str = "Sandbox",
 ) -> list[dict]:
     return [
         {"label": "From", "value": short(sender)},
@@ -119,5 +120,5 @@ def swap_rows(
         {"label": "Route", "value": label},
         {"label": "Price impact", "value": f"{impact * 100:.2f}%"},
         {"label": "Network fee", "value": f"~{format_usd(fee_usd)}"},
-        {"label": "Network", "value": "Sandbox"},
+        {"label": "Network", "value": network},
     ]

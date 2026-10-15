@@ -62,7 +62,7 @@ def gas_units(token: Token) -> int:
     return 21_000 if token.address is None else 100_000
 
 
-def validate(token: Token, amount: int, balance: int, eth_balance: int, gas_cost: int) -> None:
+def validate(token: Token, amount: int, balance: int, eth_balance: int, gas_cost: int, native: str = "ETH") -> None:
     have = f"{format_units(balance, token.decimals)} {token.symbol}"
     if amount > balance:
         raise TransferError(f"You only have {have}.")
@@ -70,10 +70,10 @@ def validate(token: Token, amount: int, balance: int, eth_balance: int, gas_cost
     if token.address is None:
         if amount + reserve > eth_balance:
             raise TransferError(
-                f"That leaves too little for the network fee (keep ~{format_units(reserve, 18)} ETH). Try a slightly smaller amount."
+                f"That leaves too little for the network fee (keep ~{format_units(reserve, 18)} {native}). Try a slightly smaller amount."
             )
     elif reserve > eth_balance:
-        raise TransferError("You need a little ETH for the network fee. Get test funds from the Receive screen.")
+        raise TransferError(f"You need a little {native} for the network fee. Get test funds from the Receive screen.")
 
 
 def build_request(token: Token, to: str, amount: int) -> dict:
@@ -84,7 +84,7 @@ def build_request(token: Token, to: str, amount: int) -> dict:
 
 
 def display_rows(
-    token: Token, amount: int, to: str, name: str | None, price: float, gas_cost: int, eth_price: float
+    token: Token, amount: int, to: str, name: str | None, price: float, gas_cost: int, eth_price: float, network: str = "Sandbox"
 ) -> list[dict]:
     human = format_units(amount, token.decimals)
     usd = float(Decimal(amount).scaleb(-token.decimals)) * price
@@ -93,5 +93,5 @@ def display_rows(
         {"label": "To", "value": f"{name} ({short(to)})" if name else short(to)},
         {"label": "Amount", "value": f"{human} {token.symbol} ({format_usd(usd)})"},
         {"label": "Network fee", "value": f"~{format_usd(fee)}"},
-        {"label": "Network", "value": "Sandbox"},
+        {"label": "Network", "value": network},
     ]

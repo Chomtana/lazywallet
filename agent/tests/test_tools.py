@@ -42,8 +42,8 @@ async def test_get_balances_emits_card_and_summary():
     result = await tools.get_balances({})
     [card] = out.of_type("balances")
     assert card["holdings"] == [
-        {"symbol": "ETH", "amount": 10.0, "usdPrice": 3200.0},
-        {"symbol": "USDC", "amount": 500.0, "usdPrice": 1.0},
+        {"network": "Ethereum", "symbol": "ETH", "amount": 10.0, "usdPrice": 3200.0},
+        {"network": "Ethereum", "symbol": "USDC", "amount": 500.0, "usdPrice": 1.0},
     ]
     assert "ETH 10 ($32,000.00)" in text(result)
     assert "Total $32,500.00" in text(result)
@@ -67,7 +67,7 @@ async def test_propose_transfer_approved_flow():
     confirm = await wait_for_confirm(out)
     assert confirm["tx"]["title"] == "Send 0.1 ETH"
     assert confirm["tx"]["from"] == ME
-    assert confirm["tx"]["steps"] == [{"label": "Send", "request": {"to": ALICE, "value": str(10**17), "data": "0x"}}]
+    assert confirm["tx"]["steps"] == [{"label": "Send", "request": {"to": ALICE, "value": str(10**17), "data": "0x", "chainId": 1}}]
     proposals.resolve(confirm["id"], {"outcome": "approved", "hash": "0xabc", "status": "success"})
     result = await task
     assert "Sent 0.1 ETH to Alice" in text(result)

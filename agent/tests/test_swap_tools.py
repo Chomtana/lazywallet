@@ -102,7 +102,7 @@ async def test_wrap_and_unwrap():
     tools, out, _, _ = make(chain=chain)
     task = asyncio.create_task(tools.propose_swap({"token_in": "ETH", "token_out": "WETH", "amount": "1"}))
     confirm = await confirm_of(out)
-    assert confirm["tx"]["steps"] == [{"label": "Wrap ETH → WETH", "request": {"to": WETH, "value": str(10**18), "data": WETH_DEPOSIT}}]
+    assert confirm["tx"]["steps"] == [{"label": "Wrap ETH → WETH", "request": {"to": WETH, "value": str(10**18), "data": WETH_DEPOSIT, "chainId": 1}}]
     task.cancel()
 
     tools, out, _, _ = make(chain=chain)
@@ -166,7 +166,7 @@ async def test_confirmed_swap_shows_updated_balances():
     proposals.resolve(confirm["id"], {"outcome": "approved", "status": "success", "hash": "0xs"})
     result = text(await task)
     [card] = out.of_type("balances")
-    assert {"symbol": "USDC", "amount": 7_358.0, "usdPrice": 1.0} in card["holdings"]
+    assert {"network": "Ethereum", "symbol": "USDC", "amount": 7_358.0, "usdPrice": 1.0} in card["holdings"]
     assert "Updated balances" in result and "USDC 7358" in result
 
 
