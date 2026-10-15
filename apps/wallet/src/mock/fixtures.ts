@@ -14,15 +14,15 @@ export const DEFAULT_CONTACTS: Contact[] = [
   { id: 'bob', name: 'Bob', address: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC' },
 ]
 
+// Empty-chat quick starts: the quick actions as full sentences, then the best demos.
 export const EXAMPLES = [
-  'Give me test funds',
   "What's my balance?",
-  'Send 0.1 ETH to Alice',
-  'Swap 100 USDC to ETH',
-  'What RWA airdrops can I farm?',
-  'Alert me if ETH drops below 3000',
-  'Buy ETH every Monday with 50 USDC',
-  'If ETH < 3000, swap 500 USDC to ETH',
+  'What airdrops can I farm?',
+  'What are the upcoming token unlocks?',
+  'What memecoins are trending?',
+  'Swap 1 AVAX to USDC',
+  'Farm Avant with 50 USDC',
+  'What RWA tokens are hot?',
 ]
 
 export const UNISWAP: DappInfo = { name: 'Uniswap', url: 'https://app.uniswap.org', icon: '🦄' }
