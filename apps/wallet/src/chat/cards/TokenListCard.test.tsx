@@ -29,12 +29,12 @@ describe('TokenListCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Buy' }))
     fireEvent.click(screen.getByRole('button', { name: '0.5 AVAX' }))
     expect(onBuy).toHaveBeenCalledWith('Buy 0.5 AVAX of COQ (0x420FcA0121DC28039145009570975747295f2329)')
-    expect(screen.queryByText('Avalanche')).toBeNull() // one network: no tags
+    expect(screen.queryByRole('img', { name: 'Avalanche' })).toBeNull() // one network: no tags
   })
 
   it('tags networks when the list spans them, and disables Buy when replies are off', () => {
     render(<TokenListCard title="Hot RWA tokens" items={[COQ, { ...COQ, network: 'Ethereum', symbol: 'ONDO' }]} enabled={false} onBuy={() => {}} />)
-    expect(screen.getByText('Ethereum')).toBeTruthy()
+    expect(screen.getByRole('img', { name: 'Ethereum' })).toBeTruthy()
     for (const b of screen.getAllByRole('button', { name: 'Buy' })) expect((b as HTMLButtonElement).disabled).toBe(true)
   })
 })
