@@ -7,7 +7,7 @@ from decimal import Decimal
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
 from .chain import Chain
-from .dexalot import Quotes
+from .dexalot import DEXALOT_REVERT_HINT, Quotes, asset_of, dexalot_rows, dexalot_steps
 from .networks import ETHEREUM, NETWORKS, Choice, Network, candidates, find_network, pick_network
 from .outcome import outcome_text
 from .proposals import Proposals
@@ -26,7 +26,7 @@ from .swaps import (
     route_label,
     swap_rows,
 )
-from .tokens import ETH, find_token
+from .tokens import find_token
 from .transfers import (
     FEE_HEADROOM,
     TransferError,
@@ -268,8 +268,53 @@ class WalletTools:
             return ""
         return " Updated balances (shown as a card): " + res["content"][0]["text"].removeprefix("Balances shown to the user as a card: ")
 
-    async def _balance(self, token) -> int:
-        return await (self.chain.eth_balance(self.ctx.address) if token.address is None else self.chain.token_balance(token, self.ctx.address))
+    async def _uniswap_plan(self, tin, tout, amount: int, bps: int):
+        now = await self.chain.block_timestamp()
+        if (tin.symbol, tout.symbol) in (("ETH", "WETH"), ("WETH", "ETH")):
+            weth = tout if tin.address is None else tin
+            request = (
+                {"to": weth.address, "value": str(amount), "data": WETH_DEPOSIT}
+                if tin.address is None
+                else {"to": weth.address, "value": "0", "data": encode_weth_withdraw(amount)}
+            )
+            verb = "Wrap" if tin.address is None else "Unwrap"
+            steps = [Step(f"{verb} {tin.symbol} → {tout.symbol}", request, GAS["wrap"])]
+            expected = minimum = amount
+            label, impact = f"{verb} via WETH contract", 0.0
+        else:
+            found = await best_route(self.quoter, currency_of(tin), currency_of(tout), amount)
+            if found is None:
+                raise TransferError(f"I couldn't find a Uniswap v4 route for {tin.symbol} → {tout.symbol} on Sandbox.")
+            route, expected = found
+            probe_in = max(amount // 1000, 1)
+            impact = price_impact(amount, expected, probe_in, await self.quoter.quote(route, probe_in) or 0)
+            if impact > MAX_PRICE_IMPACT:
+                raise TransferError(f"That trade would move the price by about {impact:.0%}. Try a smaller amount.")
+            minimum = min_out(expected, bps)
+            steps = await self._approvals(tin, amount, now) if tin.address else []
+            swap = {"to": UNIVERSAL_ROUTER, "value": str(amount if tin.address is None else 0), "data": encode_swap(route, amount, minimum, now + DEADLINE_S)}
+            steps.append(Step(f"Swap {tin.symbol} → {tout.symbol}", swap, GAS["swap1" if len(route.hops) == 1 else "swap2"]))
+            label = route_label(route)
+
+        def rows(fee_usd: float) -> list[dict]:
+            return swap_rows(self.ctx.address, tin, tout, amount, expected, minimum, label, impact, fee_usd, network=ETHEREUM.label)
+
+        return steps, rows, f" The price probably moved more than the {bps / 100:g}% slippage — ask again for a fresh quote."
+
+    async def _dexalot_plan(self, net: Network, tin, tout, amount: int):
+        if self.dexalot is None:
+            raise TransferError("Dexalot swaps aren't set up on this Sandbox.")
+        quote = await self.dexalot.quote(asset_of(tin), asset_of(tout), amount, self.ctx.address)
+        allowance = 0
+        if tin.address is not None:
+            raw = await self.chains[net.key].call(tin.address, encode_erc20_allowance(self.ctx.address, quote["maker"]))
+            allowance = int.from_bytes(raw[:32], "big")
+        received = int(quote["order"]["makerAmount"])
+
+        def rows(fee_usd: float) -> list[dict]:
+            return dexalot_rows(self.ctx.address, tin, tout, amount, received, fee_usd, net.label)
+
+        return dexalot_steps(tin, tout, quote, allowance), rows, DEXALOT_REVERT_HINT
 
     async def _approvals(self, token, amount: int, now: int) -> list[Step]:
         erc20 = int.from_bytes((await self.chain.call(token.address, encode_erc20_allowance(self.ctx.address, PERMIT2)))[:32], "big")
@@ -281,80 +326,49 @@ class WalletTools:
     async def propose_swap(self, args: dict) -> dict:
         if not self.ctx.address:
             return err("No wallet is active in the app.")
-        tin = find_token(str(args.get("token_in", "")), ETHEREUM.tokens)
-        tout = find_token(str(args.get("token_out", "")), ETHEREUM.tokens)
-        if tin is None or tout is None:
-            return err(f"I can only swap {self.supported()} on Sandbox.")
-        if tin == tout:
+        sym_in, sym_out = str(args.get("token_in", "")).strip(), str(args.get("token_out", "")).strip()
+        if sym_in.upper() == sym_out.upper():
             return err("Pick two different tokens to swap.")
+        net = await self._resolve(args, [sym_in, sym_out], str(args.get("amount", "")), "swap")
+        if isinstance(net, dict):
+            return net
+        tin, tout = find_token(sym_in, net.tokens), find_token(sym_out, net.tokens)
+        chain = self.chains[net.key]
         try:
             amount = parse_amount(str(args.get("amount", "")), tin.decimals)
             bps = parse_slippage(args.get("slippage_percent"))
-            eth_balance = await self.chain.eth_balance(self.ctx.address)
-            balance = await self._balance(tin)
+            native_balance = await chain.eth_balance(self.ctx.address)
+            balance = await self._balance_on(net, tin)
             if amount > balance:
                 raise TransferError(f"You only have {format_units(balance, tin.decimals)} {tin.symbol}.")
-            now = await self.chain.block_timestamp()
-            pair = (tin.symbol, tout.symbol)
-            if pair in (("ETH", "WETH"), ("WETH", "ETH")):
-                weth = tout if tin.address is None else tin
-                request = (
-                    {"to": weth.address, "value": str(amount), "data": WETH_DEPOSIT}
-                    if tin.address is None
-                    else {"to": weth.address, "value": "0", "data": encode_weth_withdraw(amount)}
-                )
-                verb = "Wrap" if tin.address is None else "Unwrap"
-                steps = [Step(f"{verb} {tin.symbol} → {tout.symbol}", request, GAS["wrap"])]
-                expected = minimum = amount
-                label, impact = f"{verb} via WETH contract", 0.0
+            if net.swap_venue == "dexalot":
+                steps, rows, hint = await self._dexalot_plan(net, tin, tout, amount)
             else:
-                found = await best_route(self.quoter, currency_of(tin), currency_of(tout), amount)
-                if found is None:
-                    raise TransferError(f"I couldn't find a Uniswap v4 route for {tin.symbol} → {tout.symbol} on Sandbox.")
-                route, expected = found
-                probe_in = max(amount // 1000, 1)
-                impact = price_impact(amount, expected, probe_in, await self.quoter.quote(route, probe_in) or 0)
-                if impact > MAX_PRICE_IMPACT:
-                    raise TransferError(f"That trade would move the price by about {impact:.0%}. Try a smaller amount.")
-                minimum = min_out(expected, bps)
-                steps = await self._approvals(tin, amount, now) if tin.address else []
-                swap = {
-                    "to": UNIVERSAL_ROUTER,
-                    "value": str(amount if tin.address is None else 0),
-                    "data": encode_swap(route, amount, minimum, now + DEADLINE_S),
-                }
-                steps.append(Step(f"Swap {tin.symbol} → {tout.symbol}", swap, GAS["swap1" if len(route.hops) == 1 else "swap2"]))
-                label = route_label(route)
-            gas_price = await self.chain.gas_price()
-            reserve = gas_reserve(steps, gas_price)
-            check_swap_funds(tin, amount, balance, eth_balance, reserve)
-            fee_usd = float(Decimal(reserve // FEE_HEADROOM).scaleb(-18)) * await self.chain.price_usd(ETH)
-            out_before = await self._balance(tout)
+                steps, rows, hint = await self._uniswap_plan(tin, tout, amount, bps)
+            reserve = gas_reserve(steps, await chain.gas_price())
+            check_swap_funds(tin, amount, balance, native_balance, reserve, native=net.native.symbol)
+            fee_usd = float(Decimal(reserve // FEE_HEADROOM).scaleb(-18)) * await chain.price_usd(net.native)
+            out_before = await self._balance_on(net, tout)
         except TransferError as e:
             return err(str(e))
         except Exception as e:
-            return err(f"The Sandbox chain isn't reachable right now ({e}).")
+            return err(f"The {net.name} Sandbox chain isn't reachable right now ({e}).")
 
         human_in = f"{format_units(amount, tin.decimals)} {tin.symbol}"
-        steps_json = self._steps_json([s.to_json() for s in steps], ETHEREUM)
+        steps_json = self._steps_json([s.to_json() for s in steps], net)
         pid, fut = self.proposals.new()
         await self.send(
             {
                 "type": "confirm",
                 "id": pid,
-                "tx": {
-                    "title": f"Swap {human_in} → {tout.symbol}",
-                    "from": self.ctx.address,
-                    "rows": swap_rows(self.ctx.address, tin, tout, amount, expected, minimum, label, impact, fee_usd, network=ETHEREUM.label),
-                    "steps": steps_json,
-                },
+                "tx": {"title": f"Swap {human_in} → {tout.symbol}", "from": self.ctx.address, "rows": rows(fee_usd), "steps": steps_json},
             }
         )
         result = await self.proposals.wait(pid, fut, self.approval_timeout)
         success = ""
         if _succeeded(result):
             try:
-                received = max(await self._balance(tout) - out_before, 0)
+                received = max(await self._balance_on(net, tout) - out_before, 0)
             except Exception:
                 received = None
             if received is None:
@@ -362,8 +376,7 @@ class WalletTools:
             else:
                 got = f"{display_units(received, tout.decimals)} {tout.symbol}"
                 got = f"about {got} (after network fees)" if tout.address is None else got
-            success = f"Swapped {human_in} for {got}. Confirmed on {ETHEREUM.label}, tx {result.get('hash')}." + await self._fresh_balances()
-        hint = f" The price probably moved more than the {bps / 100:g}% slippage — ask again for a fresh quote."
+            success = f"Swapped {human_in} for {got}. Confirmed on {net.label}, tx {result.get('hash')}." + await self._fresh_balances()
         return ok(outcome_text(result, steps_json, "swap", success, revert_hint=hint))
 
     async def request_test_funds(self, args: dict) -> dict:

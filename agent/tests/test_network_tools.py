@@ -94,3 +94,63 @@ async def test_avalanche_gas_wording_uses_avax():
     tools, _ = make(avax=avax)
     result = await tools.propose_transfer({"token": "USDC", "amount": "10", "to": "Alice", "network": "avalanche"})
     assert "little AVAX" in text(result)
+
+
+from lazyagent.dexalot import NATIVE  # noqa: E402
+from lazyagent.transfers import TransferError  # noqa: E402
+
+MAKER = "0x1FDb2b265d2A5C4302A75cAd682222E4e7bCc313"
+AVAX_USDC = "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E"
+
+
+class FakeQuotes:
+    def __init__(self, fail: str | None = None):
+        self.calls = []
+        self.fail = fail
+
+    async def quote(self, token_in, token_out, amount_in, taker):
+        self.calls.append((token_in, token_out, amount_in, taker))
+        if self.fail:
+            raise TransferError(self.fail)
+        order = {"nonceAndMeta": "7", "expiry": "9999999999", "makerAsset": token_out, "takerAsset": token_in, "maker": MAKER,
+                 "taker": taker, "makerAmount": "9574000", "takerAmount": str(amount_in)}
+        return {"maker": MAKER, "order": order, "signature": "0x" + "11" * 65}
+
+
+def make_swap(quotes=None, avax=None):
+    out = Outbox()
+    proposals = Proposals()
+    avax = avax or FakeChain(tokens={"USDC": 20 * 10**6})
+    tools = WalletTools(FakeChain(), out, WalletContext(address=ME), proposals, approval_timeout=5, avalanche=avax, dexalot=quotes or FakeQuotes())
+    return tools, out, proposals, avax
+
+
+async def test_avalanche_swap_uses_dexalot_and_reports_exact_output():
+    quotes = FakeQuotes()
+    tools, out, proposals, avax = make_swap(quotes)
+    task = asyncio.create_task(tools.propose_swap({"token_in": "AVAX", "token_out": "USDC", "amount": "1"}))
+    confirm = await confirm_of(out)
+    assert quotes.calls == [(NATIVE, AVAX_USDC, 10**18, ME)]
+    assert [s["label"] for s in confirm["tx"]["steps"]] == ["Swap AVAX → USDC"]
+    assert confirm["tx"]["steps"][0]["request"]["chainId"] == 43114
+    rows = {r["label"]: r["value"] for r in confirm["tx"]["rows"]}
+    assert rows["Receive exactly"] == "9.574 USDC" and rows["Network"] == "Avalanche (Sandbox)"
+    avax.tokens["USDC"] += 9_574_000
+    proposals.resolve(confirm["id"], {"outcome": "approved", "status": "success", "hash": "0xs"})
+    result = text(await task)
+    assert "Swapped 1 AVAX for 9.574 USDC" in result and "Avalanche (Sandbox)" in result
+
+
+async def test_avalanche_erc20_swap_adds_approval():
+    tools, out, _, _ = make_swap()
+    task = asyncio.create_task(tools.propose_swap({"token_in": "USDC", "token_out": "AVAX", "amount": "10"}))
+    confirm = await confirm_of(out)
+    assert [s["label"] for s in confirm["tx"]["steps"]] == ["Allow USDC", "Swap USDC → AVAX"]
+    task.cancel()
+
+
+async def test_avalanche_swap_errors_send_no_card():
+    tools, out, _, _ = make_swap(FakeQuotes(fail="Dexalot doesn't offer that pair. Available: AVAX/USDC."))
+    result = await tools.propose_swap({"token_in": "AVAX", "token_out": "BTC.b", "amount": "1"})
+    assert result["is_error"] is True and "Available: AVAX/USDC" in text(result)
+    assert not out.of_type("confirm")
