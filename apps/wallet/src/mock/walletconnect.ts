@@ -13,7 +13,7 @@ export function isWcUri(input: string): boolean {
 }
 
 export function mockProposal(): Proposal {
-  return { dapp: UNISWAP, chain: 'Sandbox (eip155:1)', methods: ['eth_sendTransaction', 'personal_sign'] }
+  return { dapp: UNISWAP, chain: 'Ethereum (eip155:1)', methods: ['eth_sendTransaction', 'personal_sign'] }
 }
 
 export function dappRequest(dapp: DappInfo): AgentReply {

@@ -146,7 +146,7 @@ export function useAgentChat(options: Options) {
       role: 'assistant',
       kind: 'status',
       state: 'pending',
-      text: steps ? progressText(0, steps) : 'Submitting to Sandbox…',
+      text: steps ? progressText(0, steps) : 'Submitting…',
     }
     dispatch({ type: 'local', messages: [pending] })
     if (!steps) {
