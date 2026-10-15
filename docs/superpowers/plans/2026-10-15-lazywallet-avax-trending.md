@@ -1,79 +1,89 @@
-# LazyWallet — Trending Tokens (Avalanche Memecoins + RWAs) Implementation Plan
+# LazyWallet — Trending Tokens (Avalanche Memecoins + RWA Project Tokens) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A read-only agent tool `list_trending_tokens(category, network)` answers "what's trending on Avalanche?" with up to 10 live Avalanche memecoins and "what RWAs can I buy?" with up to 10 real-world-asset tokens on Ethereum and Avalanche (pinned XAUt0 first). Each token has its contract address, network and a `buyable` flag, so the agent can summarise and offer to buy by contract address.
+**Goal:** A read-only agent tool `list_trending_tokens(category, network)` answers two questions from live mainnet data:
+- "What's trending on Avalanche?" → up to 10 Avalanche memecoins.
+- "What RWA tokens are hot?" → up to 10 RWA **project tokens** on Ethereum and Avalanche (ONDO, PLUME, SYRUP, CFG, …), with XAUt0 (tokenized gold) pinned first as the Avalanche showcase.
 
-**Architecture:** One new runtime module, `agent/lazyagent/trending.py`. It has pure functions (`parse_pools`, `is_memecoin`, `rank_memes`, `rwa_addresses`, `rwa_candidates`, `parse_tokens`, `rank_rwas`, `check_args`, `to_json`), an injectable `GeckoTerminalSource` (stdlib `urllib` in `asyncio.to_thread`, like `faucet.py`) and a 60 s `TrendingTokens` cache keyed by (category, network). RWA membership (CoinGecko's RWA category mapped to Ethereum/Avalanche addresses) comes from a checked-in snapshot, `agent/lazyagent/data/rwa_coingecko.json`. The offline script `agent/lazyagent/rwa_snapshot.py` refreshes it, pacing CoinGecko's free API. At request time only GeckoTerminal is called. `tools.py` gets one method and one registration and reads the shared cache through a class attribute, so `__init__`, `session.py` and `server.py` are not touched. `prompt.py` gets one line. No UI.
+Each token carries its contract address, network, a `buyable` flag and an optional `note`, so the agent can summarise and offer to buy by contract address.
+
+**Architecture:** One new runtime module, `agent/lazyagent/trending.py`:
+- Pure functions: `parse_pools`, `is_memecoin`, `rank_memes`, `rwa_addresses`, `rwa_candidates`, `parse_tokens`, `rank_rwas`, `parse_args`, `to_json`.
+- An injectable `GeckoTerminalSource` (stdlib `urllib` in `asyncio.to_thread`, like `faucet.py`).
+- A 60 s `TrendingTokens` cache keyed by (category, network), with one fetcher per category.
+- The tool layer: `TRENDING_TOOL` (name, description, schema) and `trending_reply`.
+
+Categories are a registry (`CATEGORY_NETWORKS`). Adding one later, such as the planned `airdrop`, means adding a registry entry, a fetcher and a description line in `trending.py`, plus a prompt line. `tools.py` stays as it is.
+
+RWA project tokens come from a checked-in snapshot, `agent/lazyagent/data/rwa_coingecko.json`. A project token is a coin in CoinGecko's `real-world-assets-rwa` category that is not in `tokenized-products`. The offline script `agent/lazyagent/rwa_snapshot.py` builds the snapshot, pacing CoinGecko's free API. At request time only GeckoTerminal is called.
+
+`tools.py` gets one import, one name, one class attribute and method, and a one-line registration `tool(*TRENDING_TOOL)`. `prompt.py` gets one line. No UI.
 
 **Tech Stack:** Python 3.12+ (uv, claude-agent-sdk, pytest-asyncio with `asyncio_mode = "auto"`), GeckoTerminal public API v2 (no key), CoinGecko public API v3 (no key, offline snapshot only).
 
-**Spec:** `docs/superpowers/specs/2026-10-15-lazywallet-avax-trending-design.md` (rev. 3)
+**Spec:** `docs/superpowers/specs/2026-10-15-lazywallet-avax-trending-design.md` (rev. 4)
 
 ## Global Constraints
 
-- Branch `feat-trending-avax` in its own worktree, from `main`. The sibling branch (KyberSwap + custom tokens) heavily edits `agent/lazyagent/tools.py` and `prompt.py` and merges first. Limit edits there to:
+- **Branch and merge footprint.** Work in a worktree on branch `feat-trending-avax` from `main`. The sibling branch (KyberSwap + custom tokens) heavily edits `agent/lazyagent/tools.py` and `prompt.py`, and it merges first. Limit edits in those two files to:
   - one import line
   - one name in `TOOL_NAMES`
   - one class attribute and one method
-  - one `tool(...)` registration
+  - one `tool(*TRENDING_TOOL)(...)` line
   - one prompt line
 
   Do not touch `WalletTools.__init__`, `session.py` or `server.py`.
-- Networks:
+- **Networks.**
   - Memecoins: Avalanche only.
   - RWAs: Ethereum (CoinGecko platform `ethereum`, GeckoTerminal `eth`) and Avalanche (`avalanche` / `avax`).
-  - All data is live **mainnet** and read-only; nothing is signed.
-- GeckoTerminal: base `https://api.geckoterminal.com/api/v2/networks`, no key, ~30 req/min, and it 429s after a short burst. Requests (all verified 2026-10-15):
+  - Everything is live **mainnet** and read-only; nothing is signed.
+- **GeckoTerminal.** Base URL `https://api.geckoterminal.com/api/v2/networks`. No key, about 30 req/min, and it answers 429 after a short burst. These requests were verified on 2026-10-15:
   - `/avax/trending_pools?include=base_token,dex`
   - `/avax/dexes/arena-dex/pools?sort=h24_volume_usd_desc&include=base_token,dex`
-  - `/{eth|avax}/tokens/multi/{≤30 comma-separated addresses}?include=top_pools` (more than 30 → HTTP 400 "maximum 30 addresses allowed")
-- CoinGecko (snapshot script only):
-  - `/api/v3/coins/markets?vs_currency=usd&category=real-world-assets-rwa&per_page=250&page=N` (all pages)
-  - `/api/v3/coins/list?include_platform=true`
-- HTTP: stdlib `urllib`, no new dependency. Runtime calls go through `asyncio.to_thread` with a 15 s timeout. The snapshot script is synchronous with a 120 s timeout (`coins/list` is ~4 MB).
-- Cache: 60 s per (category, network). Errors are never cached.
-- Meme filter (spec §2, verbatim):
-  - Exclude `AVAX_TOKENS` and WAVAX.
-  - Exclude wrapped/bridged/staked tokens: symbol contains AVAX/BTC/ETH, or ends `.e`/`.b`; name contains staked/staking/wrapped/bridged.
-  - Exclude stablecoins: symbol contains USD, or is DAI, AUSD, EURC, EUROC, XAUT, XAUT0, FRAX, GHO, MIM or JPYC.
-  - Exclude the curated `NOT_MEMES` addresses: JOE, PHAR, BLACK, QI, FOLKS, ARENA, MUON, BEAM, ZRO, GUN, NXPC.
-  - Liquidity of the token's deepest pool must be ≥ **$10,000**; anything below is dropped.
-- RWA rules:
-  - Include only coins in CoinGecko's `real-world-assets-rwa` category that have an Ethereum or Avalanche address.
-  - Exclude the curated `NOT_RWA` (network, address) list. It covers LINK on both chains, plus the protocol tokens found during planning.
-  - `PINNED = [("avalanche", "0x2775d5105276781b4b85ba6ea6a6653beed1dd32")]` (XAUt0). It always comes first when the network filter includes it, with real market data and the real `buyable` value.
-  - `buyable` = deepest pool liquidity ≥ $10,000. Unbuyable RWAs are kept with `buyable: false`.
-- Ranking:
+  - `/{eth|avax}/tokens/multi/{≤30 comma-separated addresses}?include=top_pools`. More than 30 addresses returns HTTP 400 "maximum 30 addresses allowed".
+- **CoinGecko** (snapshot script only):
+  - `/api/v3/coins/markets?vs_currency=usd&category={real-world-assets-rwa|tokenized-products}&per_page=250&page=N`, every page.
+  - `/api/v3/coins/list?include_platform=true`.
+- **HTTP.** Stdlib `urllib` only, no new dependency. Runtime calls run in `asyncio.to_thread` with a 15 s timeout. The snapshot script is synchronous with a 120 s timeout, because `coins/list` is about 4 MB.
+- **Cache.** 60 s per (category, network). Errors are never cached.
+- **Meme filter** (spec §2, verbatim). Exclude:
+  - `AVAX_TOKENS` and WAVAX.
+  - Wrapped, bridged and staked tokens: symbol contains AVAX/BTC/ETH; name contains staked/staking/wrapped/bridged.
+  - Stablecoins: symbol contains USD, or is DAI, AUSD, EURC, EUROC, XAUT, XAUT0, FRAX, GHO, MIM or JPYC.
+  - The curated `NOT_MEMES` addresses: JOE, PHAR, BLACK, QI, FOLKS, ARENA, MUON, BEAM, ZRO, GUN, NXPC.
+  - Tokens whose deepest pool has less than **$10,000** of liquidity.
+- **RWA project tokens.** A coin qualifies if it is in `real-world-assets-rwa` and **not** in `tokenized-products`, CoinGecko's "Tokenized Assets" umbrella. Verified 2026-10-15: `tokenized-products` (2,230 ids) contains every tokenized-stock, ETF, gold, silver, commodity, treasury, T-bill, money-market, credit, private-credit, pre-IPO and uranium sub-category, and the union of all those sub-categories adds no id.
+  - Also exclude USD stablecoins (symbol contains "usd").
+  - Also exclude the curated `NOT_RWA` (network, address) set. It holds infra/oracle/L1 tokens (LINK on both chains, QNT, INJ, TRAC, RED, DIA, CHR), USAT, and three asset tokens CoinGecko left untagged (MPRA; ACRED and VBILL on both chains).
+- **Pinned entry.** `PINNED = [("avalanche", "0x2775d5105276781b4b85ba6ea6a6653beed1dd32", "tokenized gold — Avalanche showcase")]` (XAUt0). It always comes first when the network filter includes Avalanche, with real market data, the real `buyable` value and that `note`.
+- **Buyable.** `buyable` means the deepest pool holds at least $10,000. RWAs below that are kept with `buyable: false`.
+- **Ranking.** Top **10** for both categories.
   - Memes: trending order first, then 24h volume.
   - RWAs: `PINNED`, then 24h DEX volume, then CoinGecko market cap.
-  - Top **10** in both cases.
-- `Trending` fields, in order: `symbol, name, address, network, price_usd, volume_24h, change_24h, liquidity_usd, dex, buyable`.
-- Tool error text, verbatim:
+- **`Trending` fields, in order:** `symbol, name, address, network, price_usd, volume_24h, change_24h, liquidity_usd, dex, buyable, note`. `note` defaults to `None`.
+- **Category registry.** `CATEGORY_NETWORKS = {"meme": ("avalanche",), "rwa": ("ethereum", "avalanche")}`. The tool schema enums, the argument errors and `TrendingTokens` dispatch all derive from it.
+- **Tool error texts, verbatim:**
   - Fetch failure: `Couldn't load trending tokens right now.`
-  - Bad category: `category must be 'meme' or 'rwa'.`
-  - Bad network: `network must be 'ethereum' or 'avalanche'.`
-  - Memes on Ethereum: `Memecoins are Avalanche only.`
-- An empty list is a normal result (`tokens: []`). The tool never crashes.
-- Buying is out of scope. The prompt tells the model to call `propose_swap` with the token's network and `token_out` = its contract address. Until the Kyber branch lands, that returns the normal unsupported-token error.
-- Unit tests never hit the network. They use fixtures (1–2 tokens per case), a local `HTTPServer` and fakes.
-- Done = `pnpm test:py`, `pnpm build && pnpm lint` pass.
-- Spec deviations decided while planning (recorded in the spec in Task 7):
-  - **Snapshot instead of a live 24 h CoinGecko cache.** The RWA category is ~2,470 coins over 10 pages, and CoinGecko's free tier answered 429 (Retry-After 15–60 s) even at one request every 15 s. Building the set on a user's request would take minutes.
-  - GeckoTerminal is looked up for at most 30 candidates per network. These are `PINNED`, then the 15 busiest by CoinGecko volume, then the largest by market cap, so zero-volume permissioned funds such as BUIDL still appear.
-  - `NOT_RWA` covers more than LINK (ONDO, QNT, INJ, PLUME, …).
-  - The RWA `dex` is GeckoTerminal's dex id, because `tokens/multi` can't include dex names; meme `dex` is the display name.
-  - RWA `change_24h` and `price_usd` are `null` when unknown.
-  - The cache method is named `fetch`, because a method named `list` would shadow the builtin inside the class.
-  - `CoinGeckoRwaSource` lives in the offline script `rwa_snapshot.py`, not `trending.py`.
+  - Unknown category: `category must be one of: meme, rwa.`
+  - Unsupported network: `meme tokens are only listed on Avalanche.` / `rwa tokens are only listed on Ethereum and Avalanche.`
+- **Empty results.** An empty list is a normal result (`tokens: []`). The tool never crashes.
+- **Buying is out of scope.** The prompt tells the model to call `propose_swap` with the token's network and `token_out` set to its contract address. Until the Kyber branch lands, that returns the normal unsupported-token error.
+- **Tests.** Unit tests never hit the network: they use fixtures (1–2 tokens per case), a local `HTTPServer` and fakes.
+- **Done** means `pnpm test:py` and `pnpm build && pnpm lint` pass.
+- **Spec deviations decided while planning** (recorded in the spec in Task 7):
+  - The asset exclusion uses one category, `tokenized-products`, instead of listing each sub-category, because it already contains them all.
+  - `NOT_RWA` also lists MPRA, ACRED and VBILL, asset tokens that CoinGecko filed only under RWA. MPRA would otherwise rank #2 on Ethereum at about $58M/day.
+  - USD stablecoins are dropped by a symbol rule (catches wstUSDT, cUSDO); only USAT needs a `NOT_RWA` entry.
+  - Tool arguments are parsed in `trending.py` (`parse_args`, `trending_reply`, `TRENDING_TOOL`), so the `tools.py` change is a few lines and a new category never touches it.
 
 ## Review Focus
 
-- **GeckoTerminal 429s after a few quick asks (seen while planning).** The user should hear "Couldn't load trending tokens right now.", the failure must not be cached, and the next ask retries. Tests: Task 4 (`test_source_raises_on_rate_limit`, `test_errors_are_not_cached`) and Task 6 (`test_fetch_failure_is_a_friendly_error`).
-- **An RWA with no DEX pool (BUIDL), or whose deepest pool lists it as the quote token (GOOGLon / USDC).** It must still appear with `buyable: false` or a `null` 24h change. It must never show the wrong token's price move. Tests: Task 3 (`test_parse_tokens_avalanche_pool_and_no_pool`, `test_parse_tokens_change_only_when_token_is_the_pool_base`).
-- **Ethereum has ~1,170 RWA addresses but the batch endpoint takes 30.** Candidates must include the pinned token, the busiest RWAs and the big permissioned funds, never more than 30. Test: Task 3 (`test_candidates_mix_busiest_and_largest_and_fill_one_batch`, `test_candidates_pin_first_and_skip_not_rwa`).
-- **The model passes `network: "ethereum"` for memes, a capitalised network, or a made-up category.** The tool returns a clear error without fetching, and accepts "Avalanche". Tests: Task 2 (`test_check_args`) and Task 6 (`test_bad_arguments_are_errors_without_fetching`, `test_rwa_with_network`).
-- **Malformed or partial API data** (base token missing from `included`, `null` numbers, HTML entities such as `S&amp;P` in names). That entry is skipped or reads 0/None, and the rest still render. Tests: Task 2 (`test_parse_pools_skips_pools_without_base_token_and_zeroes_missing_numbers`) and Task 3 (`test_parse_tokens_tolerates_an_empty_body_and_unescapes_names`).
+- **GeckoTerminal returns 429 after a few quick asks** (seen while planning). The user should hear "Couldn't load trending tokens right now.", the failure must not be cached, and the next ask must retry. Tests: Task 4 (`test_source_raises_on_rate_limit`, `test_errors_are_not_cached`) and Task 6 (`test_fetch_failure_is_a_friendly_error`).
+- **Asset tokens leaking into "RWA tokens."** Tokenized stocks, gold and funds must not appear, except XAUt0, which is pinned and labelled by its `note`. Tests: Task 3 (`test_rwa_addresses_keeps_project_tokens_and_drops_asset_tokens`, `test_rank_rwas_pinned_first_with_note_...`), Task 5 (`test_pages_both_categories_and_drops_asset_tokens`, `test_shipped_snapshot_has_project_tokens_not_asset_tokens`).
+- **A project token whose deepest pool lists it as the quote token** (RSR in a Curve pool), **or a token with no pool at all** (NXRA). It must show a `null` 24h change or `buyable: false`, and never another token's price move. Tests: Task 3 (`test_parse_tokens_change_only_when_token_is_the_pool_base`, `test_parse_tokens_pool_and_no_pool`).
+- **The model sends `network: "ethereum"` for memes, a capitalised network, or a made-up category.** The tool should return a clear error without fetching anything, and should accept "Ethereum" or "Avalanche". Tests: Task 2 (`test_parse_args_*`) and Task 6 (`test_bad_arguments_are_errors_without_fetching`, `test_rwa_with_network`).
+- **Malformed or partial API data**: a base token missing from `included`, `null` numbers, HTML entities in names. The bad entry is skipped or reads 0/None, and the rest still render. Tests: Task 2 (`test_parse_pools_skips_pools_without_base_token_and_zeroes_missing_numbers`) and Task 3 (`test_parse_tokens_tolerates_an_empty_body_and_unescapes_names`).
 
 ---
 
@@ -81,56 +91,57 @@
 
 | File | Responsibility |
 |---|---|
-| `docs/research/2026-10-15-avalanche-trending-tokens.md` (new) | Sources, filters, rankings, dated sample output for memes and RWAs |
-| `agent/lazyagent/trending.py` (new) | Pure: types, meme parse/filter/rank, RWA address/candidates/parse/rank, `check_args`, `to_json`, `load_rwa_snapshot`. I/O: `GeckoTerminalSource`, `TrendingTokens` (60 s cache), `TRENDING` |
+| `docs/research/2026-10-15-avalanche-trending-tokens.md` (new) | Sources, filters, rankings, dated sample output for memes and RWA project tokens |
+| `agent/lazyagent/trending.py` (new) | Pure: types, category registry, meme parse/filter/rank, RWA addresses/candidates/parse/rank, `parse_args`, `to_json`, `load_rwa_snapshot`. I/O: `GeckoTerminalSource`, `TrendingTokens`, `TRENDING`. Tool layer: `TRENDING_TOOL`, `trending_reply` |
 | `agent/lazyagent/rwa_snapshot.py` (new) | Offline: `CoinGeckoRwaSource` (paged, Retry-After), `snapshot_json`, `main()` |
-| `agent/lazyagent/data/rwa_coingecko.json` (new, generated) | RWA (network, address, CoinGecko id, market cap, volume) snapshot |
+| `agent/lazyagent/data/rwa_coingecko.json` (new, generated) | RWA project tokens: network, address, CoinGecko id, market cap, volume (~130 rows, ~21 KB) |
 | `agent/tests/fixtures/*.json` (new) | Real responses captured 2026-10-15, trimmed to 1–2 tokens |
 | `agent/tests/http_stub.py` (new) | Local HTTP stand-in for GeckoTerminal / CoinGecko |
 | `agent/tests/test_trending.py`, `test_trending_rwa.py`, `test_trending_source.py`, `test_rwa_snapshot.py`, `test_trending_tools.py` (new) | Tests |
 | `agent/tests/fakes.py` | `FakeTrendingSource` (appended) |
-| `agent/lazyagent/tools.py`, `prompt.py`, `agent/tests/test_tools.py` | Tool registration, one prompt line, `TOOL_NAMES` |
+| `agent/lazyagent/tools.py`, `prompt.py`, `agent/tests/test_tools.py` | Tool wiring, one prompt line, `TOOL_NAMES` |
 | `CLAUDE.md`, spec | One convention line; planning deviations |
 
 ---
 
-### Task 1: Research note — sources, filters, rankings (memes + RWAs)
+### Task 1: Research note — sources, filters, rankings (memes + RWA project tokens)
 
 **Files:**
 - Create: `docs/research/2026-10-15-avalanche-trending-tokens.md`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: the decisions that Tasks 2–6 implement. If your spot-checks contradict them (for example, GeckoTerminal now needs a key, or `tokens/multi` no longer returns `top_pools`), **stop and report** instead of continuing.
+- Produces: the decisions that Tasks 2–6 implement. If your spot-checks contradict them, **stop and report** instead of continuing. Examples: GeckoTerminal now needs a key, `tokens/multi` no longer returns `top_pools`, or `tokenized-products` no longer contains the tokenized sub-categories.
 
-- [ ] **Step 1: Re-run the spot-checks.** Space them out: both APIs rate-limit bursts. A 429 just means wait 30–60 s.
+- [ ] **Step 1: Re-run the spot-checks.** Space the requests out, because both APIs rate-limit bursts. If you get a 429, wait 30–60 s and retry.
 
 ```bash
 curl -s 'https://api.geckoterminal.com/api/v2/networks/avax/trending_pools?include=base_token,dex' \
-  | python3 -c "import json,sys; d=json.load(sys.stdin); [print(p['attributes']['name'], '|', p['relationships']['dex']['data']['id'], '|', p['attributes']['reserve_in_usd'], '|', p['attributes']['volume_usd']['h24']) for p in d['data']]"
+  | python3 -c "import json,sys; d=json.load(sys.stdin); [print(p['attributes']['name'], '|', p['relationships']['dex']['data']['id'], '|', p['attributes']['reserve_in_usd']) for p in d['data']]"
 curl -s 'https://api.geckoterminal.com/api/v2/networks/avax/dexes/arena-dex/pools?sort=h24_volume_usd_desc&include=base_token,dex' \
   | python3 -c "import json,sys; d=json.load(sys.stdin); [print(p['attributes']['name'], '|', p['attributes']['reserve_in_usd']) for p in d['data'][:10]]"
-curl -s 'https://api.geckoterminal.com/api/v2/networks/avax/tokens/multi/0x2775d5105276781b4b85ba6ea6a6653beed1dd32,0x53fc82f14f009009b440a706e31c9021e1196a2f?include=top_pools' \
+curl -s 'https://api.geckoterminal.com/api/v2/networks/eth/tokens/multi/0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3,0x320623b8e4ff03373931769a31fc52a4e78b5d70?include=top_pools' \
   | python3 -c "import json,sys; d=json.load(sys.stdin); [print(t['attributes']['symbol'], t['attributes']['price_usd'], t['attributes']['volume_usd'], len(t['relationships']['top_pools']['data'])) for t in d['data']]; print([i['type'] for i in d.get('included',[])])"
-curl -s 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&category=real-world-assets-rwa&per_page=250&page=1' \
-  | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d), d[0]['id'])"
+curl -s 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&category=tokenized-products&per_page=250&page=1' \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d), [c['id'] for c in d[:3]])"
+curl -s 'https://api.coingecko.com/api/v3/coins/ondo-finance?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false' \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['categories'])"
 curl -s 'https://api.dexscreener.com/latest/dex/tokens/0x420fca0121dc28039145009570975747295f2329' \
-  | python3 -c "import json,sys; p=json.load(sys.stdin)['pairs'][0]; print(p['dexId'], p['priceUsd'], p['volume']['h24'], p['liquidity']['usd'])"
-curl -s -m 10 -o /dev/null -w '%{http_code}\n' 'https://api.lfj.gg/v1/pools/avalanche?orderBy=volume&pageSize=3'
+  | python3 -c "import json,sys; p=json.load(sys.stdin)['pairs'][0]; print(p['dexId'], p['priceUsd'], p['liquidity']['usd'])"
 ```
 
-Expected (as of 2026-10-15):
-- The trending list is mostly majors and protocol tokens (BTC.b, PHAR, JOE, sAVAX, USDC.e…); COQ is the only obvious meme.
-- Arena DEX pools are small memecoins (AVXTO, GATOR, WOLFI…).
-- `tokens/multi`: XAUt0 has a price, a volume and 1 top pool; BUIDL has `null` price and no pools; `included` holds `pool` objects.
-- CoinGecko returns 250 coins (page 1 of ~10).
-- DexScreener returns COQ on `traderjoe`.
-- The LFJ request times out (it needs a key).
+Expected results as of 2026-10-15:
+- **Trending pools:** mostly majors and protocol tokens (BTC.b, PHAR, JOE, sAVAX…). COQ is the only clear memecoin.
+- **Arena DEX:** small memecoins (AVXTO, GATOR, WOLFI…).
+- **`tokens/multi` (Ethereum):** ONDO and RSR each come back with a price, a volume and one top pool, and `included` holds `pool` objects.
+- **`tokenized-products`:** a full page of 250 ids.
+- **ONDO's categories:** include "Real World Assets (RWA)" and "RWA Protocol", but not "Tokenized Assets".
+- **DexScreener:** returns COQ on `traderjoe`.
 
-- [ ] **Step 2: Write the note** at `docs/research/2026-10-15-avalanche-trending-tokens.md` with this content. Keep the date. If your Step 1 run differs, update the sample tables.
+- [ ] **Step 2: Write the note** at `docs/research/2026-10-15-avalanche-trending-tokens.md` with the content below. Keep the date. If your Step 1 run differs, update the sample tables.
 
 ```markdown
-# Trending tokens — Avalanche memecoins and RWAs (Ethereum + Avalanche)
+# Trending tokens — Avalanche memecoins and RWA project tokens (Ethereum + Avalanche)
 
 Date: 2026-10-15. Feeds `agent/lazyagent/trending.py` (`list_trending_tokens`) and `agent/lazyagent/rwa_snapshot.py`.
 
@@ -142,15 +153,14 @@ Date: 2026-10-15. Feeds `agent/lazyagent/trending.py` (`list_trending_tokens`) a
 | Rate limit | ~30 req/min (429 after a short burst) | 300/min pairs & tokens, 60/min profiles & boosts | — |
 | Coverage | All DEXs on `avax` (incl. `arena-dex`, LFJ v1/v2.1/v2.2, Pharaoh, Blackhole, Pangolin, Uniswap) and `eth` | All DEXs (Arena as `arenatrade`) | Own venue only |
 | Trending ranking | `/networks/avax/trending_pools`; `/dexes/{dex}/pools?sort=h24_volume_usd_desc` | None (only paid boosts, 0 Avalanche entries) | — |
-| Token batch | `/networks/{net}/tokens/multi/{≤30 addresses}?include=top_pools` → price, 24h volume, deepest pool (reserve, 24h change, dex id) | `/tokens/v1/{chain}/{addresses}` | — |
-| Fields | symbol, name, address, price, 24h volume, 24h change, liquidity, DEX | same | — |
+| Token batch | `/networks/{net}/tokens/multi/{≤30 addresses}?include=top_pools` → price, 24h volume, deepest pool (reserve, 24h change, dex id); 31 addresses → HTTP 400 | `/tokens/v1/{chain}/{addresses}` | — |
 
-**Decision: GeckoTerminal** for all market data: it is the only keyless source with a trending ranking and a batch token lookup, and covers Arena. DexScreener is the fallback for per-token lookups.
+**Decision: GeckoTerminal** for all market data — the only keyless source with a trending ranking and a batch token lookup, and it covers Arena. DexScreener is the fallback for per-token lookups.
 
 ## Memecoins (Avalanche)
 
 - Candidates: `trending_pools` page 1 (20 pools; mostly majors and protocol tokens — today only COQ is a meme) **plus** Arena DEX's top pools by 24h volume (where Avalanche memecoins graduate). Each pool's base token only.
-- Filter: no reliable meme flag exists — GeckoTerminal token categories are per-request and wrong (JOE → `defi`, `joe-biden`; COQ has no "meme"), CoinGecko has no Avalanche-meme category. Rules: exclude `AVAX_TOKENS` + WAVAX; symbol contains USD or is DAI/AUSD/EURC/EUROC/XAUT/XAUT0/FRAX/GHO/MIM/JPYC; symbol contains AVAX/BTC/ETH or ends `.e`/`.b`; name contains staked/staking/wrapped/bridged; curated `NOT_MEMES` (JOE, PHAR, BLACK, QI, FOLKS, ARENA, MUON, BEAM, ZRO, GUN, NXPC); deepest pool ≥ $10,000.
+- Filter: no reliable meme flag exists (GeckoTerminal tags JOE as `defi`, `joe-biden`; COQ has no "meme"). Rules: exclude `AVAX_TOKENS` + WAVAX; symbol contains USD or is DAI/AUSD/EURC/EUROC/XAUT/XAUT0/FRAX/GHO/MIM/JPYC; symbol contains AVAX/BTC/ETH or ends `.e`/`.b`; name contains staked/staking/wrapped/bridged; curated `NOT_MEMES` (JOE, PHAR, BLACK, QI, FOLKS, ARENA, MUON, BEAM, ZRO, GUN, NXPC); deepest pool ≥ $10,000.
 - Ranking: one entry per token (deepest pool); trending order first, then 24h volume; top 10.
 
 | # | Symbol | 24h | Volume 24h | Liquidity | DEX |
@@ -161,38 +171,44 @@ Date: 2026-10-15. Feeds `agent/lazyagent/trending.py` (`list_trending_tokens`) a
 | 4 | WOLFI | -3.6% | $351 | $25,999 | Arena DEX |
 | 5 | SUPER | -4.5% | $138 | $18,089 | Arena DEX |
 
-## RWAs (Ethereum + Avalanche)
+## RWA project tokens (Ethereum + Avalanche)
 
-- Membership: CoinGecko free API. `coins/markets?vs_currency=usd&category=real-world-assets-rwa&per_page=250&page=N` → **2,466 coins over 10 pages**; `coins/list?include_platform=true` (~4 MB) → `platforms.ethereum` / `platforms.avalanche`. Result: **1,167 Ethereum + 290 Avalanche** addresses (Avalanche is mostly Dinari dShares, plus XAUt0, BUIDL, ACRED, JTRSY, JAAA, VBILL, Backed bTokens).
-- Rate limits: the free tier returned 429 with Retry-After 15–60 s even at one request per 15 s, so the set is a **checked-in snapshot** (`agent/lazyagent/data/rwa_coingecko.json`) refreshed by `python -m lazyagent.rwa_snapshot` (paced, honours Retry-After), not fetched on a user's request.
-- Sub-categories: `tokenized-gold` adds `gram-gold`, `tokenized-commodities` adds `gram-gold`/`gram-silver`, `tokenized-exchange-traded-funds-etfs` adds ~34 more Dinari ETFs on Avalanche, `rwa-protocol` adds `maker`/`lode-token` (protocol tokens). `tokenized-stock`, `tokenized-treasuries`, `tokenized-money-market-fund-mmfs`, `tokenized-credit`, `real-estate`, `ondo-tokenized-assets`, `xstocks-ecosystem`, `bstocks-ecosystem` add nothing on Avalanche. Not added: the main category already has the liquid ones, and every extra category costs more rate-limited calls.
-- `NOT_RWA` (curated, per network): LINK (both), MKR (both), DEXTF (Avalanche); on Ethereum ONDO, QNT, INJ, PLUME, RSR, DUSK, EPIC, TRAC, CFG, SYRUP, LUMIA, RED, CHR, DIA, KERNEL, CTC, USUAL, CPOOL, EDEN (protocol / oracle / L1 tokens filed under RWA) and USAT (plain stablecoin).
-- `PINNED`: XAUt0 on Avalanche `0x2775d5105276781b4b85ba6ea6a6653beed1dd32` (sponsor showcase), always first.
-- Market data: GeckoTerminal `tokens/multi` (max 30 addresses — 31 returns HTTP 400). Per network we look up `PINNED`, the 15 busiest by CoinGecko volume, then the largest by market cap (so zero-volume permissioned funds still appear). Permissioned funds (BUIDL, ACRED, JTRSY, JAAA, VBILL, SECZ, Dinari dShares) have no DEX pool → `price_usd` null, `buyable: false`. When a token is the quote side of its deepest pool (e.g. `USDC / GOOGLon`) the 24h change is null.
+"RWA" here means what traders mean: RWA **project** tokens (ONDO, PLUME, SYRUP, CFG, …), not tokenized stocks, ETFs, gold or funds.
+
+- Membership (CoinGecko free API): `coins/markets?category=real-world-assets-rwa` → **2,466 coins / 10 pages**. Asset tokens: `category=tokenized-products` ("Tokenized Assets") → **2,230 ids / 9 pages**; it contains every tokenized sub-category (`tokenized-stock` 1,620, `tokenized-exchange-traded-funds-etfs` 378, `tokenized-exchange-traded-product-etps` 380, `tokenized-commodities` 43, `tokenized-commodity-exchange-traded-products-etps` 27, `tokenized-gold` 26, `tokenized-credit` 22, `tokenized-treasuries` 15, `tokenized-pre-ipo-stocks` 14, `tokenized-money-market-fund-mmfs` 9, `tokenized-silver` 8, `tokenized-non-us-government-securities` 5, `tokenized-private-credit` 2, `tokenized-closed-end-funds-cefs` 1, `tokenized-uranium` 1; `tokenized-t-bills`, `tokenized-treasury-bonds-t-bonds`, `tokenized-bank-deposit` empty) — their union adds no id beyond it. RWA minus tokenized-products = 237 coins; with an Ethereum/Avalanche address = **117 Ethereum + 10 Avalanche**. `coins/list?include_platform=true` (~4 MB) gives the addresses.
+- Rate limits: the free tier returned 429 (Retry-After 15–60 s) even at one request per 15 s, so the set is a **checked-in snapshot** (`agent/lazyagent/data/rwa_coingecko.json`, ~21 KB) refreshed by `python -m lazyagent.rwa_snapshot` (~20 paced requests), not fetched on a user's request.
+- `NOT_RWA` (curated, per network): infra / oracle / general-L1 tokens CoinGecko files as RWA — LINK (both chains), QNT, INJ, TRAC, RED, DIA, CHR; USAT (USD stablecoin without "usd" in its symbol; others like wstUSDT, cUSDO are dropped by the symbol rule); and asset tokens CoinGecko left out of `tokenized-products` — MPRA (Maya Preferred, ~$58M/day, would rank #2), ACRED and VBILL (funds, both chains). Kept as project tokens: ONDO, PLUME, SYRUP, CFG, RE, RSR, USUAL, DUSK, EPIC, LUMIA, KERNEL, CTC, EDEN, CPOOL, MKR, …
+- `PINNED`: XAUt0 on Avalanche `0x2775d5105276781b4b85ba6ea6a6653beed1dd32`, note "tokenized gold — Avalanche showcase" — an asset token, pinned deliberately as the hackathon sponsor showcase; always first.
+- Market data: GeckoTerminal `tokens/multi`. Per network we look up `PINNED`, the 15 busiest by CoinGecko volume, then the largest by market cap (≤ 30). Tokens with no DEX pool → `price_usd` null, `buyable: false`; when a token isn't the base of its deepest pool (e.g. RSR in a Curve `ETH+ / eUSD / RSR` pool) the 24h change is null.
 - `buyable`: deepest pool ≥ $10,000. Ranking: `PINNED`, then 24h DEX volume, then CoinGecko market cap; top 10.
+- Avalanche has essentially no liquid RWA project tokens: KULA ($15k pool) is the only buyable one; LODE, DEXTF, NXRA, OPUL, URQA, MKR.e have no or tiny pools.
 
-| # | Network | Symbol | 24h volume | Liquidity | DEX | Buyable |
-|---|---|---|---|---|---|---|
-| 1 | Avalanche | XAUt0 | $146,540 | $64,182 | blackhole-v3 | yes |
-| 2 | Ethereum | XAUt | $18.4M | $4.55M | uniswap_v3 | yes |
-| 3 | Ethereum | PAXG | $11.4M | $5.79M | uniswap_v3 | yes |
-| 4 | Ethereum | GOOGLon | $15,445 | $53,934 | uniswap_v3 | yes |
-| 5 | Ethereum | USDY | $7,840 | $16,937 | uniswap-v4-ethereum | yes |
-| 6 | Ethereum | spcxx | $2,487 | $9,732 | uniswap-v4-ethereum | no |
+| # | Network | Symbol | 24h | 24h volume | Liquidity | DEX | Buyable |
+|---|---|---|---|---|---|---|---|
+| 1 | Avalanche | XAUt0 (pinned, tokenized gold) | +0.4% | $145,123 | $64,253 | blackhole-v3 | yes |
+| 2 | Ethereum | ONDO | -6.8% | $1.18M | $1.75M | uniswap_v3 | yes |
+| 3 | Ethereum | DUSK | +11.7% | $634,537 | $328,069 | uniswap-v4-ethereum | yes |
+| 4 | Ethereum | CFG | -7.9% | $584,553 | $592,274 | uniswap-v4-ethereum | yes |
+| 5 | Ethereum | RSR | — | $543,616 | $1.43M | curve | yes |
+| 6 | Ethereum | SYRUP | -12.1% | $438,673 | $1.77M | uniswap-v4-ethereum | yes |
+| 7 | Ethereum | USUAL | -5.3% | $154,416 | $656,924 | uniswap-v4-ethereum | yes |
+| 8 | Ethereum | EPIC | -19.5% | $121,421 | $45,652 | uniswap-v4-ethereum | yes |
+| 9 | Ethereum | IXS | -0.8% | $86,207 | $520,929 | uniswap-v4-ethereum | yes |
+| 10 | Ethereum | PLUME | -10.3% | $82,237 | $47,015 | uniswap-v4-ethereum | yes |
 
-Avalanche only (same run): XAUt0 (buyable), KULA (buyable, $15k), then BUIDL, JAAA, JTRSY, ACRED, VBILL, SECZ, bCSPX, bIB01 (no DEX pool, not buyable).
+Avalanche only (same run): XAUt0 (pinned, buyable), KULA (buyable), then LODE, DEXTF, NXRA, OPUL, URQA, MKR.e (not buyable).
 ```
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add docs/research/2026-10-15-avalanche-trending-tokens.md
-git commit -m "docs(research): trending Avalanche memecoins and RWAs on Ethereum + Avalanche"
+git commit -m "docs(research): trending Avalanche memecoins and RWA project tokens"
 ```
 
 ---
 
-### Task 2: Memecoins — parse, filter, rank; shared types, `check_args`, `to_json`
+### Task 2: Memecoins, shared types, category registry, `parse_args`, `to_json`
 
 **Files:**
 - Create: `agent/lazyagent/trending.py`
@@ -200,21 +216,22 @@ git commit -m "docs(research): trending Avalanche memecoins and RWAs on Ethereum
 - Test: `agent/tests/test_trending.py`
 
 **Interfaces:**
-- Consumes: `lazyagent.tokens.AVAX_TOKENS` (a list of `Token` with `.address: str | None`, checksummed).
+- Consumes: `lazyagent.tokens.AVAX_TOKENS`, a list of `Token` whose `.address` is `str | None` and checksummed.
 - Produces, in `lazyagent.trending`:
-  - Constants: `GT_API`, `GT_NETWORKS = {"ethereum": "eth", "avalanche": "avax"}`, `TIMEOUT_S = 15`, `TTL_S = 60`, `MIN_LIQUIDITY_USD = 10_000`, `TOP_N = 10`, `GT_BATCH = 30`, `UNAVAILABLE`, `NOT_MEMES`, `EXCLUDED`.
+  - Constants: `GT_API`, `GT_NETWORKS = {"ethereum": "eth", "avalanche": "avax"}`, `CATEGORY_NETWORKS`, `TIMEOUT_S = 15`, `TTL_S = 60`, `MIN_LIQUIDITY_USD = 10_000`, `TOP_N = 10`, `GT_BATCH = 30`, `UNAVAILABLE`, `NOT_MEMES`, `EXCLUDED`.
   - `TokenInfo(symbol, name, address)` and `Pool(token, price_usd, volume_24h, change_24h, liquidity_usd, dex, trending: int | None = None)`.
-  - `Trending(symbol, name, address, network, price_usd: float | None, volume_24h, change_24h: float | None, liquidity_usd, dex, buyable: bool)`.
-  - `_num(value) -> float` and `_rel_id(obj, name) -> str | None` (module-private helpers, also used by Task 3).
+  - `Trending(symbol, name, address, network, price_usd: float | None, volume_24h, change_24h: float | None, liquidity_usd, dex, buyable: bool, note: str | None = None)`.
+  - `TrendingError(Exception)`: its message is text for the model.
+  - Module-private helpers `_num(value) -> float` and `_rel_id(obj, name) -> str | None`, which Task 3 also uses.
   - `parse_pools(body: dict, trending: bool = False) -> list[Pool]`.
   - `is_memecoin(token: TokenInfo) -> bool`.
-  - `rank_memes(pools: list[Pool]) -> list[Trending]`. Memes always have `network="avalanche"` and `buyable=True`.
-  - `check_args(category: str, network: str | None) -> str | None`.
-  - `to_json(items: list[Trending]) -> str`, returning `{"source", "note", "tokens": [asdict...]}`.
+  - `rank_memes(pools: list[Pool]) -> list[Trending]`. Every result has `network="avalanche"` and `buyable=True`.
+  - `parse_args(args: dict) -> tuple[str, str | None]`. Category defaults to `"meme"` and both arguments are case-insensitive. Raises `TrendingError` on bad input.
+  - `to_json(items: list[Trending]) -> str`. Returns `{"source", "note", "tokens": [asdict...]}`.
 
-- [ ] **Step 1: Add the fixtures.** These are real GeckoTerminal responses captured 2026-10-15 and trimmed.
+- [ ] **Step 1: Add the fixtures.** These are real GeckoTerminal responses captured on 2026-10-15, trimmed down.
 
-`agent/tests/fixtures/geckoterminal_trending.json` (a major, BTC.b, then a meme, COQ, in trending order):
+`agent/tests/fixtures/geckoterminal_trending.json` holds a major (BTC.b), then a memecoin (COQ), in trending order:
 
 ```json
 {
@@ -231,7 +248,7 @@ git commit -m "docs(research): trending Avalanche memecoins and RWAs on Ethereum
 }
 ```
 
-`agent/tests/fixtures/geckoterminal_arena.json` (a meme with ≥ $10k liquidity, GATOR, and a meme with $2,050, NOCHILL):
+`agent/tests/fixtures/geckoterminal_arena.json` holds one memecoin with at least $10k liquidity (GATOR) and one with only $2,050 (NOCHILL):
 
 ```json
 {
@@ -247,14 +264,16 @@ git commit -m "docs(research): trending Avalanche memecoins and RWAs on Ethereum
 }
 ```
 
-- [ ] **Step 2: Write the failing tests** in `agent/tests/test_trending.py`
+- [ ] **Step 2: Write the failing tests** — `agent/tests/test_trending.py`
 
 ```python
 import json
 from dataclasses import replace
 from pathlib import Path
 
-from lazyagent.trending import Pool, TokenInfo, Trending, check_args, is_memecoin, parse_pools, rank_memes, to_json
+import pytest
+
+from lazyagent.trending import Pool, TokenInfo, Trending, TrendingError, is_memecoin, parse_args, parse_pools, rank_memes, to_json
 
 FIXTURES = Path(__file__).parent / "fixtures"
 COQ = "0x420fca0121dc28039145009570975747295f2329"
@@ -357,12 +376,19 @@ def test_rank_memes_caps_at_ten():
     assert len(ranked) == 10 and ranked[0].symbol == "M15"
 
 
-def test_check_args():
-    assert check_args("meme", None) is None and check_args("meme", "avalanche") is None
-    assert check_args("rwa", None) is None and check_args("rwa", "ethereum") is None
-    assert check_args("nft", None) == "category must be 'meme' or 'rwa'."
-    assert check_args("rwa", "solana") == "network must be 'ethereum' or 'avalanche'."
-    assert check_args("meme", "ethereum") == "Memecoins are Avalanche only."
+def test_parse_args_defaults_and_normalises():
+    assert parse_args({}) == ("meme", None)
+    assert parse_args({"category": " RWA ", "network": "Ethereum"}) == ("rwa", "ethereum")
+    assert parse_args({"category": "meme", "network": "avalanche"}) == ("meme", "avalanche")
+
+
+def test_parse_args_rejects_unknown_category_and_unsupported_network():
+    with pytest.raises(TrendingError, match="^category must be one of: meme, rwa.$"):
+        parse_args({"category": "nft"})
+    with pytest.raises(TrendingError, match="^meme tokens are only listed on Avalanche.$"):
+        parse_args({"category": "meme", "network": "ethereum"})
+    with pytest.raises(TrendingError, match="^rwa tokens are only listed on Ethereum and Avalanche.$"):
+        parse_args({"category": "rwa", "network": "solana"})
 
 
 def test_to_json_lists_tokens_for_the_model():
@@ -378,6 +404,7 @@ def test_to_json_lists_tokens_for_the_model():
         "liquidity_usd": 623823.6468,
         "dex": "LFJ",
         "buyable": True,
+        "note": None,
     }
     assert "buyable" in body["note"] and "contract address" in body["note"]
     assert json.loads(to_json([]))["tokens"] == []
@@ -388,11 +415,12 @@ def test_to_json_lists_tokens_for_the_model():
 Run: `uv run --directory agent pytest tests/test_trending.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'lazyagent.trending'`.
 
-- [ ] **Step 4: Implement.** Create `agent/lazyagent/trending.py`:
+- [ ] **Step 4: Implement** — create `agent/lazyagent/trending.py`
 
 ```python
-"""Trending tokens from live mainnet data (read-only): Avalanche memecoins and RWAs on Ethereum + Avalanche.
-Research: docs/research/2026-10-15-avalanche-trending-tokens.md."""
+"""Trending tokens from live mainnet data (read-only): Avalanche memecoins and RWA project tokens on
+Ethereum + Avalanche. Research: docs/research/2026-10-15-avalanche-trending-tokens.md.
+Adding a category: an entry in CATEGORY_NETWORKS, a fetcher in TrendingTokens, a line in TRENDING_TOOL's description."""
 
 import json
 from dataclasses import asdict, dataclass
@@ -401,6 +429,8 @@ from .tokens import AVAX_TOKENS
 
 GT_API = "https://api.geckoterminal.com/api/v2/networks"
 GT_NETWORKS = {"ethereum": "eth", "avalanche": "avax"}
+# category → networks it covers (first is the default when there's only one)
+CATEGORY_NETWORKS = {"meme": ("avalanche",), "rwa": ("ethereum", "avalanche")}
 TIMEOUT_S = 15
 TTL_S = 60
 MIN_LIQUIDITY_USD = 10_000
@@ -430,6 +460,7 @@ EXCLUDED = {t.address.lower() for t in AVAX_TOKENS if t.address} | {WAVAX} | NOT
 STABLES = {"DAI", "AUSD", "EURC", "EUROC", "XAUT", "XAUT0", "FRAX", "GHO", "MIM", "JPYC"}
 MAJORS = ("AVAX", "BTC", "ETH")  # any symbol containing one: wrapped, bridged or staked majors
 NOT_MEME_WORDS = ("staked", "staking", "wrapped", "bridged")
+
 
 @dataclass(frozen=True)
 class TokenInfo:
@@ -461,6 +492,11 @@ class Trending:
     liquidity_usd: float  # deepest pool
     dex: str
     buyable: bool  # deepest pool ≥ $10k
+    note: str | None = None  # only for pinned entries
+
+
+class TrendingError(Exception):
+    """A message for the model (bad arguments or data unavailable)."""
 
 
 def _num(value) -> float:
@@ -537,15 +573,16 @@ def rank_memes(pools: list[Pool]) -> list[Trending]:
 # --- shared ---
 
 
-def check_args(category: str, network: str | None) -> str | None:
-    """Error text for bad tool arguments, else None."""
-    if category not in ("meme", "rwa"):
-        return "category must be 'meme' or 'rwa'."
-    if network is not None and network not in GT_NETWORKS:
-        return "network must be 'ethereum' or 'avalanche'."
-    if category == "meme" and network not in (None, "avalanche"):
-        return "Memecoins are Avalanche only."
-    return None
+def parse_args(args: dict) -> tuple[str, str | None]:
+    """Tool arguments → (category, network). Raises TrendingError with text for the model."""
+    category = str(args.get("category") or "meme").strip().lower()
+    network = str(args["network"]).strip().lower() if args.get("network") else None
+    if category not in CATEGORY_NETWORKS:
+        raise TrendingError(f"category must be one of: {', '.join(CATEGORY_NETWORKS)}.")
+    allowed = CATEGORY_NETWORKS[category]
+    if network is not None and network not in allowed:
+        raise TrendingError(f"{category} tokens are only listed on {' and '.join(n.capitalize() for n in allowed)}.")
+    return category, network
 
 
 def to_json(items: list[Trending]) -> str:
@@ -561,7 +598,7 @@ def to_json(items: list[Trending]) -> str:
 - [ ] **Step 5: Run to verify they pass**
 
 Run: `uv run --directory agent pytest tests/test_trending.py -q`
-Expected: PASS (15 tests).
+Expected: PASS (16 tests).
 
 - [ ] **Step 6: Commit**
 
@@ -572,7 +609,7 @@ git commit -m "feat(agent): parse, filter and rank Avalanche trending memecoins"
 
 ---
 
-### Task 3: RWAs — CoinGecko addresses, candidates, GeckoTerminal token batch, ranking, pinned
+### Task 3: RWA project tokens — CoinGecko addresses, candidates, GeckoTerminal token batch, ranking, pinned XAUt0
 
 **Files:**
 - Modify: `agent/lazyagent/trending.py` (imports; append the RWA section)
@@ -580,67 +617,66 @@ git commit -m "feat(agent): parse, filter and rank Avalanche trending memecoins"
 - Test: `agent/tests/test_trending_rwa.py`
 
 **Interfaces:**
-- Consumes: `Trending`, `GT_NETWORKS`, `GT_BATCH`, `TOP_N`, `MIN_LIQUIDITY_USD`, `_num`, `_rel_id` from Task 2.
+- Consumes: `Trending`, `GT_NETWORKS`, `GT_BATCH`, `TOP_N`, `MIN_LIQUIDITY_USD`, `_num` and `_rel_id` from Task 2.
 - Produces, in `lazyagent.trending`:
-  - `PINNED: list[tuple[str, str]]` (network, lower-case address), `NOT_RWA: set[tuple[str, str]]`, `RWA_SNAPSHOT: Path` (`lazyagent/data/rwa_coingecko.json`).
-  - `RwaCoin(network, address, coingecko_id, market_cap: float, volume_24h: float)` (frozen).
-  - `rwa_addresses(markets: list[dict], coin_list: list[dict]) -> list[RwaCoin]`.
-  - `rwa_candidates(coins: list[RwaCoin], network: str) -> list[str]`, returning at most 30 lower-case addresses with `PINNED` first.
-  - `parse_tokens(body: dict, network: str) -> list[Trending]` (GeckoTerminal `tokens/multi?include=top_pools`).
-  - `rank_rwas(items: list[Trending], coins: list[RwaCoin]) -> list[Trending]`.
-  - `load_rwa_snapshot(path: Path = RWA_SNAPSHOT) -> list[RwaCoin]`, reading `{"generated", "source", "coins": [RwaCoin fields...]}`.
+  - `PINNED: list[tuple[str, str, str]]` (network, lower-case address, note), `NOT_RWA: set[tuple[str, str]]`, and `RWA_SNAPSHOT: Path` pointing at `lazyagent/data/rwa_coingecko.json`.
+  - `RwaCoin(network, address, coingecko_id, market_cap: float, volume_24h: float)`, frozen.
+  - `rwa_addresses(markets: list[dict], coin_list: list[dict], asset_ids: set[str]) -> list[RwaCoin]`.
+  - `rwa_candidates(coins: list[RwaCoin], network: str) -> list[str]`. Returns at most 30 lower-case addresses, with `PINNED` first.
+  - `parse_tokens(body: dict, network: str) -> list[Trending]`. Parses GeckoTerminal `tokens/multi?include=top_pools`.
+  - `rank_rwas(items: list[Trending], coins: list[RwaCoin]) -> list[Trending]`. Pinned entries get their `note`.
+  - `load_rwa_snapshot(path: Path = RWA_SNAPSHOT) -> list[RwaCoin]`. Reads `{"generated", "source", "coins": [RwaCoin fields...]}`.
 
-- [ ] **Step 1: Add the fixtures.** These are real responses captured 2026-10-15 and trimmed.
+- [ ] **Step 1: Add the fixtures.** These are real responses captured on 2026-10-15, trimmed down.
 
-`agent/tests/fixtures/coingecko_markets.json` (LINK, which is in `NOT_RWA`, and XAUt0, which is pinned):
-
-```json
-[
-  {"id": "chainlink", "symbol": "link", "name": "Chainlink", "market_cap": 9261003402, "total_volume": 380766175},
-  {"id": "tether-gold-tokens", "symbol": "xaut0", "name": "Tether Gold Tokens", "market_cap": 113340161, "total_volume": 5076061}
-]
-```
-
-`agent/tests/fixtures/coingecko_coins_list.json` (platforms trimmed; pax-gold is not in the markets fixture):
+`agent/tests/fixtures/coingecko_markets.json` holds ONDO (a project token) and XAUt0 (an asset token, in `tokenized-products`):
 
 ```json
 [
-  {"id": "chainlink", "symbol": "link", "name": "Chainlink", "platforms": {"ethereum": "0x514910771af9ca656af840dff83e8264ecf986ca", "solana": "LinkhB3afbBKb2EQQu7s7umdZceV3wcvAUJhQAfQ23L", "avalanche": "0x5947bb275c521040051d82396192181b413227a3"}},
-  {"id": "tether-gold-tokens", "symbol": "xaut0", "name": "Tether Gold Tokens", "platforms": {"avalanche": "0x2775d5105276781b4b85ba6ea6a6653beed1dd32", "solana": "AymATz4TCL9sWNEEV9Kvyz45CHVhDZ6kUgjTJPzLpU9P"}},
-  {"id": "pax-gold", "symbol": "paxg", "name": "PAX Gold", "platforms": {"ethereum": "0x45804880de22913dafe09f4980848ece6ecbaf78"}}
+  {"id": "ondo-finance", "symbol": "ondo", "name": "Ondo", "market_cap": 2108143509, "total_volume": 228379176},
+  {"id": "tether-gold-tokens", "symbol": "xaut0", "name": "Tether Gold Tokens", "market_cap": 113358580, "total_volume": 4999402}
 ]
 ```
 
-`agent/tests/fixtures/geckoterminal_tokens_avax.json` (XAUt0 with its pool; BUIDL, a permissioned fund with no pool):
+`agent/tests/fixtures/coingecko_coins_list.json` has the platforms trimmed:
+
+```json
+[
+  {"id": "ondo-finance", "symbol": "ondo", "name": "Ondo", "platforms": {"ethereum": "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3"}},
+  {"id": "tether-gold-tokens", "symbol": "xaut0", "name": "Tether Gold Tokens", "platforms": {"avalanche": "0x2775d5105276781b4b85ba6ea6a6653beed1dd32", "solana": "AymATz4TCL9sWNEEV9Kvyz45CHVhDZ6kUgjTJPzLpU9P"}}
+]
+```
+
+`agent/tests/fixtures/geckoterminal_tokens_avax.json` holds XAUt0 with its pool, and NXRA, a project token with no pool:
 
 ```json
 {
   "data": [
-    {"id": "avax_0x2775d5105276781b4b85ba6ea6a6653beed1dd32", "type": "token", "attributes": {"address": "0x2775d5105276781b4b85ba6ea6a6653beed1dd32", "name": "XAUt0", "symbol": "XAUt0", "price_usd": "4152.3385911372", "volume_usd": {"h24": "146051.686719744"}}, "relationships": {"top_pools": {"data": [{"id": "avax_0x259dc723d93da1d82d10ed75f3751cd3d3b6d7fa", "type": "pool"}]}}},
-    {"id": "avax_0x53fc82f14f009009b440a706e31c9021e1196a2f", "type": "token", "attributes": {"address": "0x53fc82f14f009009b440a706e31c9021e1196a2f", "name": "BlackRock USD Institutional Digital Liquidity Fund", "symbol": "buidl", "price_usd": null, "volume_usd": {"h24": null}}, "relationships": {"top_pools": {"data": []}}}
+    {"id": "avax_0x2775d5105276781b4b85ba6ea6a6653beed1dd32", "type": "token", "attributes": {"address": "0x2775d5105276781b4b85ba6ea6a6653beed1dd32", "name": "XAUt0", "symbol": "XAUt0", "price_usd": "4151.7951702526", "volume_usd": {"h24": "145093.15533864"}}, "relationships": {"top_pools": {"data": [{"id": "avax_0x259dc723d93da1d82d10ed75f3751cd3d3b6d7fa", "type": "pool"}]}}},
+    {"id": "avax_0x644192291cc835a93d6330b24ea5f5fedd0eef9e", "type": "token", "attributes": {"address": "0x644192291cc835a93d6330b24ea5f5fedd0eef9e", "name": "AllianceBlock Nexera Token", "symbol": "NXRA", "price_usd": null, "volume_usd": {"h24": null}}, "relationships": {"top_pools": {"data": []}}}
   ],
   "included": [
-    {"id": "avax_0x259dc723d93da1d82d10ed75f3751cd3d3b6d7fa", "type": "pool", "attributes": {"name": "XAUt0 / USDt 0.05%", "reserve_in_usd": "64106.9781", "price_change_percentage": {"h24": "-0.129"}}, "relationships": {"base_token": {"data": {"id": "avax_0x2775d5105276781b4b85ba6ea6a6653beed1dd32", "type": "token"}}, "quote_token": {"data": {"id": "avax_0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7", "type": "token"}}, "dex": {"data": {"id": "blackhole-v3", "type": "dex"}}}}
+    {"id": "avax_0x259dc723d93da1d82d10ed75f3751cd3d3b6d7fa", "type": "pool", "attributes": {"name": "XAUt0 / USDt 0.05%", "reserve_in_usd": "64072.6693", "price_change_percentage": {"h24": "0.241"}}, "relationships": {"base_token": {"data": {"id": "avax_0x2775d5105276781b4b85ba6ea6a6653beed1dd32", "type": "token"}}, "quote_token": {"data": {"id": "avax_0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7", "type": "token"}}, "dex": {"data": {"id": "blackhole-v3", "type": "dex"}}}}
   ]
 }
 ```
 
-`agent/tests/fixtures/geckoterminal_tokens_eth.json` (XAUt as the base of its pool; GOOGLon as the *quote* of its pool):
+`agent/tests/fixtures/geckoterminal_tokens_eth.json` holds ONDO, which is the base token of its pool, and RSR, which is **not** the base token of its deepest pool (a Curve pool):
 
 ```json
 {
   "data": [
-    {"id": "eth_0x68749665ff8d2d112fa859aa293f07a622782f38", "type": "token", "attributes": {"address": "0x68749665ff8d2d112fa859aa293f07a622782f38", "name": "Tether Gold", "symbol": "XAUt", "price_usd": "4158.0924087181", "volume_usd": {"h24": "18378541.0360716"}}, "relationships": {"top_pools": {"data": [{"id": "eth_0x6546055f46e866a4b9a4a13e81273e3152bae5da", "type": "pool"}]}}},
-    {"id": "eth_0xba47214edd2bb43099611b208f75e4b42fdcfedc", "type": "token", "attributes": {"address": "0xba47214edd2bb43099611b208f75e4b42fdcfedc", "name": "Alphabet Class A (Ondo Tokenized)", "symbol": "GOOGLon", "price_usd": "340.8676113819", "volume_usd": {"h24": "15444.8733816736"}}, "relationships": {"top_pools": {"data": [{"id": "eth_0x39fcb1935f6ccb0a106d05eb928205c59646af57", "type": "pool"}]}}}
+    {"id": "eth_0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3", "type": "token", "attributes": {"address": "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3", "name": "Ondo", "symbol": "ONDO", "price_usd": "0.4317345948", "volume_usd": {"h24": "1183578.34877635"}}, "relationships": {"top_pools": {"data": [{"id": "eth_0x7b1e5d984a43ee732de195628d20d05cfabc3cc7", "type": "pool"}]}}},
+    {"id": "eth_0x320623b8e4ff03373931769a31fc52a4e78b5d70", "type": "token", "attributes": {"address": "0x320623b8e4ff03373931769a31fc52a4e78b5d70", "name": "Reserve Rights", "symbol": "RSR", "price_usd": "0.001970645956", "volume_usd": {"h24": "525898.151530515"}}, "relationships": {"top_pools": {"data": [{"id": "eth_0xdb6925ea42897ca786a045b252d95aa7370f44b4", "type": "pool"}]}}}
   ],
   "included": [
-    {"id": "eth_0x6546055f46e866a4b9a4a13e81273e3152bae5da", "type": "pool", "attributes": {"name": "XAUt / USDT 0.05%", "reserve_in_usd": "4573467.4966", "price_change_percentage": {"h24": "0.17"}}, "relationships": {"base_token": {"data": {"id": "eth_0x68749665ff8d2d112fa859aa293f07a622782f38", "type": "token"}}, "quote_token": {"data": {"id": "eth_0xdac17f958d2ee523a2206206994597c13d831ec7", "type": "token"}}, "dex": {"data": {"id": "uniswap_v3", "type": "dex"}}}},
-    {"id": "eth_0x39fcb1935f6ccb0a106d05eb928205c59646af57", "type": "pool", "attributes": {"name": "USDC / GOOGLon 1%", "reserve_in_usd": "53933.5668", "price_change_percentage": {"h24": "-5.01"}}, "relationships": {"base_token": {"data": {"id": "eth_0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", "type": "token"}}, "quote_token": {"data": {"id": "eth_0xba47214edd2bb43099611b208f75e4b42fdcfedc", "type": "token"}}, "dex": {"data": {"id": "uniswap_v3", "type": "dex"}}}}
+    {"id": "eth_0x7b1e5d984a43ee732de195628d20d05cfabc3cc7", "type": "pool", "attributes": {"name": "ONDO / WETH 0.3%", "reserve_in_usd": "1765680.8565", "price_change_percentage": {"h24": "-7.529"}}, "relationships": {"base_token": {"data": {"id": "eth_0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3", "type": "token"}}, "quote_token": {"data": {"id": "eth_0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", "type": "token"}}, "dex": {"data": {"id": "uniswap_v3", "type": "dex"}}}},
+    {"id": "eth_0xdb6925ea42897ca786a045b252d95aa7370f44b4", "type": "pool", "attributes": {"name": "ETH+ / eUSD / RSR", "reserve_in_usd": "1435171.8096", "price_change_percentage": {"h24": "-5.615"}}, "relationships": {"base_token": {"data": {"id": "eth_0xe72b141df173b999ae7c1adcbf60cc9833ce56a8", "type": "token"}}, "quote_token": {"data": {"id": "eth_0xa0d69e286b938e21cbf7e51d71f6a4c8918f482f", "type": "token"}}, "dex": {"data": {"id": "curve", "type": "dex"}}}}
   ]
 }
 ```
 
-- [ ] **Step 2: Write the failing tests** in `agent/tests/test_trending_rwa.py`. The last test, `test_shipped_snapshot_...`, stays failing until Task 5 generates the snapshot.
+- [ ] **Step 2: Write the failing tests** in `agent/tests/test_trending_rwa.py`. The last test, `test_shipped_snapshot_...`, will keep failing until Task 5 generates the snapshot.
 
 ```python
 import json
@@ -648,6 +684,7 @@ from pathlib import Path
 
 from lazyagent.trending import (
     GT_BATCH,
+    NOT_RWA,
     PINNED,
     RwaCoin,
     Trending,
@@ -659,12 +696,12 @@ from lazyagent.trending import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
-XAUT0 = "0x2775d5105276781b4b85ba6ea6a6653beed1dd32"  # Avalanche, pinned
-BUIDL = "0x53fc82f14f009009b440a706e31c9021e1196a2f"  # Avalanche, permissioned, no pool
-XAUT = "0x68749665ff8d2d112fa859aa293f07a622782f38"  # Ethereum
-GOOGLON = "0xba47214edd2bb43099611b208f75e4b42fdcfedc"  # Ethereum, quote side of its top pool
-LINK_ETH = "0x514910771af9ca656af840dff83e8264ecf986ca"  # NOT_RWA
-LINK_AVAX = "0x5947bb275c521040051d82396192181b413227a3"  # NOT_RWA
+XAUT0 = "0x2775d5105276781b4b85ba6ea6a6653beed1dd32"  # Avalanche, pinned asset token
+NXRA = "0x644192291cc835a93d6330b24ea5f5fedd0eef9e"  # Avalanche project token, no pool
+ONDO = "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3"  # Ethereum project token, base of its pool
+RSR = "0x320623b8e4ff03373931769a31fc52a4e78b5d70"  # Ethereum project token, not the base of its pool
+LINK = "0x514910771af9ca656af840dff83e8264ecf986ca"  # Ethereum, NOT_RWA
+NOTE = "tokenized gold — Avalanche showcase"
 
 
 def load(name: str):
@@ -679,28 +716,35 @@ def item(network: str, address: str, volume: float = 0, liquidity: float = 0) ->
     return Trending("T", "Token", address, network, None, volume, None, liquidity, "", liquidity >= 10_000)
 
 
-def test_pinned_is_xaut0_on_avalanche():
-    assert PINNED == [("avalanche", XAUT0)]
+def test_pinned_is_xaut0_on_avalanche_with_a_note():
+    assert PINNED == [("avalanche", XAUT0, NOTE)]
 
 
-def test_rwa_addresses_maps_both_networks_and_skips_others():
-    coins = rwa_addresses(load("coingecko_markets.json"), load("coingecko_coins_list.json"))
-    assert [(c.network, c.address, c.coingecko_id) for c in coins] == [
-        ("ethereum", LINK_ETH, "chainlink"),
-        ("avalanche", LINK_AVAX, "chainlink"),
-        ("avalanche", XAUT0, "tether-gold-tokens"),
-    ]  # pax-gold isn't in the RWA markets; Solana addresses are ignored
-    assert coins[2].market_cap == 113340161 and coins[2].volume_24h == 5076061
+def test_not_rwa_keeps_project_tokens():
+    assert ("ethereum", LINK) in NOT_RWA
+    assert not {("ethereum", ONDO), ("ethereum", RSR)} & NOT_RWA
 
 
-def test_rwa_addresses_ignores_coins_missing_from_the_list():
-    assert rwa_addresses([{"id": "ghost", "market_cap": 1, "total_volume": 1}], []) == []
+def test_rwa_addresses_keeps_project_tokens_and_drops_asset_tokens():
+    coins = rwa_addresses(load("coingecko_markets.json"), load("coingecko_coins_list.json"), {"tether-gold-tokens"})
+    assert coins == [RwaCoin("ethereum", ONDO, "ondo-finance", 2108143509, 228379176)]
+
+
+def test_rwa_addresses_maps_every_supported_network_and_skips_others():
+    coins = rwa_addresses(load("coingecko_markets.json"), load("coingecko_coins_list.json"), set())
+    assert [(c.network, c.coingecko_id) for c in coins] == [("ethereum", "ondo-finance"), ("avalanche", "tether-gold-tokens")]  # Solana ignored
+
+
+def test_rwa_addresses_drops_usd_stablecoins_and_coins_missing_from_the_list():
+    markets = [{"id": "wrapped-staked-usdt", "symbol": "wstusdt"}, {"id": "ghost", "symbol": "ghost"}]
+    coin_list = [{"id": "wrapped-staked-usdt", "platforms": {"ethereum": "0x" + "1" * 40}}]
+    assert rwa_addresses(markets, coin_list, set()) == []
 
 
 def test_candidates_pin_first_and_skip_not_rwa():
-    coins = [RwaCoin("avalanche", LINK_AVAX, "chainlink", 9e9, 4e8), coin("avalanche", 1, volume=5), RwaCoin("avalanche", XAUT0, "tether-gold-tokens", 1e8, 5e6)]
-    assert rwa_candidates(coins, "avalanche") == [XAUT0, f"0x{1:040x}"]
-    assert rwa_candidates(coins, "ethereum") == []
+    coins = [RwaCoin("ethereum", LINK, "chainlink", 9e9, 4e8), RwaCoin("ethereum", ONDO, "ondo-finance", 2e9, 2e8)]
+    assert rwa_candidates(coins, "ethereum") == [ONDO]
+    assert rwa_candidates(coins, "avalanche") == [XAUT0]
 
 
 def test_candidates_mix_busiest_and_largest_and_fill_one_batch():
@@ -709,71 +753,71 @@ def test_candidates_mix_busiest_and_largest_and_fill_one_batch():
     out = rwa_candidates(busy + big, "ethereum")
     assert len(out) == GT_BATCH
     assert out[:15] == [f"0x{i:040x}" for i in range(40, 25, -1)]  # 15 busiest
-    assert out[15] == f"0x{140:040x}"  # then the largest, e.g. zero-volume permissioned funds
+    assert out[15] == f"0x{140:040x}"  # then the largest by market cap
 
 
-def test_parse_tokens_avalanche_pool_and_no_pool():
-    xaut0, buidl = parse_tokens(load("geckoterminal_tokens_avax.json"), "avalanche")
-    assert xaut0 == Trending("XAUt0", "XAUt0", XAUT0, "avalanche", 4152.3385911372, 146051.686719744, -0.129, 64106.9781, "blackhole-v3", True)
-    assert buidl == Trending("buidl", "BlackRock USD Institutional Digital Liquidity Fund", BUIDL, "avalanche", None, 0.0, None, 0.0, "", False)
+def test_parse_tokens_pool_and_no_pool():
+    xaut0, nxra = parse_tokens(load("geckoterminal_tokens_avax.json"), "avalanche")
+    assert xaut0 == Trending("XAUt0", "XAUt0", XAUT0, "avalanche", 4151.7951702526, 145093.15533864, 0.241, 64072.6693, "blackhole-v3", True)
+    assert nxra == Trending("NXRA", "AllianceBlock Nexera Token", NXRA, "avalanche", None, 0.0, None, 0.0, "", False)
 
 
 def test_parse_tokens_change_only_when_token_is_the_pool_base():
-    xaut, googlon = parse_tokens(load("geckoterminal_tokens_eth.json"), "ethereum")
-    assert (xaut.change_24h, xaut.liquidity_usd, xaut.dex, xaut.buyable) == (0.17, 4573467.4966, "uniswap_v3", True)
-    assert (googlon.address, googlon.change_24h, googlon.price_usd, googlon.buyable) == (GOOGLON, None, 340.8676113819, True)
+    ondo, rsr = parse_tokens(load("geckoterminal_tokens_eth.json"), "ethereum")
+    assert (ondo.change_24h, ondo.liquidity_usd, ondo.dex, ondo.buyable) == (-7.529, 1765680.8565, "uniswap_v3", True)
+    assert (rsr.address, rsr.change_24h, rsr.price_usd, rsr.dex, rsr.buyable) == (RSR, None, 0.001970645956, "curve", True)
 
 
 def test_parse_tokens_tolerates_an_empty_body_and_unescapes_names():
     assert parse_tokens({}, "ethereum") == []
-    [t] = parse_tokens({"data": [{"id": "x", "attributes": {"address": "0xAB", "symbol": "bCSPX", "name": "Backed CSPX Core S&amp;P 500"}}]}, "avalanche")
-    assert (t.name, t.address) == ("Backed CSPX Core S&P 500", "0xab")
+    [t] = parse_tokens({"data": [{"id": "x", "attributes": {"address": "0xAB", "symbol": "PRO", "name": "Propy &amp; Co"}}]}, "ethereum")
+    assert (t.name, t.address) == ("Propy & Co", "0xab")
 
 
-def test_rank_rwas_pinned_first_then_volume_then_market_cap():
+def test_rank_rwas_pinned_first_with_note_then_volume_then_market_cap():
     coins = [coin("ethereum", 1, mcap=10), coin("ethereum", 2, mcap=99)]
     items = [
         item("ethereum", f"0x{1:040x}"),
-        item("ethereum", XAUT, volume=1e7, liquidity=4e6),
+        item("ethereum", ONDO, volume=1e6, liquidity=2e6),
         item("avalanche", XAUT0, volume=1e5, liquidity=6e4),
         item("ethereum", f"0x{2:040x}"),
     ]
     ranked = rank_rwas(items, coins)
-    assert [t.address for t in ranked] == [XAUT0, XAUT, f"0x{2:040x}", f"0x{1:040x}"]
+    assert [t.address for t in ranked] == [XAUT0, ONDO, f"0x{2:040x}", f"0x{1:040x}"]
+    assert ranked[0].note == NOTE and ranked[1].note is None
 
 
 def test_rank_rwas_keeps_unbuyable_drops_not_rwa_and_duplicates_and_caps_at_ten():
-    items = [item("ethereum", LINK_ETH, volume=1e9, liquidity=1e7), item("avalanche", BUIDL), item("avalanche", BUIDL)]
-    items += [item("ethereum", f"0x{i:040x}", volume=i) for i in range(1, 15)]
+    items = [item("ethereum", LINK, volume=1e9, liquidity=1e7), item("avalanche", NXRA, volume=0.5), item("avalanche", NXRA, volume=0.5)]
+    items += [item("ethereum", f"0x{i:040x}", volume=i) for i in range(1, 10)]
     ranked = rank_rwas(items, [])
     assert len(ranked) == 10
-    assert LINK_ETH not in [t.address for t in ranked]
-    assert [t.address for t in ranked].count(BUIDL) == 0  # zero volume, ranked after the 14 others → cut by the cap
-    assert rank_rwas([item("avalanche", BUIDL)], [])[0].buyable is False
+    assert LINK not in [t.address for t in ranked]
+    assert [t.address for t in ranked].count(NXRA) == 1 and ranked[-1].buyable is False
 
 
 def test_rank_rwas_with_live_fixtures_on_both_networks():
     items = parse_tokens(load("geckoterminal_tokens_eth.json"), "ethereum") + parse_tokens(load("geckoterminal_tokens_avax.json"), "avalanche")
-    assert [t.symbol for t in rank_rwas(items, [])] == ["XAUt0", "XAUt", "GOOGLon", "buidl"]
+    assert [t.symbol for t in rank_rwas(items, [])] == ["XAUt0", "ONDO", "RSR", "NXRA"]
 
 
 def test_load_rwa_snapshot(tmp_path):
     path = tmp_path / "rwa.json"
-    path.write_text(json.dumps({"generated": "2026-10-15", "coins": [{"network": "avalanche", "address": XAUT0, "coingecko_id": "tether-gold-tokens", "market_cap": 1.0, "volume_24h": 2.0}]}))
-    assert load_rwa_snapshot(path) == [RwaCoin("avalanche", XAUT0, "tether-gold-tokens", 1.0, 2.0)]
+    path.write_text(json.dumps({"generated": "2026-10-15", "coins": [{"network": "ethereum", "address": ONDO, "coingecko_id": "ondo-finance", "market_cap": 1.0, "volume_24h": 2.0}]}))
+    assert load_rwa_snapshot(path) == [RwaCoin("ethereum", ONDO, "ondo-finance", 1.0, 2.0)]
 
 
-def test_shipped_snapshot_covers_both_networks_and_the_pinned_token():
-    coins = load_rwa_snapshot()
-    assert {c.network for c in coins} == {"ethereum", "avalanche"}
-    assert ("avalanche", XAUT0) in {(c.network, c.address) for c in coins}
-    assert all(c.address == c.address.lower() and c.address.startswith("0x") for c in coins)
+def test_shipped_snapshot_has_project_tokens_not_asset_tokens():
+    coins = {(c.network, c.address) for c in load_rwa_snapshot()}
+    assert ("ethereum", ONDO) in coins  # project token
+    assert ("avalanche", XAUT0) not in coins  # tokenized gold — only shown because it's PINNED
+    assert all(a == a.lower() and a.startswith("0x") for _, a in coins)
 ```
 
 - [ ] **Step 3: Run to verify they fail**
 
 Run: `uv run --directory agent pytest tests/test_trending_rwa.py -q`
-Expected: FAIL — `ImportError: cannot import name 'PINNED' from 'lazyagent.trending'`.
+Expected: FAIL — `ImportError: cannot import name 'NOT_RWA' from 'lazyagent.trending'`.
 
 - [ ] **Step 4: Implement.** In `agent/lazyagent/trending.py`, replace the imports
 
@@ -787,46 +831,37 @@ with
 ```python
 import html
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 ```
 
 and append to the end of the file (two blank lines before it):
 
 ```python
-# --- RWAs (Ethereum + Avalanche) ---
+# --- RWA project tokens (Ethereum + Avalanche) ---
 
-# Hackathon sponsor showcase: always first in rwa results, in this order (network, lower-case address).
+# Hackathon sponsor showcase: always first in rwa results, in this order (network, lower-case address, note).
+# XAUt0 is an asset token, not a project token — pinned deliberately and labelled.
 PINNED = [
-    ("avalanche", "0x2775d5105276781b4b85ba6ea6a6653beed1dd32"),  # XAUt0 (Tether Gold, Avalanche)
+    ("avalanche", "0x2775d5105276781b4b85ba6ea6a6653beed1dd32", "tokenized gold — Avalanche showcase"),  # XAUt0
 ]
-# In CoinGecko's RWA category but not tokenized real-world assets (protocol / oracle / L1 tokens).
+# In CoinGecko's RWA category, not in any tokenized-asset sub-category, but not RWA projects:
+# infra / oracle / general-L1 tokens, a USD stablecoin without "USD" in its symbol, and funds CoinGecko left untagged.
 NOT_RWA = {
-    ("avalanche", "0x5947bb275c521040051d82396192181b413227a3"),  # LINK.e
-    ("avalanche", "0x88128fd4b259552a9a1d457f435a6527aab72d42"),  # MKR
-    ("avalanche", "0x03e8d118a1864c7dc53bf91e007ab7d91f5a06fa"),  # DEXTF (Memento)
     ("ethereum", "0x514910771af9ca656af840dff83e8264ecf986ca"),  # LINK
-    ("ethereum", "0x9f8f72aa9304c8b593d555f12ef6589cc3a579a2"),  # MKR
-    ("ethereum", "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3"),  # ONDO
+    ("avalanche", "0x5947bb275c521040051d82396192181b413227a3"),  # LINK.e
     ("ethereum", "0x4a220e6096b25eadb88358cb44068a3248254675"),  # QNT
     ("ethereum", "0xe28b3b32b6c345a34ff64674606124dd5aceca30"),  # INJ
-    ("ethereum", "0x4c1746a800d224393fe2470c70a35717ed4ea5f1"),  # PLUME
-    ("ethereum", "0x320623b8e4ff03373931769a31fc52a4e78b5d70"),  # RSR
-    ("ethereum", "0x940a2db1b7008b6c776d4faaca729d6d4a4aa551"),  # DUSK
-    ("ethereum", "0x94314a14df63779c99c0764a30e0cd22fa78fc0e"),  # EPIC
     ("ethereum", "0xaa7a9ca87d3694b5755f213b5d04094b8d0f0a6f"),  # TRAC
-    ("ethereum", "0xcccccccccc33d538dbc2ee4feab0a7a1ff4e8a94"),  # CFG
-    ("ethereum", "0x643c4e15d7d62ad0abec4a9bd4b001aa3ef52d66"),  # SYRUP
-    ("ethereum", "0xd9343a049d5dbd89cd19dc6bca8c48fb3a0a42a7"),  # LUMIA
-    ("ethereum", "0xc43c6bfeda065fe2c4c11765bf838789bd0bb5de"),  # RED
-    ("ethereum", "0x8a2279d4a90b6fe1c4b30fa660cc9f926797baa2"),  # CHR
+    ("ethereum", "0xc43c6bfeda065fe2c4c11765bf838789bd0bb5de"),  # RED (RedStone)
     ("ethereum", "0x84ca8bc7997272c7cfb4d0cd3d55cd942b3c9419"),  # DIA
-    ("ethereum", "0x3f80b1c54ae920be41a77f8b902259d48cf24ccf"),  # KERNEL
-    ("ethereum", "0xa3ee21c306a700e682abcdfe9baa6a08f3820419"),  # CTC
-    ("ethereum", "0xc4441c2be5d8fa8126822b9929ca0b81ea0de38e"),  # USUAL
-    ("ethereum", "0x66761fa41377003622aee3c7675fc7b5c1c2fac5"),  # CPOOL
-    ("ethereum", "0x24a3d725c37a8d1a66eb87f0e5d07fe67c120035"),  # EDEN (OpenEden)
+    ("ethereum", "0x8a2279d4a90b6fe1c4b30fa660cc9f926797baa2"),  # CHR (Chromia)
     ("ethereum", "0x07041776f5007aca2a54844f50503a18a72a8b68"),  # USAT (Tether US stablecoin)
+    ("ethereum", "0xec1227bfb3e76d7a2a9bca24d9e98f68de8bf808"),  # MPRA (Maya Preferred — tokenized preferred stock)
+    ("ethereum", "0x17418038ecf73ba4026c4f428547bf099706f27b"),  # ACRED (Apollo credit fund)
+    ("avalanche", "0x7c64925002bfa705834b118a923e9911bee32875"),  # ACRED
+    ("ethereum", "0x2255718832bc9fd3be1caf75084f4803da14ff01"),  # VBILL (VanEck treasury fund)
+    ("avalanche", "0x7f4546ef315efc65336187fe3765ea779ac90183"),  # VBILL
 }
 RWA_SNAPSHOT = Path(__file__).parent / "data" / "rwa_coingecko.json"
 
@@ -847,12 +882,15 @@ def _opt(value) -> float | None:
 # --- RWAs: pure ---
 
 
-def rwa_addresses(markets: list[dict], coin_list: list[dict]) -> list[RwaCoin]:
+def rwa_addresses(markets: list[dict], coin_list: list[dict], asset_ids: set[str]) -> list[RwaCoin]:
     """CoinGecko RWA-category markets + coins/list?include_platform=true → one RwaCoin per
-    (coin, network) for the networks we support. Coins without an EVM address there are skipped."""
+    (project token, network). Skips coins in a tokenized-asset sub-category (`asset_ids`), USD
+    stablecoins (symbol contains "usd") and coins without an EVM address on a supported network."""
     platforms = {c.get("id"): c.get("platforms") or {} for c in coin_list}
     coins = []
     for m in markets:
+        if m.get("id") in asset_ids or "usd" in str(m.get("symbol", "")).lower():
+            continue
         for network in GT_NETWORKS:
             address = str(platforms.get(m.get("id"), {}).get(network) or "").lower()
             if address.startswith("0x") and len(address) == 42:
@@ -862,9 +900,8 @@ def rwa_addresses(markets: list[dict], coin_list: list[dict]) -> list[RwaCoin]:
 
 def rwa_candidates(coins: list[RwaCoin], network: str) -> list[str]:
     """Addresses to look up on GeckoTerminal for one network (one batch): PINNED first, then half
-    the busiest RWAs by CoinGecko volume, then the largest by market cap (so zero-volume
-    permissioned funds like BUIDL still show), NOT_RWA excluded."""
-    out = [a for n, a in PINNED if n == network]
+    the busiest by CoinGecko volume, then the largest by market cap; NOT_RWA excluded."""
+    out = [a for n, a, _ in PINNED if n == network]
     pool = [c for c in coins if c.network == network and (network, c.address) not in NOT_RWA]
     by_volume = sorted(pool, key=lambda c: (-c.volume_24h, -c.market_cap))
     by_mcap = sorted(pool, key=lambda c: (-c.market_cap, -c.volume_24h))
@@ -908,8 +945,9 @@ def parse_tokens(body: dict, network: str) -> list[Trending]:
 
 
 def rank_rwas(items: list[Trending], coins: list[RwaCoin]) -> list[Trending]:
-    """PINNED first (in order), then 24h DEX volume, then CoinGecko market cap; NOT_RWA dropped; top 10."""
-    pin = {key: i for i, key in enumerate(PINNED)}
+    """PINNED first (in order, with their note), then 24h DEX volume, then CoinGecko market cap;
+    NOT_RWA and duplicates dropped; top 10."""
+    pin = {(n, a): (i, note) for i, (n, a, note) in enumerate(PINNED)}
     mcap = {(c.network, c.address): c.market_cap for c in coins}
     seen, kept = set(), []
     for t in items:
@@ -917,10 +955,10 @@ def rank_rwas(items: list[Trending], coins: list[RwaCoin]) -> list[Trending]:
         if key in seen or (key in NOT_RWA and key not in pin):
             continue
         seen.add(key)
-        kept.append(t)
+        kept.append(replace(t, note=pin[key][1]) if key in pin else t)
     kept.sort(
         key=lambda t: (
-            pin.get((t.network, t.address.lower()), len(pin)),
+            pin.get((t.network, t.address.lower()), (len(pin), None))[0],
             -t.volume_24h,
             -mcap.get((t.network, t.address.lower()), 0.0),
         )
@@ -935,19 +973,19 @@ def load_rwa_snapshot(path: Path = RWA_SNAPSHOT) -> list[RwaCoin]:
 
 - [ ] **Step 5: Run to verify they pass** (all except the shipped-snapshot test)
 
-Run: `uv run --directory agent pytest tests/test_trending_rwa.py tests/test_trending.py -q --deselect tests/test_trending_rwa.py::test_shipped_snapshot_covers_both_networks_and_the_pinned_token`
-Expected: PASS (27 tests, 1 deselected).
+Run: `uv run --directory agent pytest tests/test_trending_rwa.py tests/test_trending.py -q --deselect tests/test_trending_rwa.py::test_shipped_snapshot_has_project_tokens_not_asset_tokens`
+Expected: PASS (30 tests, 1 deselected).
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add agent/lazyagent/trending.py agent/tests/test_trending_rwa.py agent/tests/fixtures
-git commit -m "feat(agent): RWA addresses, candidates and ranking with pinned XAUt0"
+git commit -m "feat(agent): RWA project tokens, candidates and ranking with pinned XAUt0"
 ```
 
 ---
 
-### Task 4: GeckoTerminal source and the 60 s cache
+### Task 4: GeckoTerminal source and the 60 s cache with per-category fetchers
 
 **Files:**
 - Modify: `agent/lazyagent/trending.py` (imports; append the I/O section)
@@ -958,13 +996,13 @@ git commit -m "feat(agent): RWA addresses, candidates and ranking with pinned XA
 **Interfaces:**
 - Consumes: everything from Tasks 2–3.
 - Produces, in `lazyagent.trending`:
-  - `TrendingSource` (Protocol): `async meme_pools() -> list[Pool]` and `async tokens(network: str, addresses: list[str]) -> dict`.
-  - `GeckoTerminalSource(base: str = GT_API)`. `tokens` sends no request for an empty list. Errors raise: `urllib.error.HTTPError` (429 etc.), `OSError` (unreachable) or `ValueError` (non-JSON).
-  - `TrendingTokens(source, rwa_coins: Callable[[], list[RwaCoin]] = load_rwa_snapshot, ttl=TTL_S, clock=time.monotonic)` with `.source` and `async fetch(category: str = "meme", network: str | None = None) -> list[Trending]`. It caches per (category, network) and propagates exceptions without caching them.
+  - `TrendingSource` (a Protocol) with `async meme_pools() -> list[Pool]` and `async tokens(network: str, addresses: list[str]) -> dict`.
+  - `GeckoTerminalSource(base: str = GT_API)`. `tokens` sends no request for an empty address list. Failures raise `urllib.error.HTTPError` (429 and other HTTP errors), `OSError` (unreachable) or `ValueError` (non-JSON body).
+  - `TrendingTokens(source, rwa_coins: Callable[[], list[RwaCoin]] = load_rwa_snapshot, ttl=TTL_S, clock=time.monotonic)`, with a `.source` attribute and `async fetch(category: str = "meme", network: str | None = None) -> list[Trending]`. It dispatches through `self._fetchers` (one entry per `CATEGORY_NETWORKS` key), caches per (category, network), and lets exceptions propagate without caching them.
   - `TRENDING`: the process-wide `TrendingTokens(GeckoTerminalSource())`.
 - Produces, in tests:
-  - `http_stub.serve(routes) -> (server, seen_paths)`. Routes map a path prefix (longest wins) to `(status, body_bytes, headers)` or to a list of those served in turn (the last one repeats).
-  - `fakes.FakeTrendingSource(pools=None, tokens=None)` with `.pools`, `.token_bodies`, `.calls` (a list of tuples) and `.fail`.
+  - `http_stub.serve(routes) -> (server, seen_paths)`. Each route maps a path prefix (the longest match wins) to `(status, body_bytes, headers)`, or to a list of those tuples served in turn, with the last one repeating.
+  - `fakes.FakeTrendingSource(pools=None, tokens=None)`, with `.pools`, `.token_bodies`, `.calls` (a list of tuples) and `.fail`.
 
 - [ ] **Step 1: Add the test helpers**
 
@@ -1031,7 +1069,7 @@ class FakeTrendingSource:
         return self.token_bodies.get(network, {})
 ```
 
-- [ ] **Step 2: Write the failing tests** in `agent/tests/test_trending_source.py`
+- [ ] **Step 2: Write the failing tests** — `agent/tests/test_trending_source.py`
 
 ```python
 import json
@@ -1047,7 +1085,8 @@ from lazyagent.trending import PINNED, GeckoTerminalSource, Pool, RwaCoin, Token
 FIXTURES = Path(__file__).parent / "fixtures"
 COQ_POOL = Pool(TokenInfo("COQ", "COQINU", "0x420fca0121dc28039145009570975747295f2329"), 1.2e-7, 16_937.5, -5.1, 623_823.6, "LFJ", 0)
 XAUT0 = PINNED[0][1]
-XAUT = "0x68749665ff8d2d112fa859aa293f07a622782f38"
+ONDO = "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3"
+RSR = "0x320623b8e4ff03373931769a31fc52a4e78b5d70"
 
 
 def ok(name: str):
@@ -1067,11 +1106,11 @@ async def test_meme_pools_fetch_trending_and_arena():
 async def test_tokens_batch_url_per_network():
     server, seen = serve({"/eth/tokens/multi/": ok("geckoterminal_tokens_eth.json")})
     try:
-        body = await GeckoTerminalSource(f"http://127.0.0.1:{server.server_port}").tokens("ethereum", [XAUT, "0xba47214edd2bb43099611b208f75e4b42fdcfedc"])
+        body = await GeckoTerminalSource(f"http://127.0.0.1:{server.server_port}").tokens("ethereum", [ONDO, RSR])
     finally:
         server.shutdown()
     assert len(body["data"]) == 2
-    assert seen == [f"/eth/tokens/multi/{XAUT},0xba47214edd2bb43099611b208f75e4b42fdcfedc?include=top_pools"]
+    assert seen == [f"/eth/tokens/multi/{ONDO},{RSR}?include=top_pools"]
 
 
 async def test_tokens_with_no_addresses_makes_no_request():
@@ -1116,7 +1155,7 @@ def tokens_fixtures() -> dict:
     }
 
 
-SNAPSHOT = [RwaCoin("avalanche", XAUT0, "tether-gold-tokens", 1e8, 5e6), RwaCoin("ethereum", XAUT, "tether-gold", 2e9, 3e8)]
+SNAPSHOT = [RwaCoin("ethereum", ONDO, "ondo-finance", 2e9, 2e8), RwaCoin("ethereum", RSR, "reserve-rights-token", 1e8, 3e7)]
 
 
 async def test_cache_serves_within_60_seconds_and_refetches_after():
@@ -1140,7 +1179,7 @@ async def test_cache_is_per_category_and_network():
     assert source.calls == [
         ("meme_pools",),
         ("tokens", "avalanche", (XAUT0,)),
-        ("tokens", "ethereum", (XAUT,)),
+        ("tokens", "ethereum", (ONDO, RSR)),
         ("tokens", "avalanche", (XAUT0,)),
     ]
 
@@ -1148,9 +1187,10 @@ async def test_cache_is_per_category_and_network():
 async def test_rwa_lists_both_networks_with_pinned_first():
     trending = TrendingTokens(FakeTrendingSource(tokens=tokens_fixtures()), lambda: SNAPSHOT, clock=Clock())
     both = await trending.fetch("rwa")
-    assert [(t.symbol, t.network) for t in both] == [("XAUt0", "avalanche"), ("XAUt", "ethereum"), ("GOOGLon", "ethereum"), ("buidl", "avalanche")]
+    assert [(t.symbol, t.network) for t in both] == [("XAUt0", "avalanche"), ("ONDO", "ethereum"), ("RSR", "ethereum"), ("NXRA", "avalanche")]
+    assert both[0].note == PINNED[0][2]
     eth = await trending.fetch("rwa", "ethereum")
-    assert [t.symbol for t in eth] == ["XAUt", "GOOGLon"]
+    assert [t.symbol for t in eth] == ["ONDO", "RSR"]
 
 
 async def test_errors_are_not_cached():
@@ -1181,7 +1221,7 @@ Expected: FAIL — `ImportError: cannot import name 'GeckoTerminalSource' from '
 ```python
 import html
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 ```
 
@@ -1193,8 +1233,8 @@ import html
 import json
 import time
 import urllib.request
-from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from collections.abc import Awaitable, Callable
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Protocol
 ```
@@ -1248,6 +1288,8 @@ class TrendingTokens:
         self.ttl = ttl
         self.clock = clock
         self._cache: dict[tuple[str, str | None], tuple[float, list[Trending]]] = {}
+        # one fetcher per CATEGORY_NETWORKS key
+        self._fetchers: dict[str, Callable[[str | None], Awaitable[list[Trending]]]] = {"meme": self._memes, "rwa": self._rwas}
 
     async def fetch(self, category: str = "meme", network: str | None = None) -> list[Trending]:
         key = (category, network)
@@ -1255,14 +1297,17 @@ class TrendingTokens:
         hit = self._cache.get(key)
         if hit is not None and now - hit[0] < self.ttl:
             return hit[1]
-        items = rank_memes(await self.source.meme_pools()) if category == "meme" else await self._rwas(network)
+        items = await self._fetchers[category](network)
         self._cache[key] = (now, items)
         return items
+
+    async def _memes(self, network: str | None) -> list[Trending]:
+        return rank_memes(await self.source.meme_pools())
 
     async def _rwas(self, network: str | None) -> list[Trending]:
         coins = self.rwa_coins()
         items: list[Trending] = []
-        for net in [network] if network else list(GT_NETWORKS):
+        for net in [network] if network else CATEGORY_NETWORKS["rwa"]:
             items += parse_tokens(await self.source.tokens(net, rwa_candidates(coins, net)), net)
         return rank_rwas(items, coins)
 
@@ -1273,7 +1318,7 @@ TRENDING = TrendingTokens(GeckoTerminalSource())
 - [ ] **Step 5: Run to verify they pass**
 
 Run: `uv run --directory agent pytest tests/test_trending_source.py tests/test_trending.py -q`
-Expected: PASS (26 tests).
+Expected: PASS (27 tests).
 
 - [ ] **Step 6: Commit**
 
@@ -1289,17 +1334,22 @@ git commit -m "feat(agent): GeckoTerminal trending source with a 60 s cache"
 **Files:**
 - Create: `agent/lazyagent/rwa_snapshot.py`
 - Create (generated): `agent/lazyagent/data/rwa_coingecko.json`
-- Test: `agent/tests/test_rwa_snapshot.py` (plus the shipped-snapshot test from Task 3)
+- Test: `agent/tests/test_rwa_snapshot.py`, plus the shipped-snapshot test from Task 3
 
 **Interfaces:**
-- Consumes: `RWA_SNAPSHOT`, `RwaCoin`, `rwa_addresses`, `load_rwa_snapshot` (Task 3); `http_stub.serve` (Task 4).
+- Consumes: `RWA_SNAPSHOT`, `RwaCoin`, `rwa_addresses` and `load_rwa_snapshot` from Task 3; `http_stub.serve` from Task 4.
 - Produces, in `lazyagent.rwa_snapshot`:
-  - `CoinGeckoRwaSource(base=CG_API, sleep=time.sleep, pause=15.0, retries=6, per_page=250)` with `markets() -> list[dict]`, `coin_list() -> list[dict]` and `coins() -> list[RwaCoin]`. On a 429 it sleeps for `Retry-After` (60 if missing); after `retries` attempts it raises `HTTPError`.
-  - `snapshot_json(coins, generated: str) -> str`, sorted by network, then volume and market cap descending, one coin per line.
-  - `main(path=RWA_SNAPSHOT)`.
-  - Run with `uv run --directory agent python -m lazyagent.rwa_snapshot`.
+  - `RWA_CATEGORY = "real-world-assets-rwa"` and `ASSET_CATEGORIES = ("tokenized-products",)`.
+  - `CoinGeckoRwaSource(base=CG_API, sleep=time.sleep, pause=15.0, retries=6, per_page=250)` with:
+    - `markets(category) -> list[dict]`: fetches every page, sleeping `pause` after each page.
+    - `coin_list() -> list[dict]`.
+    - `coins() -> list[RwaCoin]`.
 
-- [ ] **Step 1: Write the failing tests** in `agent/tests/test_rwa_snapshot.py`
+    On a 429 it sleeps for `Retry-After` seconds (60 if the header is missing). After `retries` attempts it re-raises the `HTTPError`.
+  - `snapshot_json(coins, generated: str) -> str`: sorted by network, then volume and market cap descending, one coin per line.
+  - `main(path=RWA_SNAPSHOT)`, run with `uv run --directory agent python -m lazyagent.rwa_snapshot`.
+
+- [ ] **Step 1: Write the failing tests** — `agent/tests/test_rwa_snapshot.py`
 
 ```python
 import json
@@ -1313,17 +1363,20 @@ from lazyagent.rwa_snapshot import CoinGeckoRwaSource, snapshot_json
 from lazyagent.trending import RwaCoin, load_rwa_snapshot
 
 FIXTURES = Path(__file__).parent / "fixtures"
-MARKETS = json.loads((FIXTURES / "coingecko_markets.json").read_text())
+MARKETS = json.loads((FIXTURES / "coingecko_markets.json").read_text())  # ondo-finance, tether-gold-tokens
+RWA = "/coins/markets?vs_currency=usd&category=real-world-assets-rwa"
+ASSETS = "/coins/markets?vs_currency=usd&category=tokenized-products"
 
 
 def body(obj) -> bytes:
     return json.dumps(obj).encode()
 
 
-def test_fetches_every_page_then_the_coin_list():
+def test_pages_both_categories_and_drops_asset_tokens():
     server, seen = serve(
         {
-            "/coins/markets": [(200, body(MARKETS[:1]), {}), (200, body(MARKETS[1:]), {}), (200, b"[]", {})],
+            RWA: [(200, body(MARKETS[:1]), {}), (200, body(MARKETS[1:]), {}), (200, b"[]", {})],
+            ASSETS: [(200, body([{"id": "tether-gold-tokens"}]), {}), (200, b"[]", {})],
             "/coins/list": (200, (FIXTURES / "coingecko_coins_list.json").read_bytes(), {}),
         }
     )
@@ -1332,11 +1385,16 @@ def test_fetches_every_page_then_the_coin_list():
         coins = CoinGeckoRwaSource(f"http://127.0.0.1:{server.server_port}", sleep=sleeps.append, per_page=1).coins()
     finally:
         server.shutdown()
-    assert [p.split("&page=")[-1] for p in seen[:3]] == ["1", "2", "3"]
-    assert seen[0] == "/coins/markets?vs_currency=usd&category=real-world-assets-rwa&per_page=1&page=1"
-    assert seen[3] == "/coins/list?include_platform=true"
-    assert [(c.network, c.coingecko_id) for c in coins] == [("ethereum", "chainlink"), ("avalanche", "chainlink"), ("avalanche", "tether-gold-tokens")]
-    assert sleeps == [15.0, 15.0, 15.0]  # between pages, and before the coin list
+    assert seen == [
+        f"{RWA}&per_page=1&page=1",
+        f"{RWA}&per_page=1&page=2",
+        f"{RWA}&per_page=1&page=3",
+        f"{ASSETS}&per_page=1&page=1",
+        f"{ASSETS}&per_page=1&page=2",
+        "/coins/list?include_platform=true",
+    ]
+    assert [(c.network, c.coingecko_id) for c in coins] == [("ethereum", "ondo-finance")]
+    assert sleeps == [15.0] * 5  # after every markets page
 
 
 def test_waits_out_429_using_retry_after():
@@ -1371,13 +1429,16 @@ def test_snapshot_json_round_trips_and_sorts(tmp_path):
 Run: `uv run --directory agent pytest tests/test_rwa_snapshot.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'lazyagent.rwa_snapshot'`.
 
-- [ ] **Step 3: Implement.** Create `agent/lazyagent/rwa_snapshot.py`:
+- [ ] **Step 3: Implement** — create `agent/lazyagent/rwa_snapshot.py`
 
 ```python
-"""Refresh the RWA address snapshot (lazyagent/data/rwa_coingecko.json) from CoinGecko's free API.
+"""Refresh the RWA project-token snapshot (lazyagent/data/rwa_coingecko.json) from CoinGecko's free API.
 
-CoinGecko's RWA category is ~2,500 coins (10 pages) and the free tier 429s even at one request
-every 15 s, so this runs offline (paced, honouring Retry-After) instead of on a user's request.
+RWA project token = in CoinGecko's `real-world-assets-rwa` category and NOT in `tokenized-products`
+("Tokenized Assets" — the umbrella that contains every tokenized stock/ETF/gold/silver/commodity/
+treasury/T-bill/money-market/credit sub-category; verified 2026-10-15). Both categories are ~10 pages
+and the free tier 429s even at one request every 15 s, so this runs offline (paced, honouring
+Retry-After) instead of on a user's request.
 Run: uv run --directory agent python -m lazyagent.rwa_snapshot
 """
 
@@ -1393,7 +1454,8 @@ from pathlib import Path
 from .trending import RWA_SNAPSHOT, RwaCoin, rwa_addresses
 
 CG_API = "https://api.coingecko.com/api/v3"
-CATEGORY = "real-world-assets-rwa"
+RWA_CATEGORY = "real-world-assets-rwa"
+ASSET_CATEGORIES = ("tokenized-products",)
 PER_PAGE = 250
 
 
@@ -1428,30 +1490,36 @@ class CoinGeckoRwaSource:
                 self.sleep(float(e.headers.get("retry-after") or 60))
         raise RuntimeError("unreachable")
 
-    def markets(self) -> list[dict]:
+    def markets(self, category: str) -> list[dict]:
+        """Every page of coins/markets for one category; pauses between requests."""
         out: list[dict] = []
         page = 1
         while True:
-            batch = self._fetch(f"{self.base}/coins/markets?vs_currency=usd&category={CATEGORY}&per_page={self.per_page}&page={page}")
+            batch = self._fetch(f"{self.base}/coins/markets?vs_currency=usd&category={category}&per_page={self.per_page}&page={page}")
             out += batch
+            self.sleep(self.pause)
             if len(batch) < self.per_page:
                 return out
             page += 1
-            self.sleep(self.pause)
 
     def coin_list(self) -> list[dict]:
         return self._fetch(f"{self.base}/coins/list?include_platform=true")
 
     def coins(self) -> list[RwaCoin]:
-        markets = self.markets()
-        self.sleep(self.pause)
-        return rwa_addresses(markets, self.coin_list())
+        markets = self.markets(RWA_CATEGORY)
+        asset_ids = {c["id"] for cat in ASSET_CATEGORIES for c in self.markets(cat)}
+        return rwa_addresses(markets, self.coin_list(), asset_ids)
 
 
 def snapshot_json(coins: list[RwaCoin], generated: str) -> str:
     rows = sorted(coins, key=lambda c: (c.network, -c.volume_24h, -c.market_cap, c.address))
     lines = ",\n".join("    " + json.dumps(asdict(c)) for c in rows)
-    head = json.dumps({"generated": generated, "source": f"CoinGecko coins/markets category={CATEGORY} (all pages) + coins/list platforms"})[:-1]
+    head = json.dumps(
+        {
+            "generated": generated,
+            "source": f"CoinGecko coins/markets category={RWA_CATEGORY} minus {', '.join(ASSET_CATEGORIES)} (all pages) + coins/list platforms",
+        }
+    )[:-1]
     return f'{head}, "coins": [\n{lines}\n]}}\n'
 
 
@@ -1460,7 +1528,7 @@ def main(path: Path = RWA_SNAPSHOT) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(snapshot_json(coins, datetime.date.today().isoformat()))
     counts = {n: sum(c.network == n for c in coins) for n in sorted({c.network for c in coins})}
-    print(f"Wrote {len(coins)} RWA addresses to {path}: {counts}")
+    print(f"Wrote {len(coins)} RWA project-token addresses to {path}: {counts}")
 
 
 if __name__ == "__main__":
@@ -1472,25 +1540,25 @@ if __name__ == "__main__":
 Run: `uv run --directory agent pytest tests/test_rwa_snapshot.py -q`
 Expected: PASS (4 tests).
 
-- [ ] **Step 5: Generate the snapshot.** This is live and paced, and takes about 3–6 minutes because of 429 back-offs. Leave it running.
+- [ ] **Step 5: Generate the snapshot.** This calls CoinGecko live and is paced: about 20 requests, roughly 6–10 minutes including 429 back-offs. Leave it running.
 
 Run: `uv run --directory agent python -m lazyagent.rwa_snapshot`
-Expected: `Wrote ~1450 RWA addresses to …/agent/lazyagent/data/rwa_coingecko.json: {'avalanche': ~290, 'ethereum': ~1170}` (2026-10-15: 1,457 = 290 + 1,167; the file is ~270 KB).
-Check: `grep -c 0x2775d5105276781b4b85ba6ea6a6653beed1dd32 agent/lazyagent/data/rwa_coingecko.json` → `1`.
+Expected: `Wrote ~130 RWA project-token addresses to …/agent/lazyagent/data/rwa_coingecko.json: {'avalanche': ~10, 'ethereum': ~117}`. On 2026-10-15 the file had 127 rows and was about 21 KB.
+Check: `grep -c '"ondo-finance"' agent/lazyagent/data/rwa_coingecko.json` → `1`; `grep -c tether-gold agent/lazyagent/data/rwa_coingecko.json` → `0`.
 
-- [ ] **Step 6: Run the shipped-snapshot test and a live smoke check.** The smoke check hits GeckoTerminal twice and is not part of the suite.
+- [ ] **Step 6: Run the shipped-snapshot test, then a live smoke check.** The smoke check calls GeckoTerminal twice and is not part of the suite.
 
 Run: `uv run --directory agent pytest tests/test_trending_rwa.py -q`
-Expected: PASS (13 tests).
+Expected: PASS (15 tests).
 
-Run: `uv run --directory agent python -c "import asyncio; from lazyagent.trending import TRENDING; [print(t.network, t.symbol, t.volume_24h, t.liquidity_usd, t.dex, t.buyable) for t in asyncio.run(TRENDING.fetch('rwa'))]"`
-Expected: `avalanche XAUt0 … True` first, then Ethereum gold and tokenized stocks (XAUt, PAXG, …). If a clear non-RWA protocol token or a plain stablecoin shows up, add its (network, address) to `NOT_RWA` and to the research note.
+Run: `uv run --directory agent python -c "import asyncio; from lazyagent.trending import TRENDING; [print(t.network, t.symbol, t.volume_24h, t.liquidity_usd, t.dex, t.buyable, t.note) for t in asyncio.run(TRENDING.fetch('rwa'))]"`
+Expected: `avalanche XAUt0 … True tokenized gold — Avalanche showcase` first, then Ethereum project tokens. On 2026-10-15 these were ONDO, DUSK, CFG, RSR, SYRUP, USUAL, EPIC, IXS and PLUME. If a clear asset token, infra token or stablecoin shows up, add its (network, address) to `NOT_RWA` and record it in the research note.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add agent/lazyagent/rwa_snapshot.py agent/lazyagent/data/rwa_coingecko.json agent/tests/test_rwa_snapshot.py
-git commit -m "feat(agent): CoinGecko RWA address snapshot (Ethereum + Avalanche)"
+git commit -m "feat(agent): CoinGecko RWA project-token snapshot (Ethereum + Avalanche)"
 ```
 
 ---
@@ -1498,19 +1566,23 @@ git commit -m "feat(agent): CoinGecko RWA address snapshot (Ethereum + Avalanche
 ### Task 6: `list_trending_tokens` tool and prompt line
 
 **Files:**
-- Modify: `agent/lazyagent/tools.py` (import, `TOOL_NAMES`, class attribute + method after `request_test_funds`, registration before `unsupported_action`)
-- Modify: `agent/lazyagent/prompt.py` (one line, directly above the "Bridging between networks" line)
+- Modify: `agent/lazyagent/trending.py` (append the tool layer)
+- Modify: `agent/lazyagent/tools.py`: the import, `TOOL_NAMES`, a class attribute and method after `request_test_funds`, and a registration line before `unsupported_action`
+- Modify: `agent/lazyagent/prompt.py`: one line, directly above the "Bridging between networks" line
 - Modify: `agent/tests/test_tools.py` (`test_mcp_server_and_names`)
 - Test: `agent/tests/test_trending_tools.py`
 
 **Interfaces:**
-- Consumes: `TRENDING`, `UNAVAILABLE`, `TrendingTokens`, `check_args`, `to_json`, `Pool`, `TokenInfo`, `RwaCoin`, `GeckoTerminalSource` (Tasks 2–4); `FakeTrendingSource`; `ok` and `err` in `tools.py`.
+- Consumes: `CATEGORY_NETWORKS`, `GT_NETWORKS`, `UNAVAILABLE`, `TrendingError`, `parse_args`, `to_json`, `TrendingTokens` and `TRENDING` (Tasks 2–4); `FakeTrendingSource`; `ok` and `err` from `tools.py`.
 - Produces:
-  - `WalletTools.trending: TrendingTokens`, a class attribute defaulting to `TRENDING`; tests assign an instance attribute.
-  - `async WalletTools.list_trending_tokens(args: dict) -> dict`. Args: optional `category` (default `meme`) and optional `network`; both are case-insensitive.
-  - MCP tool `list_trending_tokens`, with `"mcp__wallet__list_trending_tokens"` last in `TOOL_NAMES`.
+  - `trending.TRENDING_TOOL: tuple[str, str, dict]`, holding the name, description and input schema. Its enums come from `CATEGORY_NETWORKS` and `GT_NETWORKS`.
+  - `async trending.trending_reply(trending: TrendingTokens, args: dict) -> str`. Returns JSON text, and raises `TrendingError` for bad arguments or when the fetch fails (with `UNAVAILABLE`).
+  - `WalletTools.trending: TrendingTokens`, a class attribute that defaults to `TRENDING`. Tests assign an instance attribute instead.
+  - `async WalletTools.list_trending_tokens(args) -> dict`.
+  - The MCP tool `list_trending_tokens`, with `"mcp__wallet__list_trending_tokens"` added last in `TOOL_NAMES`.
+- **To add a category later** (e.g. `airdrop`), change only `trending.py`: add a `CATEGORY_NETWORKS` entry, a fetcher in `TrendingTokens._fetchers`, and a sentence in the `TRENDING_TOOL` description. Then add a line to `prompt.py`.
 
-- [ ] **Step 1: Write the failing tests** in `agent/tests/test_trending_tools.py`
+- [ ] **Step 1: Write the failing tests** — `agent/tests/test_trending_tools.py`
 
 ```python
 import json
@@ -1519,18 +1591,16 @@ from fakes import FakeChain, FakeTrendingSource, Outbox
 
 from lazyagent.proposals import Proposals
 from lazyagent.tools import WalletContext, WalletTools
-from lazyagent.trending import GeckoTerminalSource, Pool, RwaCoin, TokenInfo, TrendingTokens
+from lazyagent.trending import CATEGORY_NETWORKS, TRENDING_TOOL, GeckoTerminalSource, Pool, RwaCoin, TokenInfo, TrendingTokens
 
 COQ = "0x420fca0121dc28039145009570975747295f2329"
-XAUT0 = "0x2775d5105276781b4b85ba6ea6a6653beed1dd32"
-XAUT0_BODY = {
-    "data": [{"id": "avax_x", "attributes": {"address": XAUT0, "symbol": "XAUt0", "name": "XAUt0", "price_usd": "4152.3", "volume_usd": {"h24": "146051.7"}}}],
-}
+ONDO = "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3"
+ONDO_BODY = {"data": [{"id": "eth_x", "attributes": {"address": ONDO, "symbol": "ONDO", "name": "Ondo", "price_usd": "0.43", "volume_usd": {"h24": "1183578.3"}}}]}
 
 
 def make(source: FakeTrendingSource) -> WalletTools:
     tools = WalletTools(FakeChain(), Outbox(), WalletContext(), Proposals())
-    tools.trending = TrendingTokens(source, lambda: [RwaCoin("avalanche", XAUT0, "tether-gold-tokens", 1e8, 5e6)])
+    tools.trending = TrendingTokens(source, lambda: [RwaCoin("ethereum", ONDO, "ondo-finance", 2e9, 2e8)])
     return tools
 
 
@@ -1543,15 +1613,15 @@ async def test_memes_by_default():
     result = await tools.list_trending_tokens({})
     assert not result.get("is_error")
     [coq] = json.loads(text(result))["tokens"]
-    assert (coq["symbol"], coq["address"], coq["network"], coq["change_24h"], coq["buyable"]) == ("COQ", COQ, "avalanche", -5.1, True)
+    assert (coq["symbol"], coq["address"], coq["network"], coq["change_24h"], coq["buyable"], coq["note"]) == ("COQ", COQ, "avalanche", -5.1, True, None)
 
 
 async def test_rwa_with_network():
-    source = FakeTrendingSource(tokens={"avalanche": XAUT0_BODY})
-    result = await make(source).list_trending_tokens({"category": "rwa", "network": "Avalanche"})
-    [xaut0] = json.loads(text(result))["tokens"]
-    assert (xaut0["symbol"], xaut0["network"], xaut0["buyable"]) == ("XAUt0", "avalanche", False)  # no pool in this body
-    assert source.calls == [("tokens", "avalanche", (XAUT0,))]
+    source = FakeTrendingSource(tokens={"ethereum": ONDO_BODY})
+    result = await make(source).list_trending_tokens({"category": "rwa", "network": "Ethereum"})
+    [ondo] = json.loads(text(result))["tokens"]
+    assert (ondo["symbol"], ondo["network"], ondo["buyable"]) == ("ONDO", "ethereum", False)  # no pool in this body
+    assert source.calls == [("tokens", "ethereum", (ONDO,))]
 
 
 async def test_works_without_an_active_wallet():
@@ -1564,9 +1634,9 @@ async def test_bad_arguments_are_errors_without_fetching():
     source = FakeTrendingSource()
     tools = make(source)
     bad = await tools.list_trending_tokens({"category": "nft"})
-    assert bad["is_error"] is True and text(bad) == "category must be 'meme' or 'rwa'."
+    assert bad["is_error"] is True and text(bad) == "category must be one of: meme, rwa."
     eth_memes = await tools.list_trending_tokens({"category": "meme", "network": "ethereum"})
-    assert text(eth_memes) == "Memecoins are Avalanche only."
+    assert text(eth_memes) == "meme tokens are only listed on Avalanche."
     assert source.calls == []
 
 
@@ -1577,11 +1647,18 @@ async def test_fetch_failure_is_a_friendly_error():
     assert result["is_error"] is True and text(result) == "Couldn't load trending tokens right now."
 
 
+def test_tool_schema_follows_the_category_registry():
+    name, _, schema = TRENDING_TOOL
+    assert name == "list_trending_tokens"
+    assert schema["properties"]["category"]["enum"] == list(CATEGORY_NETWORKS) == ["meme", "rwa"]
+    assert schema["properties"]["network"]["enum"] == ["ethereum", "avalanche"]
+
+
 def test_default_source_is_geckoterminal():
     assert isinstance(WalletTools.trending.source, GeckoTerminalSource)
 ```
 
-In `agent/tests/test_tools.py`, `test_mcp_server_and_names`, add the new name as the last entry:
+In `agent/tests/test_tools.py`, inside `test_mcp_server_and_names`, add the new name as the last entry:
 
 ```python
         "mcp__wallet__request_test_funds",
@@ -1592,14 +1669,45 @@ In `agent/tests/test_tools.py`, `test_mcp_server_and_names`, add the new name as
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `uv run --directory agent pytest tests/test_trending_tools.py tests/test_tools.py::test_mcp_server_and_names -q`
-Expected: FAIL. `WalletTools` has no `list_trending_tokens` / `trending`, and the `TOOL_NAMES` assertion fails.
+Expected: FAIL — `ImportError: cannot import name 'TRENDING_TOOL' from 'lazyagent.trending'`, and the `TOOL_NAMES` assertion fails.
 
-- [ ] **Step 3: Implement in `agent/lazyagent/tools.py`.** Make these five small edits and nothing else.
-
-After `from .tokens import find_token` add:
+- [ ] **Step 3: Append the tool layer** to the end of `agent/lazyagent/trending.py`, with two blank lines before it:
 
 ```python
-from .trending import TRENDING, UNAVAILABLE, TrendingTokens, check_args, to_json
+# --- agent tool ---
+
+TRENDING_TOOL = (
+    "list_trending_tokens",
+    "Live mainnet token lists (read-only). category 'meme' (default): top trending Avalanche memecoins. "
+    "category 'rwa': top RWA project tokens (ONDO, PLUME, SYRUP, …) on Ethereum and Avalanche, with XAUt0 "
+    "(tokenized gold) pinned first as the Avalanche showcase. Each token: symbol, name, contract address, "
+    "network, USD price, 24h volume, 24h change, liquidity, main DEX, buyable, note.",
+    {
+        "type": "object",
+        "properties": {
+            "category": {"type": "string", "enum": list(CATEGORY_NETWORKS), "description": "Default 'meme'"},
+            "network": {"type": "string", "enum": list(GT_NETWORKS), "description": "Only if the user named a network"},
+        },
+    },
+)
+
+
+async def trending_reply(trending: TrendingTokens, args: dict) -> str:
+    """The tool's answer as JSON text. Raises TrendingError with text for the model."""
+    category, network = parse_args(args)
+    try:
+        items = await trending.fetch(category, network)
+    except Exception as e:
+        raise TrendingError(UNAVAILABLE) from e
+    return to_json(items)
+```
+
+- [ ] **Step 4: Wire it into `agent/lazyagent/tools.py`.** Make these four small edits and nothing else.
+
+After `from .tokens import find_token`, add:
+
+```python
+from .trending import TRENDING, TRENDING_TOOL, TrendingError, TrendingTokens, trending_reply
 ```
 
 In `TOOL_NAMES`, append the name to the tuple:
@@ -1614,49 +1722,34 @@ Between the `request_test_funds` and `unsupported_action` methods, insert:
     trending: TrendingTokens = TRENDING  # shared 60 s cache; tests assign their own
 
     async def list_trending_tokens(self, args: dict) -> dict:
-        category = str(args.get("category") or "meme").strip().lower()
-        network = str(args["network"]).strip().lower() if args.get("network") else None
-        problem = check_args(category, network)
-        if problem:
-            return err(problem)
         try:
-            return ok(to_json(await self.trending.fetch(category, network)))
-        except Exception:
-            return err(UNAVAILABLE)
+            return ok(await trending_reply(self.trending, args))
+        except TrendingError as e:
+            return err(str(e))
 ```
 
-In `build_mcp_server`, insert this before the `tool("unsupported_action", ...)` entry:
+In `build_mcp_server`, insert this line before the `tool("unsupported_action", ...)` entry:
 
 ```python
-            tool(
-                "list_trending_tokens",
-                "Live mainnet token lists (read-only). category 'meme' (default): top trending Avalanche memecoins. category 'rwa': top real-world-asset tokens on Ethereum and Avalanche, sponsor pick first. Each token: symbol, name, contract address, network, USD price, 24h volume, 24h change, liquidity, main DEX, buyable.",
-                {
-                    "type": "object",
-                    "properties": {
-                        "category": {"type": "string", "enum": ["meme", "rwa"], "description": "Default 'meme'"},
-                        "network": {"type": "string", "enum": ["ethereum", "avalanche"], "description": "rwa only, and only if the user named a network"},
-                    },
-                },
-            )(t.list_trending_tokens),
+            tool(*TRENDING_TOOL)(t.list_trending_tokens),
 ```
 
-- [ ] **Step 4: Add the prompt line.** In `agent/lazyagent/prompt.py`, insert this directly above `- Bridging between networks, schedules, ...`:
+- [ ] **Step 5: Add the prompt line.** In `agent/lazyagent/prompt.py`, insert this directly above `- Bridging between networks, schedules, ...`:
 
 ```text
-- "What's trending", "hot memecoins on Avalanche" → list_trending_tokens (category meme). "RWAs", "real-world assets", "tokenized gold / stocks / treasuries" → list_trending_tokens with category rwa (network only if the user named one). It's live mainnet data. Summarise the top three or so by symbol with their 24h change in one or two sentences; for RWAs mention the first (pinned) one and say plainly which aren't buyable here. Offer to buy only buyable tokens: call propose_swap with that token's network and token_out set to its contract address, not its symbol. A very new token may not exist on the Sandbox fork yet. If the list is empty or the tool errors, say so plainly.
+- "What's trending", "hot memecoins on Avalanche" → list_trending_tokens (category meme). "RWA tokens", "RWA plays", "real-world-asset projects" → list_trending_tokens with category rwa (network only if the user named one). It's live mainnet data. Summarise the top three or so by symbol with their 24h change in one or two sentences; for RWAs say XAUt0 is tokenized gold pinned as the Avalanche showcase (its note), and say plainly which aren't buyable here. Offer to buy only buyable tokens: call propose_swap with that token's network and token_out set to its contract address, not its symbol. A very new token may not exist on the Sandbox fork yet. If the list is empty or the tool errors, say so plainly.
 ```
 
-- [ ] **Step 5: Run the agent suite**
+- [ ] **Step 6: Run the agent suite**
 
 Run: `uv run --directory agent pytest -q`
 Expected: PASS. Fork tests skip or pass as before, and no test touches GeckoTerminal or CoinGecko.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add agent/lazyagent/tools.py agent/lazyagent/prompt.py agent/tests/test_tools.py agent/tests/test_trending_tools.py
-git commit -m "feat(agent): list_trending_tokens tool (memes, RWAs) and prompt routing"
+git add agent/lazyagent/trending.py agent/lazyagent/tools.py agent/lazyagent/prompt.py agent/tests/test_tools.py agent/tests/test_trending_tools.py
+git commit -m "feat(agent): list_trending_tokens tool (memes, RWA project tokens) and prompt routing"
 ```
 
 ---
@@ -1666,23 +1759,22 @@ git commit -m "feat(agent): list_trending_tokens tool (memes, RWAs) and prompt r
 **Files:**
 - Modify: `CLAUDE.md`, `docs/superpowers/specs/2026-10-15-lazywallet-avax-trending-design.md`
 
-- [ ] **Step 1: `CLAUDE.md`.** Under "Wallet app conventions", after the Uniswap v4 bullet, add one line:
+- [ ] **Step 1: Update `CLAUDE.md`.** Under "Wallet app conventions", add this line after the Uniswap v4 bullet:
 
 ```markdown
-- Trending tokens (`list_trending_tokens`: Avalanche memecoins; RWAs on Ethereum + Avalanche, `PINNED` first) come from GeckoTerminal via `agent/lazyagent/trending.py` (read-only, 60 s cache). RWA membership is a CoinGecko snapshot in `agent/lazyagent/data/rwa_coingecko.json` — refresh with `uv run --directory agent python -m lazyagent.rwa_snapshot`. Curated `NOT_MEMES` / `NOT_RWA` lists are explained in `docs/research/2026-10-15-avalanche-trending-tokens.md`.
+- Trending tokens (`list_trending_tokens`: Avalanche memecoins; RWA project tokens on Ethereum + Avalanche with XAUt0 pinned) come from GeckoTerminal via `agent/lazyagent/trending.py` (read-only, 60 s cache). Categories are a registry (`CATEGORY_NETWORKS`) — a new one is a change to `trending.py` plus a prompt line. RWA project tokens are a CoinGecko snapshot in `agent/lazyagent/data/rwa_coingecko.json` — refresh with `uv run --directory agent python -m lazyagent.rwa_snapshot`. Curated `NOT_MEMES` / `NOT_RWA` lists are explained in `docs/research/2026-10-15-avalanche-trending-tokens.md`.
 ```
 
-- [ ] **Step 2: Record the planning decisions the spec doesn't cover yet.** Set `Status:` to `Implemented on feat-trending-avax` and append:
+- [ ] **Step 2: Record the planning decisions the spec doesn't cover yet.** Set `Status:` to `Implemented on feat-trending-avax`, then append:
 
 ```markdown
 ## 7. Decisions made while planning
 
-- RWA membership is a checked-in snapshot (`agent/lazyagent/data/rwa_coingecko.json`, refreshed by `python -m lazyagent.rwa_snapshot`) instead of a live 24 h cache: the RWA category is ~2,470 coins over 10 pages and the free tier returned 429 (Retry-After 15–60 s) even at one request per 15 s, so building it on a user's request would take minutes. Only GeckoTerminal is called at request time.
-- GeckoTerminal `tokens/multi` takes at most 30 addresses, so per network we look up `PINNED`, the 15 busiest RWAs by CoinGecko volume, then the largest by market cap (keeps zero-volume permissioned funds like BUIDL).
-- `NOT_RWA` also lists protocol tokens CoinGecko files under RWA (ONDO, QNT, INJ, PLUME, RSR, DUSK, EPIC, TRAC, CFG, SYRUP, LUMIA, RED, CHR, DIA, KERNEL, CTC, USUAL, CPOOL, EDEN, MKR, DEXTF) and the USAT stablecoin.
+- Asset tokens are excluded via one CoinGecko category, `tokenized-products` ("Tokenized Assets"): verified 2026-10-15 it contains every tokenized-stock/ETF/gold/silver/commodity/treasury/T-bill/money-market/credit/pre-IPO sub-category (their union adds no id).
+- `NOT_RWA` also lists MPRA, ACRED and VBILL — asset tokens CoinGecko filed only under RWA (MPRA would otherwise rank #2 on Ethereum). USD stablecoins are dropped by symbol ("usd"), so only USAT needs an entry.
+- GeckoTerminal `tokens/multi` takes at most 30 addresses, so per network we look up `PINNED`, the 15 busiest by CoinGecko volume, then the largest by market cap.
 - RWA `dex` is GeckoTerminal's dex id (`tokens/multi` can't include dex names); `price_usd` / `change_24h` are `null` when unknown; 24h change is used only when the token is its deepest pool's base token.
-- `CoinGeckoRwaSource` lives in the offline script `agent/lazyagent/rwa_snapshot.py`; the runtime cache method is `TrendingTokens.fetch(category, network)`.
-- The cache is one process-wide `TrendingTokens` read through a `WalletTools` class attribute, so `WalletTools.__init__`, `Session` and `server.py` are unchanged.
+- Tool arguments, schema and reply live in `trending.py` (`parse_args`, `TRENDING_TOOL`, `trending_reply`); `tools.py` only registers them. The cache is one process-wide `TrendingTokens` read through a `WalletTools` class attribute, so `WalletTools.__init__`, `Session` and `server.py` are unchanged.
 ```
 
 - [ ] **Step 3: Full verification**
@@ -1690,30 +1782,30 @@ git commit -m "feat(agent): list_trending_tokens tool (memes, RWAs) and prompt r
 Run: `pnpm test:py && pnpm build && pnpm lint`
 Expected: all PASS.
 
-- [ ] **Step 4: Manual check.** Run `pnpm dev:sandbox`, `pnpm dev:agent` and `pnpm dev`, then open `http://localhost:5174`.
+- [ ] **Step 4: Manual check.** Start `pnpm dev:sandbox`, `pnpm dev:agent` and `pnpm dev`, then open `http://localhost:5174`.
 
-1. Ask "What's trending on Avalanche?". Expect one or two spoken-friendly sentences naming a few memecoins with their 24h change, and an offer to buy. None of BTC.b / WAVAX / sAVAX / USDC / JOE / PHAR should appear.
-2. Ask "What RWAs can I buy?". XAUt0 (Avalanche) should be mentioned first, then e.g. XAUt / PAXG on Ethereum, and the agent should say permissioned funds aren't buyable here.
-3. Ask "RWAs on Avalanche only". Expect XAUt0 first, with BUIDL / ACRED-style funds flagged as not buyable.
-4. Say "Buy 1 AVAX of XAUt0". The agent should call `propose_swap` with network avalanche and the **contract address** as `token_out` (check the agent log). Before the Kyber branch lands, expect the normal unsupported-token error, explained plainly.
-5. Ask again within a minute. The answer should be served from the cache (the agent log shows no new GeckoTerminal error).
+1. Ask "What's trending on Avalanche?" Expect one or two spoken-friendly sentences that name a few memecoins with their 24h change and offer to buy. None of BTC.b, WAVAX, sAVAX, USDC, JOE or PHAR should appear.
+2. Ask "What RWA tokens are hot?" Expect XAUt0 first, described as tokenized gold and the Avalanche showcase, then Ethereum project tokens such as ONDO, CFG and SYRUP. No tokenized stocks should appear.
+3. Ask "RWA tokens on Avalanche". Expect XAUt0 first, and the rest flagged as not buyable here.
+4. Say "Buy 100 USDC of ONDO". The agent should call `propose_swap` with network ethereum and the **contract address** as `token_out`; check the agent log. Until the Kyber branch lands, expect the normal unsupported-token error, explained plainly.
+5. Ask the same question again within a minute. It should be served from the cache, with no new GeckoTerminal error in the agent log.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add CLAUDE.md docs/superpowers/specs/2026-10-15-lazywallet-avax-trending-design.md
-git commit -m "docs: trending memecoins and RWAs"
+git commit -m "docs: trending memecoins and RWA project tokens"
 ```
 
 ---
 
 ## Merge note
 
-The Kyber branch merges first; rebase this branch onto it. Conflicts are expected only in these places:
-- `agent/lazyagent/tools.py`: the import line, the `TOOL_NAMES` tuple, the method inserted before `unsupported_action`, and the registration before `tool("unsupported_action", ...)`.
+The Kyber branch merges first, then this branch rebases onto it. Conflicts are expected only in these places:
+- `agent/lazyagent/tools.py`: the import line, the `TOOL_NAMES` tuple, the method inserted before `unsupported_action`, and the `tool(*TRENDING_TOOL)` line.
 - `agent/lazyagent/prompt.py`: one line.
 - `agent/tests/test_tools.py`: the `TOOL_NAMES` list.
 - `agent/tests/fakes.py`: the appended class.
 - `CLAUDE.md`: one line.
 
-Keep both sides in each. After the rebase, re-run `pnpm test:py` and repeat manual step 4. The buy should now produce a KyberSwap confirm card showing the XAUt0 contract address.
+All of them are additive, so keep both sides. After the rebase, re-run `pnpm test:py` and repeat manual step 4. The buy should now produce a KyberSwap confirm card that shows the ONDO contract address.
