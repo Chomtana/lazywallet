@@ -6,22 +6,36 @@ from decimal import Decimal
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from .airdrops import AIRDROPS, AIRDROPS_TOOL, AirdropError, Airdrops, airdrops_reply
+from .airdrops import (
+    AIRDROPS,
+    AIRDROPS_TOOL,
+    DEPOSIT_TOOL,
+    V4_THEN_KYBER,
+    AirdropError,
+    Airdrops,
+    Deposit,
+    airdrops_reply,
+    deposit_plan,
+    farm_rows,
+    find_program,
+)
 from .chain import Chain
 from .custom_tokens import ADDRESS, MIN_RESERVE_USD, Search, discover, merge
 from .dexalot import DEXALOT_REVERT_HINT, Quotes, asset_of, dexalot_rows, dexalot_steps
-from .kyber import Kyber, kyber_plan
+from .kyber import Kyber, kyber_plan, kyber_swap
 from .networks import ETHEREUM, NETWORKS, Choice, Network, candidates, find_network, pick_network
 from .outcome import outcome_text
 from .proposals import Proposals
 from .swaps import (
     DEADLINE_S,
+    DEFAULT_SLIPPAGE_BPS,
     GAS,
     MAX_PRICE_IMPACT,
     Step,
     approval_steps,
     check_swap_funds,
     display_units,
+    erc20_approval,
     gas_reserve,
     min_out,
     parse_slippage,
@@ -29,7 +43,7 @@ from .swaps import (
     route_label,
     swap_rows,
 )
-from .tokens import find_token
+from .tokens import Token, find_token
 from .transfers import (
     FEE_HEADROOM,
     NoRoute,
@@ -51,7 +65,9 @@ from .uniswap import (
     UNIVERSAL_ROUTER,
     WETH_DEPOSIT,
     ChainQuoter,
+    Hop,
     Quoter,
+    Route,
     best_route,
     currency_of,
     decode_permit2_allowance,
@@ -66,7 +82,7 @@ Fund = Callable[[str], Awaitable[str]]
 SERVER_NAME = "wallet"
 TOOL_NAMES = [
     f"mcp__{SERVER_NAME}__{n}"
-    for n in ("get_balances", "resolve_recipient", "propose_transfer", "propose_swap", "unsupported_action", "request_test_funds", "list_trending_tokens", "list_airdrops")
+    for n in ("get_balances", "resolve_recipient", "propose_transfer", "propose_swap", "unsupported_action", "request_test_funds", "list_trending_tokens", "list_airdrops", "propose_deposit")
 ]
 
 
@@ -513,6 +529,86 @@ class WalletTools:
         except AirdropError as e:
             return err(str(e))
 
+    async def _farm_swap(self, net: Network, dep: Deposit, usdc, asset, amount: int):
+        """USDC → the farm's token on the deposit's venue: the pinned Uniswap v4 pool first (V4_THEN_KYBER), else
+        KyberSwap with all of kyber.py's checks. Returns (steps, expected, minimum, venue label, price impact or None)."""
+        if dep.venue == V4_THEN_KYBER:
+            route = Route((currency_of(usdc), asset.address), (Hop(dep.fee, dep.tick_spacing),))
+            expected = await self.quoter.quote(route, amount)
+            if expected:
+                probe_in = max(amount // 1000, 1)
+                impact = price_impact(amount, expected, probe_in, await self.quoter.quote(route, probe_in) or 0)
+                minimum = min_out(expected, DEFAULT_SLIPPAGE_BPS)
+                now = await self.chain.block_timestamp()
+                steps = await self._approvals(usdc, amount, now)
+                swap = {"to": UNIVERSAL_ROUTER, "value": "0", "data": encode_swap(route, amount, minimum, now + DEADLINE_S)}
+                steps.append(Step(f"Swap {usdc.symbol} → {asset.symbol}", swap, GAS["swap1"]))
+                return steps, expected, minimum, f"Uniswap v4 {dep.fee / 10_000:g}%", impact
+        if self.kyber is None:
+            raise TransferError(f"I couldn't get a quote for {usdc.symbol} → {asset.symbol} on Sandbox right now.")
+        k = await kyber_swap(self.kyber, self.chains[net.key], net, usdc, asset, amount, self.ctx.address, f"{DEFAULT_SLIPPAGE_BPS / 100:g}")
+        return k.steps, k.verified.expected, k.verified.minimum, k.label, k.impact
+
+    async def propose_deposit(self, args: dict) -> dict:
+        if not self.ctx.address:
+            return err("No wallet is active in the app.")
+        program = find_program(str(args.get("farm", "")))
+        if program is None:
+            return err("I don't know that program. Call list_airdrops for the ids.")
+        if program.deposit is None:
+            return err(f"I can list {program.name} but can't farm it from here yet.")
+        dep = program.deposit
+        net = next((n for n in self.networks if n.key == dep.network), None)
+        if net is None:
+            return err(f"{dep.name} farming isn't set up on this Sandbox.")
+        chain = self.chains[net.key]
+        usdc = find_token(dep.pay, net.tokens)
+        asset, vault = (Token(t.symbol, t.address, t.decimals, custom=True) for t in (dep.asset, dep.vault))
+        try:
+            amount = parse_amount(str(args.get("amount", "")), usdc.decimals)
+            balance = await self._balance_on(net, usdc)
+            if amount > balance:
+                raise TransferError(f"You only have {format_units(balance, usdc.decimals)} {usdc.symbol}.")
+            swap_steps, expected, minimum, venue, impact = await self._farm_swap(net, dep, usdc, asset, amount)
+            if impact is not None and impact > MAX_PRICE_IMPACT:
+                raise TransferError(f"That trade would move the price by about {impact:.0%}. Try a smaller amount.")
+            plan = await deposit_plan(chain, dep, self.ctx.address, minimum)
+            steps = swap_steps + erc20_approval(asset, plan.allowance, minimum, vault.address) + [plan.step]
+            native_balance = await chain.eth_balance(self.ctx.address)
+            reserve = gas_reserve(steps, await chain.gas_price())
+            check_swap_funds(usdc, amount, balance, native_balance, reserve, native=net.native.symbol)
+            fee_usd = float(Decimal(reserve // FEE_HEADROOM).scaleb(-18)) * await chain.price_usd(net.native)
+            before = await self._snapshot(net, [usdc, asset, vault])
+        except TransferError as e:
+            return err(str(e))
+        except Exception as e:
+            return err(f"The {net.name} Sandbox chain isn't reachable right now ({e}).")
+
+        human_in = f"{format_units(amount, usdc.decimals)} {usdc.symbol}"
+        steps_json = self._steps_json([s.to_json() for s in steps], net)
+        rows = farm_rows(self.ctx.address, program, usdc, asset, vault, amount, expected, minimum, plan.shares, venue, fee_usd, net.label)
+        tx = {
+            "title": f"Farm {dep.name} points: {human_in} → {vault.symbol}",
+            "from": self.ctx.address,
+            "rows": rows,
+            "steps": steps_json,
+            "addTokens": [{"chainId": net.chain_id, "address": t.address, "symbol": t.symbol, "decimals": t.decimals} for t in (asset, vault)],
+        }
+        pid, fut = self.proposals.new()
+        await self.send({"type": "confirm", "id": pid, "tx": tx})
+        result = await self.proposals.wait(pid, fut, self.approval_timeout)
+        success = ""
+        if _succeeded(result):
+            after, change = await self._show_change(net, [usdc, asset, vault], before)
+            staked = f"Staked {display_units(minimum, asset.decimals)} {asset.symbol} into {vault.symbol}"
+            if after:
+                got = display_units(max(after[vault.symbol] - before[vault.symbol], 0), vault.decimals)
+                left = display_units(max(after[asset.symbol] - before[asset.symbol], 0), asset.decimals)
+                staked += f", got {got} {vault.symbol}; {left} {asset.symbol} left"
+            success = f"{staked}. Confirmed on {net.label}, tx {result.get('hash')}.{change} Points only count on real mainnet; this Sandbox is a demo."
+        hint = f" The price probably moved more than the {DEFAULT_SLIPPAGE_BPS / 100:g}% slippage — ask again for a fresh quote."
+        return ok(outcome_text(result, steps_json, "deposit", success, revert_hint=hint))
+
     async def unsupported_action(self, args: dict) -> dict:
         action = str(args.get("action", "That"))
         return ok(f"{action} is coming soon. Right now LazyWallet can check balances, send and swap on Sandbox ({self.supported()}).")
@@ -565,9 +661,10 @@ def build_mcp_server(t: WalletTools):
             )(t.request_test_funds),
             tool(*TRENDING_TOOL)(t.list_trending_tokens),
             tool(*AIRDROPS_TOOL)(t.list_airdrops),
+            tool(*DEPOSIT_TOOL)(t.propose_deposit),
             tool(
                 "unsupported_action",
-                "Use for bridging, airdrops, scheduling, price alerts, dApps or anything other than balances, sends, swaps and test funds.",
+                "Use for bridging, scheduling, price alerts, dApps or anything other than balances, sends, swaps and test funds.",
                 {"type": "object", "properties": {"action": {"type": "string"}}, "required": ["action"]},
             )(t.unsupported_action),
         ],

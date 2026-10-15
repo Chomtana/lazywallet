@@ -11,7 +11,7 @@ MAX_SLIPPAGE_BPS = 500
 MAX_PRICE_IMPACT = 0.15
 DEADLINE_S = 20 * 60
 PERMIT2_EXPIRY_S = 30 * 60
-GAS = {"approve": 60_000, "permit2": 60_000, "wrap": 60_000, "swap1": 170_000, "swap2": 220_000}
+GAS = {"approve": 60_000, "permit2": 60_000, "wrap": 60_000, "swap1": 170_000, "swap2": 220_000, "deposit": 120_000}
 _PERCENT = re.compile(r"^[0-9]*\.?[0-9]+$")
 
 

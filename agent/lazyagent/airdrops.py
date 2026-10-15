@@ -366,3 +366,88 @@ async def airdrops_reply(airdrops: Airdrops, args: dict, send: Callable[[dict], 
         "The user now sees these as a card. Reply in ONE short sentence: name the top one or two and which one "
         "LazyWallet can farm or buy; say points only count on real mainnet. Don't read the list out. Data: " + to_json(items)
     )
+
+
+# --- deposit calldata ---
+
+
+def _call(signature: str, types: list[str], values: list) -> str:
+    return "0x" + (Web3.keccak(text=signature)[:4] + encode(types, values)).hex()
+
+
+def encode_erc4626_deposit(assets: int, receiver: str) -> str:
+    return _call("deposit(uint256,address)", ["uint256", "address"], [assets, receiver])
+
+
+def encode_preview_deposit(assets: int) -> str:
+    return _call("previewDeposit(uint256)", ["uint256"], [assets])
+
+
+def encode_max_deposit(receiver: str) -> str:
+    return _call("maxDeposit(address)", ["address"], [receiver])
+
+
+ENCODED_ASSET = _call("asset()", [], [])
+
+
+def _word(raw: bytes) -> int:
+    return int.from_bytes(raw[:32], "big")
+
+
+@dataclass(frozen=True)
+class DepositPlan:
+    allowance: int  # the user's current allowance of the asset to the vault
+    shares: int  # previewDeposit(assets)
+    step: Step
+
+
+async def deposit_plan(chain: Chain, dep: Deposit, user: str, assets: int) -> DepositPlan:
+    """Checks the vault on-chain (guards against a stale JSON or an upgraded proxy) and builds the deposit step."""
+    vault = dep.vault.address
+    closed = TransferError(f"{dep.name}'s vault isn't accepting deposits right now.")
+    try:
+        asset = Web3.to_checksum_address((await chain.call(vault, ENCODED_ASSET))[12:32])
+        room = _word(await chain.call(vault, encode_max_deposit(user)))
+    except Exception as e:
+        raise closed from e
+    if asset != dep.asset.address or room < assets:
+        raise closed
+    shares = _word(await chain.call(vault, encode_preview_deposit(assets)))
+    allowance = _word(await chain.call(dep.asset.address, encode_erc20_allowance(user, vault)))
+    request = {"to": vault, "value": "0", "data": encode_erc4626_deposit(assets, user)}
+    return DepositPlan(allowance, shares, Step(f"Stake {dep.asset.symbol} → {dep.vault.symbol}", request, GAS["deposit"]))
+
+
+def farm_rows(
+    sender: str, program: Program, pay: Token, asset: Token, vault: Token, amount: int, expected: int, minimum: int,
+    shares: int, venue: str, fee_usd: float, network: str,
+) -> list[dict]:
+    return [
+        {"label": "From", "value": short(sender)},
+        {"label": "You pay", "value": f"{format_units(amount, pay.decimals)} {pay.symbol}"},
+        {"label": "Swap", "value": f"{pay.symbol} → {asset.symbol} · {venue}"},
+        {"label": "Expected", "value": f"≈ {display_units(expected, asset.decimals)} {asset.symbol}"},
+        {"label": "Stake", "value": f"{display_units(minimum, asset.decimals)} {asset.symbol} → ≈ {display_units(shares, vault.decimals)} {vault.symbol}"},
+        {"label": "Left in wallet", "value": f"≈ {display_units(expected - minimum, asset.decimals)} {asset.symbol}"},
+        {"label": "Program", "value": f"{program.name} — {program.reward}"},
+        {"label": "Points", "value": POINTS_NOTICE},
+        *token_address_rows(asset, vault),
+        {"label": "Network fee", "value": f"~{format_usd(fee_usd)}"},
+        {"label": "Network", "value": network},
+    ]
+
+
+DEPOSIT_TOOL = (
+    "propose_deposit",
+    "Farm an executable airdrop program (executable true in list_airdrops: Theo, Avant): swaps USDC to the "
+    "program's token and stakes it, on the program's own network, in one confirmation card. Waits for approve/reject "
+    "and returns what was staked.",
+    {
+        "type": "object",
+        "properties": {
+            "farm": {"type": "string", "description": "The program id from list_airdrops (e.g. 'theo-thusd') or its short name ('Theo', 'Avant')"},
+            "amount": {"type": "string", "description": "Decimal USDC amount, e.g. '100'"},
+        },
+        "required": ["farm", "amount"],
+    },
+)
