@@ -1,14 +1,31 @@
 import { createPublicClient, createWalletClient, http } from 'viem'
 import { mnemonicToAccount } from 'viem/accounts'
-import { sandbox } from '@/lib/wagmi'
+import { chainById } from './networks'
 import type { TxDeps } from './executeTx'
 
 export function txDepsFor(mnemonic: string): TxDeps {
-  const transport = http(sandbox.rpcUrls.default.http[0])
-  const wallet = createWalletClient({ account: mnemonicToAccount(mnemonic), chain: sandbox, transport })
-  const reader = createPublicClient({ chain: sandbox, transport })
+  const account = mnemonicToAccount(mnemonic)
+  const perChain = new Map<number, TxDeps>()
+
+  // One wallet + reader client per Sandbox chain, created on first use.
+  function depsFor(chainId = 1): TxDeps {
+    const cached = perChain.get(chainId)
+    if (cached) return cached
+    const chain = chainById(chainId)
+    if (!chain) throw new Error(`Unknown network (chain ${chainId}).`)
+    const transport = http(chain.rpcUrls.default.http[0])
+    const wallet = createWalletClient({ account, chain, transport })
+    const reader = createPublicClient({ chain, transport })
+    const deps: TxDeps = {
+      send: (req) => wallet.sendTransaction({ to: req.to, value: BigInt(req.value), data: req.data }),
+      wait: async (hash) => (await reader.waitForTransactionReceipt({ hash })).status,
+    }
+    perChain.set(chainId, deps)
+    return deps
+  }
+
   return {
-    send: (req) => wallet.sendTransaction({ to: req.to, value: BigInt(req.value), data: req.data }),
-    wait: async (hash) => (await reader.waitForTransactionReceipt({ hash })).status,
+    send: async (req) => depsFor(req.chainId).send(req),
+    wait: (hash, chainId) => depsFor(chainId).wait(hash),
   }
 }

@@ -1,10 +1,11 @@
 import type { TxRequest, TxStep } from '@/types'
+import { networkName } from './networks'
 
 type Hash = `0x${string}`
 
 export type TxDeps = {
   send: (req: TxRequest) => Promise<Hash>
-  wait: (hash: Hash) => Promise<'success' | 'reverted'>
+  wait: (hash: Hash, chainId?: number) => Promise<'success' | 'reverted'>
 }
 
 export type TxOutcome = { hash?: string; status?: 'success' | 'reverted'; error?: string }
@@ -22,7 +23,7 @@ export async function executeTx(req: TxRequest, deps: TxDeps): Promise<TxOutcome
     return { error: messageOf(e) }
   }
   try {
-    return { hash, status: await deps.wait(hash) }
+    return { hash, status: await deps.wait(hash, req.chainId) }
   } catch (e) {
     return { hash, error: messageOf(e) }
   }
@@ -45,9 +46,9 @@ export function statusPatch(o: StepsOutcome, steps: TxStep[]): { state: 'success
   const at = o.failedStep !== undefined && steps.length > 1 ? `${steps[o.failedStep].label}: ` : ''
   if (o.error) return { state: 'failed', text: `${at}Failed: ${o.error}`, hash: o.hash }
   if (o.status === 'reverted') return { state: 'failed', text: `${at}Transaction reverted.`, hash: o.hash }
-  return { state: 'success', text: 'Confirmed on Sandbox.', hash: o.hash }
+  return { state: 'success', text: `Confirmed on ${networkName(steps.at(-1)?.request.chainId)} (Sandbox).`, hash: o.hash }
 }
 
 export function progressText(index: number, steps: TxStep[]): string {
-  return steps.length > 1 ? `Step ${index + 1} of ${steps.length}: ${steps[index].label}…` : 'Submitting to Sandbox…'
+  return steps.length > 1 ? `Step ${index + 1} of ${steps.length}: ${steps[index].label}…` : `Submitting to ${networkName(steps[index].request.chainId)} (Sandbox)…`
 }

@@ -125,9 +125,15 @@ export function useAgentChat(options: Options) {
     }
     dispatch({ type: 'update', id, patch: { state: 'approved' } })
     const statusId = uid()
-    const pending: Message = { id: statusId, role: 'assistant', kind: 'status', state: 'pending', text: 'Submitting to Sandbox…' }
-    dispatch({ type: 'local', messages: [pending] })
     const steps = m.tx.steps
+    const pending: Message = {
+      id: statusId,
+      role: 'assistant',
+      kind: 'status',
+      state: 'pending',
+      text: steps ? progressText(0, steps) : 'Submitting to Sandbox…',
+    }
+    dispatch({ type: 'local', messages: [pending] })
     if (!steps) {
       // Phase-1 WalletConnect mock card: no real transaction.
       window.setTimeout(

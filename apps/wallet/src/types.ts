@@ -5,7 +5,7 @@ export type EncryptedVault = { v: 1; salt: string; iv: string; data: string }
 export type Contact = { id: string; name: string; address: Address }
 export type Holding = { symbol: string; amount: number; usdPrice: number }
 export type DappInfo = { name: string; url: string; icon: string }
-export type TxRequest = { to: Address; value: string; data: `0x${string}` }
+export type TxRequest = { to: Address; value: string; data: `0x${string}`; chainId?: number }
 export type TxStep = { label: string; request: TxRequest }
 export type TxDraft = {
   title: string
