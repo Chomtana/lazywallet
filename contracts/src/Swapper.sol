@@ -12,7 +12,9 @@ struct Call {
 }
 
 /// Runs an executor's arbitrary call list on one order's in-flight tokens, then returns everything to the owner.
-/// It holds no allowances or balances between runs, so arbitrary calldata can't reach anyone's approvals.
+/// It holds no user allowances and no balances between runs (everything is swept to the owner), so arbitrary calldata
+/// can't reach anyone's approvals. Approvals the Swapper itself grants during a run may persist, so a later run whose
+/// route calls untrusted code could pull that run's in-flight funds; each order's minOut check bounds the damage.
 contract Swapper {
     using SafeERC20 for IERC20;
 

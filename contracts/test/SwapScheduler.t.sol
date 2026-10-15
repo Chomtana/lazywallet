@@ -237,6 +237,22 @@ contract SwapSchedulerTest is Test {
         assertEq(tin.balanceOf(bob), 1_000e18);
     }
 
+    function test_swapperApprovalsPersistButUserAllowancesStayUnreachable() public {
+        address attacker = makeAddr("attacker");
+        uint256 id = _schedule(_now(), 0, 1, OUT);
+        Call[] memory swap = _swapCalls(AMOUNT, OUT, alice);
+        Call[] memory calls = new Call[](3);
+        calls[0] = Call(address(tin), 0, abi.encodeCall(IERC20.approve, (attacker, type(uint256).max)));
+        calls[1] = swap[0];
+        calls[2] = swap[1];
+        _execute(id, calls);
+        // Residual: the Swapper's own approval persists (it holds no funds between runs).
+        assertEq(tin.allowance(address(scheduler.swapper()), attacker), type(uint256).max);
+        // User funds and allowances are unaffected.
+        assertEq(tin.allowance(alice, attacker), 0);
+        assertEq(tin.balanceOf(alice), 900e18);
+    }
+
     function test_reentrancyIsBlocked() public {
         Reenter r = new Reenter(scheduler);
         uint256 first = _schedule(_now(), 0, 1, 0);
