@@ -47,5 +47,5 @@ def main() -> None:
         return await connect_claude(tools, settings)
 
     app = create_app(RpcChain(settings.rpc_url), factory, settings.allowed_origins)
-    print(f"LazyWallet agent on ws://127.0.0.1:{settings.port}/ws (model {settings.model}, chain {settings.rpc_url})")
+    print(f"LazyWallet agent on ws://127.0.0.1:{settings.port}/ws (model {settings.model}, chain {settings.rpc_url})", flush=True)
     uvicorn.run(app, host="127.0.0.1", port=settings.port)

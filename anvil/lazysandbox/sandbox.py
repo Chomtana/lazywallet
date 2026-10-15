@@ -21,7 +21,7 @@ def main() -> None:
     rpc = f"http://127.0.0.1:{ANVIL_PORT}"
     try:
         wait_for_rpc(rpc, 120)
-        print(f"Sandbox ready: Anvil fork {rpc} (chain id 1), faucet http://127.0.0.1:{FAUCET_PORT}")
+        print(f"Sandbox ready: Anvil fork {rpc} (chain id 1), faucet http://127.0.0.1:{FAUCET_PORT}", flush=True)
         uvicorn.run(create_app(rpc, origins), host="127.0.0.1", port=FAUCET_PORT)
     finally:
         proc.terminate()
