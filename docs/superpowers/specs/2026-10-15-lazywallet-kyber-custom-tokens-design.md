@@ -1,7 +1,7 @@
 # LazyWallet — KyberSwap + Custom Tokens Spec
 
 Date: 2026-10-15
-Status: Approved design — not yet implemented
+Status: Implemented
 Builds on: `2026-10-15-lazywallet-avalanche-dexalot-design.md` (Phase 4, merged to `main`)
 Branch: `feat-kyber-custom-tokens` (worktree, from `main`)
 Sibling: `2026-10-15-lazywallet-avax-trending-design.md` (built in parallel; the only interface between the two is a token **contract address**)
@@ -82,3 +82,15 @@ New `agent/lazyagent/kyber.py`:
 - Vitest: `lib/tokens.ts`, `executeSteps` saving `addToken` only on success.
 - Opt-in fork test (existing fork-test convention): fresh Avalanche fork, random funded address, swap 1 AVAX → COQ through the full `propose_swap` path; assert received within 5% of quote and COQ then appears in balances with `tokens` passed.
 - Manual: the success-criteria script in the wallet app.
+
+## 7. Deviations decided while planning
+
+1. Sandbox Kyber slippage is 5000 bps (50%), not 90%: Kyber's `/route/build` rejects `slippageTolerance` > 5000 (HTTP 400). The 5% simulation check still catches amount/decimals bugs.
+2. Custom-token price routes 1 USDC → token and inverts it; 1 token → USDC rounds to 0–1 raw unit for memecoins.
+3. The card row is `<SYMBOL> address` (e.g. `COQ address`) so two custom tokens on one card don't share a row key.
+4. Kyber price impact comes from Kyber's own USD estimates ("unknown" without them) and isn't enforced.
+5. Venue fallback uses a `NoRoute` error (Uniswap no route, Dexalot 404); other venue errors surface as before.
+6. `Chain` gains `simulate(tx, overrides)` and `storage_keys(to, data)`; ERC-20 simulations find the allowance slot via `eth_createAccessList` and verify it before overriding.
+7. Kyber needs a non-default `user-agent` header (403 otherwise); GeckoTerminal search adds `include=base_token`.
+8. Confirm-card values wrap (`wrap-anywhere`) so full contract addresses fit on phones.
+9. The opt-in fork tests cover both chains with one token each: COQ on Avalanche (buy, balance, sell) and PEPE on Ethereum (buy, balance).
