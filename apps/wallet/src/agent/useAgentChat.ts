@@ -8,9 +8,8 @@ import { say } from '@/mock/agent'
 import type { Address, AgentReply, ChoiceOption, Contact, Message } from '@/types'
 import { speak } from '@/voice/speech'
 import { chatReducer, initialChat, progressLabel, type UserText } from './chatReducer'
-import type { ClientMsg, ServerMsg } from './protocol'
+import { AGENT_WS_URL, type ClientMsg, type ServerMsg } from './protocol'
 
-const AGENT_WS_URL: string = import.meta.env.VITE_AGENT_WS_URL ?? 'ws://localhost:8787/ws'
 const OFFLINE_TEXT = 'Agent offline — run `pnpm dev:agent`, then try again.'
 const THINK_MS = 500
 const MOCK_CONFIRM_MS = 1500

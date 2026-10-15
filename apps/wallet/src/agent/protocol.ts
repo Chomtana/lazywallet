@@ -1,5 +1,7 @@
 import type { Address, AirdropItem, BalanceChange, ChoiceOption, CustomToken, Holding, TrendingToken, TxDraft, TxStep, UnlockItem } from '@/types'
 
+export const AGENT_WS_URL: string = import.meta.env.VITE_AGENT_WS_URL ?? 'ws://localhost:8787/ws'
+
 export type ClientMsg =
   | { type: 'tx_started'; id: string }
   | {

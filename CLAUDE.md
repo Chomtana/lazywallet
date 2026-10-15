@@ -50,6 +50,7 @@ pnpm build && pnpm lint
 - Dexalot recipe (Avalanche swaps) lives in `anvil/lazysandbox/dexalot.py` (signer patch, order signing) and `agent/lazyagent/dexalot.py` (calldata) — change only with a fork test.
 - Quick actions (`chat/quickActions.ts`) are pills above the composer that send a normal user message (queued while busy). A "Get funds" button calls the faucet directly while the wallet's USD total is under $1,000 — read wallet-side with viem + Chainlink in `chain/portfolio.ts`, re-read after every agent turn; hidden when a read fails.
 - Token unlocks: `agent/lazyagent/unlocks.py` (`list_unlocks`, Tokenomist v5; key `TOKENOMIST_API_KEY` in root `.env`, agent-only — never sent to the browser). Design: `docs/superpowers/specs/2026-10-16-lazywallet-token-unlocks-design.md`.
+- Voice: spoken replies go through the agent's `POST /tts` (`agent/lazyagent/tts.py`) → ElevenLabs streaming TTS (`eleven_flash_v2_5`, voice Jessica, `ELEVENLABS_VOICE_ID` overrides); key `ELEVENLABS_API_KEY` in root `.env`, agent-only. `voice/speech.ts` `speak()` plays it, stops on a newer reply or the mic, and fails silently (no browser-TTS fallback). Recognition stays Web Speech; while listening the composer shows a live mic wave (`chat/SoundWave.tsx`, math in `voice/wave.ts`).
 - Unit tests cover pure logic (`*.test.ts` next to the module). UI is reviewed manually.
 
 ## Development motto

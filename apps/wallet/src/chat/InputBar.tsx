@@ -3,6 +3,7 @@ import { ArrowUp, Mic, Square, Volume2, VolumeX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useSpeechRecognition } from '@/voice/speech'
+import { SoundWave } from './SoundWave'
 
 type Props = {
   onSend: (text: string, spoken: boolean) => void
@@ -30,13 +31,17 @@ export function InputBar({ onSend, speakEnabled, onToggleSpeak }: Props) {
         </p>
       )}
       <form onSubmit={submit} className="flex items-center gap-2 rounded-full border bg-card p-1.5 pl-4">
-        <input
-          aria-label="Message"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Say or type what you want…"
-          className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground"
-        />
+        {voice.listening ? (
+          <SoundWave />
+        ) : (
+          <input
+            aria-label="Message"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Say or type what you want…"
+            className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground"
+          />
+        )}
         <Button
           type="button"
           variant="ghost"
