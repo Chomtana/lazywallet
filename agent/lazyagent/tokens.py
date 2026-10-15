@@ -27,6 +27,21 @@ TOKENS = [
 ]
 
 
-def find_token(symbol: str) -> Token | None:
+AVAX_USD_FEED = "0x0A77230d17318075983913bC2145DB16C7366156"
+AVAX_BTC_USD_FEED = "0x2779D32d5166BAaa2B2b658333bA7e6Ec0C65743"
+AVAX_ETH_USD_FEED = "0x976B3D034E162d8bD72D6b9C989d545b839003b0"
+
+AVAX = Token("AVAX", None, 18, price_feed=AVAX_USD_FEED)
+
+AVAX_TOKENS = [
+    AVAX,
+    Token("USDC", "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", 6, fixed_price=1.0),
+    Token("USDT", "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7", 6, fixed_price=1.0),  # on-chain symbol USDt
+    Token("BTC.b", "0x152b9d0FdC40C096757F570A51E494bd4b943E50", 8, price_feed=AVAX_BTC_USD_FEED),
+    Token("WETH.e", "0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB", 18, price_feed=AVAX_ETH_USD_FEED),
+]
+
+
+def find_token(symbol: str, tokens: list[Token] | tuple[Token, ...] = TOKENS) -> Token | None:
     s = symbol.strip().upper()
-    return next((t for t in TOKENS if t.symbol == s), None)
+    return next((t for t in tokens if t.symbol.upper() == s), None)
