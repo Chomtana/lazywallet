@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { EXAMPLES } from '@/mock/fixtures'
 import type { Message } from '@/types'
 import { ProgressBubble } from './cards/ProgressBubble'
@@ -9,9 +9,10 @@ type Props = {
   progress?: string | null // the agent's current step, while it works
   queue?: Message[] // prompts waiting for the current turn to end
   onPick: (text: string) => void
+  action?: ReactNode // e.g. the Get funds button, shown on the empty chat
 } & MessageActions
 
-export function ChatView({ messages, progress, queue = [], onPick, ...actions }: Props) {
+export function ChatView({ messages, progress, queue = [], onPick, action, ...actions }: Props) {
   const endRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -24,6 +25,7 @@ export function ChatView({ messages, progress, queue = [], onPick, ...actions }:
           <h2 className="text-2xl font-semibold">What should I do?</h2>
           <p className="text-muted-foreground">Tap the mic and just say it — or type.</p>
         </div>
+        {action}
         <div className="flex flex-wrap justify-center gap-2">
           {EXAMPLES.map((ex) => (
             <button

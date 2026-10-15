@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { BookUser, QrCode, Zap } from 'lucide-react'
+import { needsFunds } from '@/chain/portfolio'
+import { usePortfolioUsd } from '@/chain/usePortfolioUsd'
 import { ChatView } from '@/chat/ChatView'
+import { GetFundsButton } from '@/chat/GetFundsButton'
 import { InputBar } from '@/chat/InputBar'
+import { QuickActionBar } from '@/chat/QuickActionBar'
 import { useAgentChat } from '@/agent/useAgentChat'
 import { AddressBookSheet } from '@/components/AddressBookSheet'
 import { ConnectedBar } from '@/components/ConnectedBar'
@@ -35,6 +39,8 @@ export default function WalletPage() {
   const [session, setSession] = useState<DappInfo | null>(null)
   const requestTimer = useRef<number | undefined>(undefined)
   const chat = useAgentChat({ address: active?.address, mnemonic: active?.mnemonic, contacts, speakEnabled })
+  const portfolio = usePortfolioUsd(active?.address)
+  const refreshBalance = portfolio.refresh
   const activeTasks = tasks.filter((t) => t.status === 'active').length
   const panelProps = (p: Exclude<Panel, null>) => ({
     open: panel === p,
@@ -42,6 +48,11 @@ export default function WalletPage() {
   })
 
   useEffect(() => () => window.clearTimeout(requestTimer.current), [])
+
+  // Re-read the balance on load, on wallet switch, and after every agent turn (transfers, swaps, faucet).
+  useEffect(() => {
+    if (!chat.busy) void refreshBalance()
+  }, [chat.busy, refreshBalance])
 
   function connect(dapp: DappInfo) {
     setSession(dapp)
@@ -57,6 +68,9 @@ export default function WalletPage() {
   }
 
   if (!active) return null
+
+  const offerFunds = needsFunds(portfolio.usd)
+  const emptyChat = chat.messages.length === 0
 
   return (
     <div className="flex h-dvh flex-col">
@@ -101,6 +115,7 @@ export default function WalletPage() {
           progress={chat.progress}
           queue={chat.queue}
           onPick={(t) => chat.send(t)}
+          action={offerFunds && <GetFundsButton address={active.address} onFunded={refreshBalance} />}
           onApprove={chat.approve}
           onReject={chat.reject}
           onChoose={chat.choose}
@@ -110,6 +125,10 @@ export default function WalletPage() {
       </main>
       <div className="mx-auto w-full max-w-[720px] space-y-2 px-4 pb-4">
         {session && <ConnectedBar dapp={session} onDisconnect={disconnect} />}
+        {offerFunds && !emptyChat && (
+          <GetFundsButton address={active.address} onFunded={refreshBalance} className="w-full" />
+        )}
+        <QuickActionBar onPick={(t) => chat.send(t)} disabled={!chat.online} />
         <InputBar onSend={chat.send} speakEnabled={speakEnabled} onToggleSpeak={() => setSpeakEnabled((v) => !v)} />
       </div>
       <QrSheet {...panelProps('qr')} address={active.address} onConnect={connect} />
