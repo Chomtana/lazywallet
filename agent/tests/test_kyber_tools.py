@@ -2,7 +2,7 @@ import asyncio
 
 from eth_abi import encode
 from fakes import FakeChain, FakeKyber, FakeQuoter, FakeSearch, Outbox, assert_friendly
-from test_custom_tokens import COQ_ADDR, COQ_SAVED, GT_COQ
+from test_custom_tokens import COQ_ADDR, COQ_LOGO, COQ_SAVED, GT_COQ
 
 from lazyagent.kyber import NATIVE, ROUTER
 from lazyagent.proposals import Proposals
@@ -99,6 +99,8 @@ async def test_matched_by_symbol_is_flagged_on_the_card():
     task = asyncio.create_task(tools.propose_swap({"token_in": "AVAX", "token_out": "coq", "amount": "1"}))
     confirm = await confirm_of(out)
     assert rows_of(confirm)["COQ address"] == f"{COQ_ADDR} (matched by symbol — verify)"
+    assert confirm["tx"]["summary"]["receive"]["logo"] == COQ_LOGO
+    assert confirm["tx"]["addToken"]["logo"] == COQ_LOGO  # the wallet saves it, so later balances show it
     task.cancel()
 
 

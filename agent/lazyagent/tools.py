@@ -490,6 +490,8 @@ class WalletTools:
         tx = {"title": "Swap", "from": self.ctx.address, "summary": summary, "rows": plan.rows, "steps": steps_json}
         if tout.custom:  # the wallet remembers it after the swap succeeds
             tx["addToken"] = {"chainId": net.chain_id, "address": tout.address, "symbol": tout.symbol, "decimals": tout.decimals}
+            if tout.logo:
+                tx["addToken"]["logo"] = tout.logo
         pid, fut = self.proposals.new()
         await self.send({"type": "confirm", "id": pid, "tx": tx})
         result = await self.proposals.wait(pid, fut, self.approval_timeout)
