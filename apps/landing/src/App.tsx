@@ -1,4 +1,3 @@
-import { Mic } from 'lucide-react'
 import { Audience } from './components/Audience'
 import { Hero } from './components/Hero'
 import { HowItWorks } from './components/HowItWorks'
@@ -10,9 +9,7 @@ export default function App() {
     <div className="min-h-dvh">
       <header className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
         <div className="flex items-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <Mic className="size-4" />
-          </span>
+          <span aria-hidden className="size-8 rounded-full bg-[radial-gradient(circle_at_35%_32%,#f1ffd9,#c6ff5e_45%,#b6ff3b_75%,#a6ee2c)] shadow-[0_0_18px_4px_rgba(182,255,59,0.35)]" />
           <span className="text-lg font-semibold tracking-tight">LazyWallet</span>
         </div>
         <a href={WALLET_URL} className="rounded-full border px-4 py-1.5 text-sm hover:border-primary">

@@ -7,9 +7,14 @@ export default function Welcome() {
   return (
     <AuthLayout>
       <div className="space-y-2 text-center">
-        <h1 className="text-3xl font-semibold tracking-tight">Just say it.</h1>
-        <p className="text-muted-foreground">
-          Your voice-powered AI wallet. Talk to check balances, send, swap and automate trades.
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Hunt <span className="text-primary">AIRDROP</span> while <span className="text-primary">SLEEP</span>
+        </h1>
+        <p className="text-lg text-muted-foreground">
+          Let AI agents hunt <span className="font-semibold text-primary">AIRDROPS</span>
+          <br />
+          and <span className="font-semibold text-primary">TRADE</span> while you{' '}
+          <span className="font-semibold text-primary">SLEEP</span>
         </p>
       </div>
       <div className="grid gap-3">
