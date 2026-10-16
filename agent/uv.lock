@@ -1234,6 +1234,7 @@ source = { editable = "." }
 dependencies = [
     { name = "claude-agent-sdk" },
     { name = "fastapi" },
+    { name = "httpx2" },
     { name = "python-dotenv" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "web3" },
@@ -1250,6 +1251,7 @@ dev = [
 requires-dist = [
     { name = "claude-agent-sdk", specifier = ">=0.2.166" },
     { name = "fastapi", specifier = ">=0.143" },
+    { name = "httpx2", specifier = ">=2.13" },
     { name = "python-dotenv", specifier = ">=1.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54" },
     { name = "web3", specifier = ">=8.0" },

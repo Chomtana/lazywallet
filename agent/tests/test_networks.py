@@ -5,7 +5,7 @@ def test_registry():
     assert [n.key for n in NETWORKS] == ["ethereum", "avalanche"]
     assert (ETHEREUM.chain_id, AVALANCHE.chain_id) == (1, 43114)
     assert AVALANCHE.native.symbol == "AVAX" and AVALANCHE.swap_venue == "dexalot"
-    assert ETHEREUM.label == "Ethereum (Sandbox)"
+    assert ETHEREUM.label == "Ethereum"
 
 
 def test_find_network_aliases():

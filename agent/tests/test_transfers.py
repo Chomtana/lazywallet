@@ -1,6 +1,6 @@
 import pytest
 
-from lazyagent.tokens import ETH, find_token
+from lazyagent.tokens import ETH, Token, find_token
 from lazyagent.transfers import (
     TransferError,
     build_request,
@@ -8,6 +8,7 @@ from lazyagent.transfers import (
     format_units,
     parse_amount,
     resolve_recipient,
+    token_address_rows,
     validate,
 )
 
@@ -117,5 +118,22 @@ def test_display_rows():
         {"label": "To", "value": "Alice (0x7099…79C8)"},
         {"label": "Amount", "value": "0.1 ETH ($320.00)"},
         {"label": "Network fee", "value": "~$0.07"},
-        {"label": "Network", "value": "Sandbox"},
+        {"label": "Network", "value": "Ethereum"},
+    ]
+
+
+COQ = Token("COQ", "0x420FcA0121DC28039145009570975747295f2329", 18, custom=True)
+
+
+def test_display_rows_without_a_price():
+    rows = display_rows(COQ, 10**21, ALICE, None, None, 100_000 * 10**9, 25.0)
+    assert {"label": "Amount", "value": "1000 COQ"} in rows
+
+
+def test_token_address_rows_only_for_custom_tokens():
+    guessed = Token("PEPE", "0x6982508145454Ce325dDbE47a25d4ec3d2311933", 18, custom=True, matched_by_symbol=True)
+    assert token_address_rows(ETH, USDC) == []
+    assert token_address_rows(COQ, COQ, USDC, guessed) == [
+        {"label": "COQ address", "value": "0x420FcA0121DC28039145009570975747295f2329"},
+        {"label": "PEPE address", "value": "0x6982508145454Ce325dDbE47a25d4ec3d2311933 (matched by symbol — verify)"},
     ]

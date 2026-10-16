@@ -1,0 +1,10 @@
+{
+  "data": [
+    {"id": "eth_0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3", "type": "token", "attributes": {"address": "0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3", "name": "Ondo", "symbol": "ONDO", "price_usd": "0.4317345948", "volume_usd": {"h24": "1183578.34877635"}}, "relationships": {"top_pools": {"data": [{"id": "eth_0x7b1e5d984a43ee732de195628d20d05cfabc3cc7", "type": "pool"}]}}},
+    {"id": "eth_0x320623b8e4ff03373931769a31fc52a4e78b5d70", "type": "token", "attributes": {"address": "0x320623b8e4ff03373931769a31fc52a4e78b5d70", "name": "Reserve Rights", "symbol": "RSR", "price_usd": "0.001970645956", "volume_usd": {"h24": "525898.151530515"}}, "relationships": {"top_pools": {"data": [{"id": "eth_0xdb6925ea42897ca786a045b252d95aa7370f44b4", "type": "pool"}]}}}
+  ],
+  "included": [
+    {"id": "eth_0x7b1e5d984a43ee732de195628d20d05cfabc3cc7", "type": "pool", "attributes": {"name": "ONDO / WETH 0.3%", "reserve_in_usd": "1765680.8565", "price_change_percentage": {"h24": "-7.529"}}, "relationships": {"base_token": {"data": {"id": "eth_0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3", "type": "token"}}, "quote_token": {"data": {"id": "eth_0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", "type": "token"}}, "dex": {"data": {"id": "uniswap_v3", "type": "dex"}}}},
+    {"id": "eth_0xdb6925ea42897ca786a045b252d95aa7370f44b4", "type": "pool", "attributes": {"name": "ETH+ / eUSD / RSR", "reserve_in_usd": "1435171.8096", "price_change_percentage": {"h24": "-5.615"}}, "relationships": {"base_token": {"data": {"id": "eth_0xe72b141df173b999ae7c1adcbf60cc9833ce56a8", "type": "token"}}, "quote_token": {"data": {"id": "eth_0xa0d69e286b938e21cbf7e51d71f6a4c8918f482f", "type": "token"}}, "dex": {"data": {"id": "curve", "type": "dex"}}}}
+  ]
+}

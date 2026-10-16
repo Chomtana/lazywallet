@@ -4,7 +4,7 @@ from web3 import Web3
 
 from lazyagent.dexalot import NATIVE, SandboxQuotes, asset_of, dexalot_rows, dexalot_steps, encode_simple_swap
 from lazyagent.tokens import AVAX, AVAX_TOKENS, find_token
-from lazyagent.transfers import TransferError
+from lazyagent.transfers import NoRoute, TransferError
 
 USDC = find_token("USDC", AVAX_TOKENS)
 MAKER = "0x1FDb2b265d2A5C4302A75cAd682222E4e7bCc313"
@@ -50,10 +50,9 @@ def test_erc20_in_adds_sized_approval_only_when_needed():
 
 
 def test_rows():
-    rows = dexalot_rows("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", AVAX, USDC, 10**18, 9_574_000, 0.01, "Avalanche (Sandbox)")
+    rows = dexalot_rows("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", AVAX, USDC, 10**18, 9_574_000)
     assert {r["label"]: r["value"] for r in rows} == {
-        "From": "0xf39F…2266", "You pay": "1 AVAX", "Receive exactly": "9.574 USDC", "Rate": "1 AVAX = 9.574 USDC",
-        "Route": "Dexalot · sandbox-signed at live price", "Network fee": "~$0.01", "Network": "Avalanche (Sandbox)",
+        "From": "0xf39F…2266", "Rate": "1 AVAX = 9.574 USDC", "Route": "Dexalot · signed quote at live price",
     }
     assert asset_of(AVAX) == NATIVE and asset_of(USDC) == USDC.address
 
@@ -68,7 +67,7 @@ async def test_sandbox_quotes_posts_and_surfaces_errors():
         server.shutdown()
     server, _ = serve(404, {"detail": "Dexalot doesn't offer that pair. Available: AVAX/USDC."})
     try:
-        with pytest.raises(TransferError, match="Available: AVAX/USDC"):
+        with pytest.raises(NoRoute, match="Available: AVAX/USDC"):  # 404 lets KyberSwap try the pair
             await SandboxQuotes(f"http://127.0.0.1:{server.server_port}").quote(NATIVE, USDC.address, 1, TAKER)
     finally:
         server.shutdown()

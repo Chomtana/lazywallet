@@ -19,15 +19,21 @@ type Props = {
   onOpenChange: (v: boolean) => void
   address: Address
   onConnect: (dapp: DappInfo) => void
+  // With the agent online: send the add-funds message through the chat (it shows the new balance card).
+  onAddFunds?: () => void
 }
 
-export function QrSheet({ open, onOpenChange, address, onConnect }: Props) {
+export function QrSheet({ open, onOpenChange, address, onConnect, onAddFunds }: Props) {
   const [uri, setUri] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [proposal, setProposal] = useState<Proposal | null>(null)
   const [funding, setFunding] = useState(false)
 
   async function fund() {
+    if (onAddFunds) {
+      onOpenChange(false)
+      return onAddFunds()
+    }
     setFunding(true)
     try {
       toast.success(`Added ${await requestFunds(address)}`)
@@ -93,11 +99,9 @@ export function QrSheet({ open, onOpenChange, address, onConnect }: Props) {
                 <Copy /> Copy address
               </Button>
               <Button className="w-full" onClick={fund} disabled={funding}>
-                <Droplets /> {funding ? 'Adding test funds…' : 'Get test funds'}
+                <Droplets /> {funding ? 'Adding funds…' : 'Add funds'}
               </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                Sandbox · Ethereum mainnet fork. Don't send real funds here.
-              </p>
+              <p className="text-center text-xs text-muted-foreground">Demo network</p>
             </TabsContent>
             <TabsContent value="connect" className="space-y-4 pt-4">
               <p className="text-sm text-muted-foreground">

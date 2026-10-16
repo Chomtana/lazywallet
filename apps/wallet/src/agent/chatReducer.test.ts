@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Message } from '@/types'
-import { chatReducer, initialChat, type ChatEvent, type ChatState } from './chatReducer'
+import { chatReducer, initialChat, progressLabel, type ChatEvent, type ChatState } from './chatReducer'
 
 const run = (events: ChatEvent[], from: ChatState = initialChat) => events.reduce(chatReducer, from)
 const server = (msg: Extract<ChatEvent, { type: 'server' }>['msg']): ChatEvent => ({ type: 'server', msg })
@@ -30,6 +30,49 @@ describe('chatReducer', () => {
       server({ type: 'text_delta', text: 'Two' }),
     ])
     expect(s.messages.map((m) => (m.kind === 'text' ? m.text : ''))).toEqual(['One', 'Two'])
+    expect(new Set(s.messages.map((m) => m.id)).size).toBe(2)
+  })
+
+  it('adds a token list card', () => {
+    const item = {
+      symbol: 'COQ',
+      name: 'COQINU',
+      network: 'Avalanche',
+      address: '0x420fca0121dc28039145009570975747295f2329' as const,
+      priceUsd: 1.2e-7,
+      change24h: -5.1,
+      liquidityUsd: 623_823.6,
+      dex: 'LFJ',
+      buyable: true,
+      note: null,
+      image: null,
+    }
+    const s = run([server({ type: 'text_delta', text: 'Hi' }), server({ type: 'tokens', title: 'Trending memecoins', items: [item] })])
+    expect(s.messages[1]).toMatchObject({ role: 'assistant', kind: 'tokens', title: 'Trending memecoins', items: [item] })
+    expect(new Set(s.messages.map((m) => m.id)).size).toBe(2)
+    expect(s.streamingId).toBeNull()
+  })
+
+  it('adds an airdrops card and ends the streaming bubble', () => {
+    const item = {
+      id: 'theo-thusd', name: 'Theo thUSD Points', category: 'rwa' as const, networks: ['Ethereum'], status: 'live' as const,
+      action: 'Stake thUSD into sthUSD', tvlUsd: 132e6, farm: 'Theo', buy: null,
+    }
+    const s = run([server({ type: 'text_delta', text: 'Here' }), server({ type: 'airdrops', title: 'RWA airdrops', items: [item] })])
+    expect(s.messages[1]).toMatchObject({ role: 'assistant', kind: 'airdrops', title: 'RWA airdrops', items: [item] })
+    expect(s.streamingId).toBeNull()
+    expect(new Set(s.messages.map((m) => m.id)).size).toBe(2)
+  })
+
+  it('adds an unlocks card and ends the streaming bubble', () => {
+    const item = {
+      symbol: 'ZRO', name: 'LayerZero', logo: null, date: '2026-10-20T11:00:00Z', unlockUsd: 53.7e6, unlockAmount: 25.7e6,
+      percentOfSupply: 2.57, allocation: 'Investors, Team', buybackUsd: 352_479, burnUsd: null, network: 'Ethereum',
+      address: '0x6985884c4392d348587b19cb9eaaf157f13271cd' as const, buyable: true,
+    }
+    const s = run([server({ type: 'text_delta', text: 'Here' }), server({ type: 'unlocks', title: 'Upcoming unlocks', items: [item] })])
+    expect(s.messages[1]).toMatchObject({ role: 'assistant', kind: 'unlocks', title: 'Upcoming unlocks', items: [item] })
+    expect(s.streamingId).toBeNull()
     expect(new Set(s.messages.map((m) => m.id)).size).toBe(2)
   })
 
@@ -95,5 +138,67 @@ describe('chatReducer', () => {
     const change = { network: 'Ethereum', symbol: 'USDC', before: 500, after: 400, delta: -100, usdPrice: 1 }
     const s = run([server({ type: 'balance_change', changes: [change] })])
     expect(s.messages[0]).toMatchObject({ role: 'assistant', kind: 'balance_change', changes: [change] })
+  })
+})
+
+describe('progress', () => {
+  const busy: ChatEvent = { type: 'busy', busy: true }
+  const thinking = server({ type: 'progress', label: 'Thinking…' })
+
+  it('shows the latest progress label while busy', () => {
+    const s = run([busy, thinking, server({ type: 'progress', label: 'Checking your balances' })])
+    expect(progressLabel(s)).toBe('Checking your balances')
+    expect(s.messages).toHaveLength(0) // not a chat message
+  })
+
+  it('hides once reply text streams, and comes back on the next tool call', () => {
+    const s = run([busy, thinking, server({ type: 'text_delta', text: 'Hi' })])
+    expect(progressLabel(s)).toBeNull()
+    const t = run([server({ type: 'text_done' }), server({ type: 'progress', label: 'Finding the best route' })], s)
+    expect(progressLabel(t)).toBe('Finding the best route')
+  })
+
+  it.each([
+    ['turn_end', [server({ type: 'turn_end' })]],
+    ['error', [server({ type: 'error', message: 'boom' })]],
+    ['offline', [{ type: 'online', online: false }]],
+  ] as [string, ChatEvent[]][])('clears on %s', (_, events) => {
+    expect(progressLabel(run([busy, thinking, ...events]))).toBeNull()
+  })
+
+  it('says it is waiting for approval while an agent confirm card is open', () => {
+    const s = run([busy, thinking, server({ type: 'progress', label: 'Preparing your transfer' }), confirmMsg])
+    expect(progressLabel(s)).toBe('Waiting for your approval')
+    expect(progressLabel(run([{ type: 'update', id: 'p1', patch: { state: 'approved' } }], s))).toBeNull()
+  })
+})
+
+describe('queue', () => {
+  const queued = (id: string, text: string): Extract<Message, { role: 'user' }> => ({ id, role: 'user', kind: 'text', text })
+
+  it('holds queued prompts outside the chat, in order', () => {
+    const s = run([{ type: 'busy', busy: true }, { type: 'enqueue', message: queued('q1', 'one') }, { type: 'enqueue', message: queued('q2', 'two') }])
+    expect(s.queue.map((m) => m.text)).toEqual(['one', 'two'])
+    expect(s.messages).toHaveLength(0)
+  })
+
+  it('dequeue moves the oldest into the chat as a normal message and marks busy', () => {
+    const s = run([
+      server({ type: 'choice', id: 'c1', question: 'Which network?', options: [] }),
+      { type: 'enqueue', message: queued('q1', 'one') },
+      { type: 'enqueue', message: queued('q2', 'two') },
+      server({ type: 'turn_end' }),
+      { type: 'dequeue' },
+    ])
+    expect(s.busy).toBe(true)
+    expect(s.queue.map((m) => m.text)).toEqual(['two'])
+    expect(s.messages.at(-1)).toEqual(queued('q1', 'one'))
+    expect(s.messages[0]).toMatchObject({ kind: 'choice', closed: true })
+  })
+
+  it('marks queued prompts "Not sent" when the connection drops', () => {
+    const s = run([{ type: 'busy', busy: true }, { type: 'enqueue', message: queued('q1', 'one') }, { type: 'online', online: false }])
+    expect(s.queue).toEqual([])
+    expect(s.messages).toEqual([{ ...queued('q1', 'one'), unsent: true }])
   })
 })

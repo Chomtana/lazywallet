@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { savedTokens } from '@/lib/tokens'
 import { useAgentChat } from './useAgentChat'
 
 vi.mock('@/chain/client', () => ({
@@ -166,5 +167,133 @@ describe('useAgentChat', () => {
     expect(result.current.messages).toHaveLength(1)
     expect(result.current.messages[0]).not.toHaveProperty('chosen')
     expect(result.current.messages[0]).not.toHaveProperty('closed', true)
+  })
+
+  it('buy() sends the text as a user message, but not while busy or offline', async () => {
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    act(() => result.current.buy('Buy 0.1 AVAX of COQ (0x420FcA0121DC28039145009570975747295f2329)'))
+    expect(live.sent).toHaveLength(0) // offline
+    expect(result.current.messages).toHaveLength(0)
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    act(() => result.current.buy('Buy 0.1 AVAX of COQ (0x420FcA0121DC28039145009570975747295f2329)'))
+    expect(JSON.parse(live.sent.at(-1)!)).toMatchObject({ type: 'user', text: 'Buy 0.1 AVAX of COQ (0x420FcA0121DC28039145009570975747295f2329)' })
+    act(() => result.current.buy('Buy 1 AVAX of COQ (0x420FcA0121DC28039145009570975747295f2329)'))
+    expect(live.sent).toHaveLength(1) // busy with the first one
+    expect(result.current.messages).toHaveLength(1)
+  })
+
+  it('saves a bought token after the swap succeeds and sends saved tokens with each message', async () => {
+    localStorage.clear()
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    const me = OPTIONS.address
+    const COQ = { chainId: 43114, address: '0x420FcA0121DC28039145009570975747295f2329', symbol: 'COQ', decimals: 18 }
+    const step = { label: 'Swap AVAX → COQ', request: { to: me, value: '1', data: '0x', chainId: 43114 } }
+    act(() =>
+      live.onmessage?.({
+        data: JSON.stringify({ type: 'confirm', id: 'pbuy', tx: { title: 'Swap 1 AVAX → COQ', from: me, rows: [], steps: [step], addToken: COQ } }),
+      }),
+    )
+    expect(savedTokens(me)).toEqual([])
+    await act(() => result.current.approve('pbuy'))
+    expect(savedTokens(me)).toEqual([COQ])
+    act(() => result.current.send('sell all my COQ'))
+    expect(JSON.parse(live.sent.at(-1)!)).toMatchObject({ type: 'user', text: 'sell all my COQ', tokens: [COQ] })
+  })
+
+  it('queues a prompt sent while busy and sends queued prompts one at a time after each turn_end', async () => {
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    const turnEnd = () => act(() => live.onmessage?.({ data: JSON.stringify({ type: 'turn_end' }) }))
+    const sentTexts = () => live.sent.map((x) => JSON.parse(x).text)
+    act(() => result.current.send('one'))
+    act(() => result.current.send('two', true))
+    act(() => result.current.send('three'))
+    expect(sentTexts()).toEqual(['one'])
+    expect(result.current.messages.map((m) => (m.kind === 'text' ? m.text : ''))).toEqual(['one']) // no busy reply
+    expect(result.current.queue.map((m) => m.text)).toEqual(['two', 'three'])
+    turnEnd()
+    expect(sentTexts()).toEqual(['one', 'two'])
+    expect(JSON.parse(live.sent[1])).toMatchObject({ type: 'user', spoken: true })
+    expect(result.current.messages.at(-1)).toMatchObject({ role: 'user', text: 'two' })
+    expect(result.current.queue.map((m) => m.text)).toEqual(['three'])
+    expect(result.current.busy).toBe(true)
+    turnEnd()
+    expect(sentTexts()).toEqual(['one', 'two', 'three'])
+    expect(result.current.queue).toEqual([])
+  })
+
+  it('shows progress labels from the agent while busy', async () => {
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    act(() => result.current.send('balance?'))
+    act(() => live.onmessage?.({ data: JSON.stringify({ type: 'progress', label: 'Checking your balances' }) }))
+    expect(result.current.progress).toBe('Checking your balances')
+  })
+
+  it('marks queued prompts "Not sent" on disconnect and never sends them later', async () => {
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    act(() => result.current.send('one'))
+    act(() => result.current.send('two'))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await act(async () => {
+        live.close()
+        await Promise.resolve()
+      })
+      expect(result.current.queue).toEqual([])
+      expect(result.current.messages.find((m) => m.role === 'user' && m.text === 'two')).toMatchObject({ unsent: true })
+      await act(async () => {
+        vi.advanceTimersByTime(1000)
+      })
+      const next = FakeWebSocket.instances.at(-1)!
+      expect(next).not.toBe(live)
+      await act(async () => {
+        next.open()
+        await Promise.resolve()
+      })
+      expect(next.sent).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('saves every token a farm card lists once all its steps succeed', async () => {
+    localStorage.clear()
+    const { result } = renderHook(() => useAgentChat(OPTIONS), { reactStrictMode: true })
+    const live = FakeWebSocket.instances.at(-1)!
+    await act(async () => {
+      live.open()
+      await Promise.resolve()
+    })
+    const me = OPTIONS.address
+    const THUSD = { chainId: 1, address: '0xa3fE5c7596024E6811E14F029937D5bd8Ae485b3', symbol: 'thUSD', decimals: 6 }
+    const STHUSD = { chainId: 1, address: '0xA808Bc9775cb41c52C7842f8b50427fE7A770326', symbol: 'sthUSD', decimals: 6 }
+    const step = (label: string) => ({ label, request: { to: me, value: '0', data: '0x', chainId: 1 } })
+    const tx = { title: 'Farm Theo points: 100 USDC → sthUSD', from: me, rows: [], steps: [step('Swap USDC → thUSD'), step('Stake thUSD → sthUSD')], addTokens: [THUSD, STHUSD] }
+    act(() => live.onmessage?.({ data: JSON.stringify({ type: 'confirm', id: 'pfarm', tx }) }))
+    await act(() => result.current.approve('pfarm'))
+    expect(savedTokens(me)).toEqual([THUSD, STHUSD])
   })
 })

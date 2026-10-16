@@ -63,9 +63,9 @@ function send(ctx: AgentContext, amount: number, symbol: string, recipient: stri
         title: `Send ${formatAmount(amount)} ${sym}`,
         rows: [
           { label: 'To', value: to },
-          { label: 'Amount', value: `${formatAmount(amount)} ${sym} (${formatUsd(amount * holding.usdPrice)})` },
+          { label: 'Amount', value: `${formatAmount(amount)} ${sym} (${formatUsd(amount * (holding.usdPrice ?? 0))})` },
           { label: 'Network fee', value: '~$1.20' },
-          { label: 'Network', value: 'Sandbox' },
+          { label: 'Network', value: 'Ethereum' },
         ],
       }),
     ],
@@ -75,9 +75,9 @@ function send(ctx: AgentContext, amount: number, symbol: string, recipient: stri
 function swapDraft(ctx: AgentContext, amount: number, from: string, to: string): TxDraft | string {
   const a = findHolding(ctx, from)
   const b = findHolding(ctx, to)
-  if (!a || !b) return 'I can only swap ETH, USDC and WBTC in Sandbox for now.'
+  if (!a || !b) return 'I can only swap ETH, USDC and WBTC for now.'
   if (a.symbol === b.symbol) return 'Pick two different tokens to swap.'
-  const out = ((amount * a.usdPrice) / b.usdPrice) * 0.997
+  const out = ((amount * (a.usdPrice ?? 0)) / (b.usdPrice ?? 1)) * 0.997
   return {
     title: `Swap ${formatAmount(amount)} ${a.symbol} → ${b.symbol}`,
     rows: [
@@ -137,7 +137,7 @@ export function respond(input: string, ctx: AgentContext): AgentReply {
   }
   if (/\bbridge\b/.test(text)) {
     return {
-      messages: [say("Bridging and other chains are coming soon. Right now you're in Sandbox, an Ethereum mainnet fork.")],
+      messages: [say('Bridging and other chains are coming soon.')],
     }
   }
   if ((m = text.match(SEND))) return send(ctx, Number(m[1]), m[2], m[3])

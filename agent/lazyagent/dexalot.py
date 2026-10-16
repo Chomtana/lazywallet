@@ -10,7 +10,7 @@ from web3 import Web3
 from .faucet import _post
 from .swaps import Step, display_units
 from .tokens import Token
-from .transfers import TransferError, format_units, format_usd, short
+from .transfers import NoRoute, TransferError, short
 from .uniswap import encode_erc20_approve
 
 NATIVE = "0x0000000000000000000000000000000000000000"
@@ -50,16 +50,12 @@ def dexalot_steps(token_in: Token, token_out: Token, quote: dict, allowance: int
     return steps
 
 
-def dexalot_rows(sender: str, token_in: Token, token_out: Token, amount: int, received: int, fee_usd: float, network_label: str) -> list[dict]:
+def dexalot_rows(sender: str, token_in: Token, token_out: Token, amount: int, received: int) -> list[dict]:
     rate = received * 10**token_in.decimals // amount
     return [
         {"label": "From", "value": short(sender)},
-        {"label": "You pay", "value": f"{format_units(amount, token_in.decimals)} {token_in.symbol}"},
-        {"label": "Receive exactly", "value": f"{display_units(received, token_out.decimals)} {token_out.symbol}"},
         {"label": "Rate", "value": f"1 {token_in.symbol} = {display_units(rate, token_out.decimals)} {token_out.symbol}"},
-        {"label": "Route", "value": "Dexalot · sandbox-signed at live price"},
-        {"label": "Network fee", "value": f"~{format_usd(fee_usd)}"},
-        {"label": "Network", "value": network_label},
+        {"label": "Route", "value": "Dexalot · signed quote at live price"},
     ]
 
 
@@ -74,7 +70,8 @@ class SandboxQuotes:
         try:
             status, body = await asyncio.to_thread(_post, f"{self.url}/dexalot/quote", payload)
         except ConnectionError as e:
-            raise TransferError("The Sandbox service isn't reachable — start it with `pnpm dev:sandbox`.") from e
+            raise TransferError("The Dexalot quote service isn't reachable — start it with `pnpm dev:sandbox`.") from e
         if status != 200:
-            raise TransferError(body.get("detail") or f"Dexalot quote failed ({status}).")
+            error = NoRoute if status == 404 else TransferError  # 404 = Dexalot doesn't offer the pair
+            raise error(body.get("detail") or f"Dexalot quote failed ({status}).")
         return body

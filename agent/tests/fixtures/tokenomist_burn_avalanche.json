@@ -1,0 +1,47 @@
+{
+ "metadata": {
+  "queryDate": "2026-10-15T18:03:34Z"
+ },
+ "status": true,
+ "data": {
+  "tokenId": "avalanche-2",
+  "tokenName": "Avalanche",
+  "tokenSymbol": "AVAX",
+  "totalBurnAmount": 43570.14785960978,
+  "totalBurnValue": 459773.26057120616,
+  "burns": [
+   {
+    "burnEventLabel": "Burned Gas Fees",
+    "burnType": "PROGRAMMATIC",
+    "burnDate": "2026-10-14T00:00:00Z",
+    "amount": 1047.4648578699555,
+    "pricePerToken": 10.22,
+    "value": 10705.090847430945,
+    "metadata": {
+     "burners": [
+      "PROJECT"
+     ],
+     "burnReasons": [
+      "GOVERNANCE"
+     ]
+    }
+   },
+   {
+    "burnEventLabel": "Burned Gas Fees",
+    "burnType": "PROGRAMMATIC",
+    "burnDate": "2026-10-13T00:00:00Z",
+    "amount": 1002.5679850064756,
+    "pricePerToken": 10.14,
+    "value": 10166.039367965663,
+    "metadata": {
+     "burners": [
+      "PROJECT"
+     ],
+     "burnReasons": [
+      "GOVERNANCE"
+     ]
+    }
+   }
+  ]
+ }
+}

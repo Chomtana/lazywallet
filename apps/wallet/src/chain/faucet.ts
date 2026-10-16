@@ -11,9 +11,9 @@ export async function requestFunds(address: Address): Promise<string> {
       body: JSON.stringify({ address }),
     })
   } catch {
-    throw new Error('Sandbox faucet is offline — run `pnpm dev:sandbox`.')
+    throw new Error('The funds service is offline — run `pnpm dev:sandbox`.')
   }
   const body = (await res.json().catch(() => ({}))) as { summary?: string; detail?: string }
   if (!res.ok) throw new Error(body.detail ?? `Faucet error (${res.status})`)
-  return body.summary ?? 'test funds'
+  return body.summary ?? 'funds'
 }

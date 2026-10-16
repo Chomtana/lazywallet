@@ -23,12 +23,12 @@ export function ConnectedBar({ dapp, onDisconnect }: { dapp: DappInfo; onDisconn
       </div>
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs">
-          Sandbox <ChevronDown className="size-3" />
+          Ethereum <ChevronDown className="size-3" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuLabel>Network</DropdownMenuLabel>
           <DropdownMenuItem>
-            Sandbox (Ethereum fork)
+            Ethereum
             <Check className="ml-auto size-4 text-primary" />
           </DropdownMenuItem>
         </DropdownMenuContent>

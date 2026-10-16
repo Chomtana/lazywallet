@@ -1,4 +1,4 @@
-import type { TxRequest, TxStep } from '@/types'
+import type { CustomToken, TxDraft, TxRequest, TxStep } from '@/types'
 import { networkName } from './networks'
 
 type Hash = `0x${string}`
@@ -46,9 +46,17 @@ export function statusPatch(o: StepsOutcome, steps: TxStep[]): { state: 'success
   const at = o.failedStep !== undefined && steps.length > 1 ? `${steps[o.failedStep].label}: ` : ''
   if (o.error) return { state: 'failed', text: `${at}Failed: ${o.error}`, hash: o.hash }
   if (o.status === 'reverted') return { state: 'failed', text: `${at}Transaction reverted.`, hash: o.hash }
-  return { state: 'success', text: `Confirmed on ${networkName(steps.at(-1)?.request.chainId)} (Sandbox).`, hash: o.hash }
+  return { state: 'success', text: `Confirmed on ${networkName(steps.at(-1)?.request.chainId)}.`, hash: o.hash }
 }
 
 export function progressText(index: number, steps: TxStep[]): string {
-  return steps.length > 1 ? `Step ${index + 1} of ${steps.length}: ${steps[index].label}…` : `Submitting to ${networkName(steps[index].request.chainId)} (Sandbox)…`
+  return steps.length > 1 ? `Step ${index + 1} of ${steps.length}: ${steps[index].label}…` : `Submitting to ${networkName(steps[index].request.chainId)}…`
+}
+
+/** The tokens a card asked to remember (addToken, then addTokens; no duplicates) — only once every step succeeded. */
+export function tokensToSave(o: StepsOutcome, tx: TxDraft): CustomToken[] {
+  if (o.status !== 'success' || o.error) return []
+  const key = (t: CustomToken) => `${t.chainId}:${t.address.toLowerCase()}`
+  const all = [...(tx.addToken ? [tx.addToken] : []), ...(tx.addTokens ?? [])]
+  return all.filter((t, i) => all.findIndex((u) => key(u) === key(t)) === i)
 }

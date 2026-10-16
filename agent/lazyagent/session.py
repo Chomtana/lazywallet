@@ -5,9 +5,11 @@ from contextlib import suppress
 from typing import Any, Protocol
 
 from .chain import Chain
+from .custom_tokens import Search
 from .dexalot import Quotes
+from .kyber import Kyber
 from .proposals import Proposals
-from .stream import translate
+from .stream import THINKING, progress, translate
 from .tools import Fund, Send, WalletContext, WalletTools
 
 log = logging.getLogger(__name__)
@@ -35,12 +37,14 @@ class Session:
         fund: Fund | None = None,
         avalanche: Chain | None = None,
         dexalot: Quotes | None = None,
+        kyber: Kyber | None = None,
+        search: Search | None = None,
     ):
         self._send = send
         self._factory = client_factory
         self.ctx = WalletContext()
         self.proposals = Proposals()
-        self.tools = WalletTools(chain, send, self.ctx, self.proposals, approval_timeout, fund, avalanche=avalanche, dexalot=dexalot)
+        self.tools = WalletTools(chain, send, self.ctx, self.proposals, approval_timeout, fund, avalanche=avalanche, dexalot=dexalot, kyber=kyber, search=search)
         self._client: AgentClient | None = None
         self._turn: asyncio.Task | None = None
 
@@ -52,6 +56,7 @@ class Session:
                 return
             self.ctx.address = msg.get("address")
             self.ctx.contacts = list(msg.get("contacts") or [])
+            self.ctx.tokens = list(msg.get("tokens") or [])
             self._turn = asyncio.create_task(self._run(str(msg.get("text", ""))))
         elif kind == "tx_started":
             self.proposals.start(str(msg.get("id", "")))
@@ -61,6 +66,7 @@ class Session:
             await self._send({"type": "error", "message": f"Unknown message type: {kind}"})
 
     async def _run(self, text: str) -> None:
+        await self._send(progress(THINKING))
         try:
             if self._client is None:
                 self._client = await self._factory(self.tools)

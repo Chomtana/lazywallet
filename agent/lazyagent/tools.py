@@ -1,13 +1,29 @@
 import asyncio
 import secrets
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
+from .airdrops import (
+    AIRDROPS,
+    AIRDROPS_TOOL,
+    DEPOSIT_TOOL,
+    V4_THEN_KYBER,
+    AirdropError,
+    Airdrops,
+    Deposit,
+    airdrops_reply,
+    deposit_plan,
+    farm_rows,
+    farm_summary,
+    find_program,
+)
 from .chain import Chain
+from .custom_tokens import ADDRESS, MIN_RESERVE_USD, Search, discover, merge
 from .dexalot import DEXALOT_REVERT_HINT, Quotes, asset_of, dexalot_rows, dexalot_steps
+from .kyber import Kyber, kyber_plan, kyber_swap
 from .networks import ETHEREUM, NETWORKS, Choice, Network, candidates, find_network, pick_network
 from .outcome import outcome_text
 from .proposals import Proposals
@@ -30,22 +46,27 @@ from .scheduler import (
 )
 from .swaps import (
     DEADLINE_S,
+    DEFAULT_SLIPPAGE_BPS,
     GAS,
     MAX_PRICE_IMPACT,
     Step,
+    SwapPlan,
     approval_steps,
     check_swap_funds,
     display_units,
+    erc20_approval,
     gas_reserve,
     min_out,
     parse_slippage,
     price_impact,
     route_label,
     swap_rows,
+    swap_summary,
 )
-from .tokens import find_token
+from .tokens import Token, find_token
 from .transfers import (
     FEE_HEADROOM,
+    NoRoute,
     TransferError,
     build_request,
     display_rows,
@@ -55,14 +76,19 @@ from .transfers import (
     parse_amount,
     resolve_recipient,
     short,
+    token_address_rows,
     validate,
 )
+from .trending import TRENDING, TRENDING_TOOL, TrendingError, TrendingTokens, trending_reply
+from .unlocks import UNLOCKS, UNLOCKS_TOOL, UnlockError, Unlocks, unlocks_reply
 from .uniswap import (
     PERMIT2,
     UNIVERSAL_ROUTER,
     WETH_DEPOSIT,
     ChainQuoter,
+    Hop,
     Quoter,
+    Route,
     best_route,
     currency_of,
     decode_permit2_allowance,
@@ -77,7 +103,7 @@ Fund = Callable[[str], Awaitable[str]]
 SERVER_NAME = "wallet"
 TOOL_NAMES = [
     f"mcp__{SERVER_NAME}__{n}"
-    for n in ("get_balances", "resolve_recipient", "propose_transfer", "propose_swap", "propose_scheduled_swap", "list_scheduled_swaps", "cancel_scheduled_swap", "unsupported_action", "request_test_funds")
+    for n in ("get_balances", "resolve_recipient", "propose_transfer", "propose_swap", "propose_scheduled_swap", "list_scheduled_swaps", "cancel_scheduled_swap", "unsupported_action", "request_test_funds", "list_trending_tokens", "list_airdrops", "propose_deposit", "list_unlocks")
 ]
 
 
@@ -89,6 +115,10 @@ def err(text: str) -> dict:
     return {"content": [{"type": "text", "text": text}], "is_error": True}
 
 
+def _usd(holding: dict) -> str:
+    return "price unknown" if holding["usdPrice"] is None else format_usd(holding["amount"] * holding["usdPrice"])
+
+
 def _succeeded(result: dict | None) -> bool:
     return bool(result) and result.get("status") == "success" and not result.get("error")
 
@@ -97,6 +127,7 @@ def _succeeded(result: dict | None) -> bool:
 class WalletContext:
     address: str | None = None
     contacts: list[dict] = field(default_factory=list)
+    tokens: list[dict] = field(default_factory=list)  # the wallet's saved custom tokens (lw.tokens)
 
 
 class WalletTools:
@@ -111,8 +142,12 @@ class WalletTools:
         quoter: Quoter | None = None,
         avalanche: Chain | None = None,
         dexalot: Quotes | None = None,
+        kyber: Kyber | None = None,
+        search: Search | None = None,
     ):
         self.fund = fund
+        self.kyber = kyber
+        self.search = search
         self.quoter = quoter or ChainQuoter(chain)
         self.chain = chain  # Ethereum (Uniswap quoting, approvals)
         self.chains: dict[str, Chain] = {"ethereum": chain, **({"avalanche": avalanche} if avalanche else {})}
@@ -124,7 +159,7 @@ class WalletTools:
 
     @property
     def networks(self) -> list[Network]:
-        return [n for n in NETWORKS if n.key in self.chains]
+        return [merge(n, self.ctx.tokens) for n in NETWORKS if n.key in self.chains]
 
     def supported(self) -> str:
         nets = self.networks
@@ -144,7 +179,9 @@ class WalletTools:
             if raw == 0 and t is not net.native:
                 continue
             amount = float(Decimal(raw).scaleb(-t.decimals))
-            holdings.append({"network": net.name, "symbol": t.symbol, "amount": amount, "usdPrice": await chain.price_usd(t), "raw": raw, "decimals": t.decimals})
+            holdings.append(
+                {"network": net.name, "symbol": t.symbol, "amount": amount, "usdPrice": await chain.price_usd(t), "logo": t.logo, "raw": raw, "decimals": t.decimals}
+            )
         return holdings
 
     async def get_balances(self, args: dict) -> dict:
@@ -160,31 +197,54 @@ class WalletTools:
             else:
                 holdings += r
         if not holdings:
-            return err(f"The Sandbox chain isn't reachable right now ({'; '.join(down)}).")
-        await self.send({"type": "balances", "holdings": [{k: h[k] for k in ("network", "symbol", "amount", "usdPrice")} for h in holdings]})
+            return err(f"The network isn't reachable right now ({'; '.join(down)}).")
+        await self.send({"type": "balances", "holdings": [{k: h[k] for k in ("network", "symbol", "amount", "usdPrice", "logo")} for h in holdings]})
         parts = []
         for net in nets:
             mine = [h for h in holdings if h["network"] == net.name]
             if mine:
-                parts.append(f"{net.name}: " + ", ".join(f"{h['symbol']} {format_units(h['raw'], h['decimals'])} ({format_usd(h['amount'] * h['usdPrice'])})" for h in mine))
-        total = sum(h["amount"] * h["usdPrice"] for h in holdings)
+                parts.append(f"{net.name}: " + ", ".join(f"{h['symbol']} {format_units(h['raw'], h['decimals'])} ({_usd(h)})" for h in mine))
+        total = sum(h["amount"] * h["usdPrice"] for h in holdings if h["usdPrice"] is not None)
         note = f" Not reachable right now: {', '.join(down)}." if down else ""
         return ok(f"Balances shown to the user as a card: {'; '.join(parts)}. Total {format_usd(total)}.{note}")
 
     async def _resolve(self, args: dict, symbols: list[str], amount_text: str, verb: str) -> Network | dict:
         """Which network a request runs on — or an error result (after sending a choice card when it's ambiguous)."""
+        nets = self.networks
         explicit = args.get("network")
         if explicit:
-            net = find_network(str(explicit))
-            if net is None or net.key not in self.chains:
-                return err(f"I can use {', '.join(n.name for n in self.networks)} on Sandbox.")
+            named = find_network(str(explicit))
+            nets = [n for n in nets if named is not None and n.key == named.key]
+            if not nets:
+                return err(f"I can use {', '.join(n.name for n in self.networks)}.")
+        try:
+            nets = await self._discover(symbols, nets)
+        except TransferError as e:  # a token posing as a built-in
+            return err(str(e))
+        if explicit:
+            net = nets[0]
             missing = [s for s in symbols if find_token(s, net.tokens) is None]
             if missing:
-                return err(f"{missing[0]} isn't available on {net.name} Sandbox. There I can {verb} {', '.join(t.symbol for t in net.tokens)}.")
+                if ADDRESS.match(missing[0].strip()):
+                    return err(f"That address isn't a token on {net.name}.")
+                return err(
+                    f"{missing[0]} isn't available on {net.name}, and I couldn't find it with at least "
+                    f"${MIN_RESERVE_USD:,} of liquidity. Ask the user for its contract address."
+                )
             return net
-        cands = candidates(symbols, self.networks)
+        cands = candidates(symbols, nets)
         if not cands:
-            return err(f"I can only {verb} {self.supported()} on Sandbox.")
+            unknown = next((s for s in symbols if not any(find_token(s, n.tokens) for n in nets)), None)
+            if unknown and ADDRESS.match(unknown.strip()):
+                # Only the networks that have the request's other tokens were checked.
+                where = [n for n in nets if all(find_token(s, n.tokens) for s in symbols if s != unknown)] or nets
+                return err(f"That address isn't a token on {' or '.join(n.name for n in where)}.")
+            if unknown:
+                return err(
+                    f"I couldn't find {unknown} with at least ${MIN_RESERVE_USD:,} of liquidity. "
+                    f"I can only {verb} {self.supported()} or a token by its contract address — ask the user for it."
+                )
+            return err(f"I can only {verb} {self.supported()}.")
         if len(cands) == 1:
             return cands[0]
         balances: dict[str, int | None] = {}
@@ -215,6 +275,20 @@ class WalletTools:
             f"{symbols[0].upper()} is on {names}, so I showed the user buttons to choose. "
             "Ask which network in one short sentence and wait for their answer; then call the tool again with network set."
         )
+
+    async def _discover(self, symbols: list[str], nets: list[Network]) -> list[Network]:
+        """Adds tokens the user named that aren't built in or saved (a 0x address, else a symbol search) to each
+        network where they're found. Skips a network that lacks a token the user named that exists elsewhere."""
+        known = {s for s in symbols if any(find_token(s, n.tokens) for n in nets)}
+        out = []
+        for net in nets:
+            missing = [s for s in symbols if find_token(s, net.tokens) is None]
+            if missing and not known.intersection(missing):
+                found = [await discover(s, net, self.chains[net.key], self.search) for s in missing]
+                if all(found):
+                    net = replace(net, tokens=net.tokens + tuple(found))
+            out.append(net)
+        return out
 
     async def _send_choice(self, choice: Choice, symbol: str, balances: dict[str, int | None]) -> None:
         options = []
@@ -258,7 +332,7 @@ class WalletTools:
         except TransferError as e:
             return err(str(e))
         except Exception as e:
-            return err(f"The {net.name} Sandbox chain isn't reachable right now ({e}).")
+            return err(f"{net.name} isn't reachable right now ({e}).")
 
         human = f"{format_units(amount, token.decimals)} {token.symbol}"
         label = name or short(to)
@@ -271,7 +345,11 @@ class WalletTools:
                 "tx": {
                     "title": f"Send {human}",
                     "from": self.ctx.address,
-                    "rows": [{"label": "From", "value": short(self.ctx.address)}, *display_rows(token, amount, to, name, price, gas_cost, native_price, network=net.label)],
+                    "rows": [
+                        {"label": "From", "value": short(self.ctx.address)},
+                        *display_rows(token, amount, to, name, price, gas_cost, native_price, network=net.label),
+                        *token_address_rows(token),
+                    ],
                     "steps": steps,
                 },
             }
@@ -282,6 +360,13 @@ class WalletTools:
             _, change = await self._show_change(net, [token], before)
             success = f"Sent {human} to {label}. Confirmed on {net.label}, tx {result.get('hash')}.{change}"
         return ok(outcome_text(result, steps, "transfer", success))
+
+    async def _price(self, net: Network, token) -> float | None:
+        """USD price for a card; None (shown as no USD value) rather than failing the card."""
+        try:
+            return await self.chains[net.key].price_usd(token)
+        except Exception:
+            return None
 
     async def _snapshot(self, net: Network, tokens) -> dict[str, int]:
         return {t.symbol: await self._balance_on(net, t) for t in tokens}
@@ -303,6 +388,7 @@ class WalletTools:
                         "after": float(Decimal(now).scaleb(-t.decimals)),
                         "delta": float(Decimal(delta).scaleb(-t.decimals)),
                         "usdPrice": await self.chains[net.key].price_usd(t),
+                        "logo": t.logo,
                     }
                 )
                 sign = "+" if delta >= 0 else "-"
@@ -324,11 +410,11 @@ class WalletTools:
             verb = "Wrap" if tin.address is None else "Unwrap"
             steps = [Step(f"{verb} {tin.symbol} → {tout.symbol}", request, GAS["wrap"])]
             expected = minimum = amount
-            label, impact = f"{verb} via WETH contract", 0.0
+            label, via, impact = f"{verb} via WETH contract", "WETH contract", 0.0
         else:
             found = await best_route(self.quoter, currency_of(tin), currency_of(tout), amount)
             if found is None:
-                raise TransferError(f"I couldn't find a Uniswap v4 route for {tin.symbol} → {tout.symbol} on Sandbox.")
+                raise NoRoute(f"I couldn't find a Uniswap v4 route for {tin.symbol} → {tout.symbol}.")
             route, expected = found
             probe_in = max(amount // 1000, 1)
             impact = price_impact(amount, expected, probe_in, await self.quoter.quote(route, probe_in) or 0)
@@ -338,16 +424,13 @@ class WalletTools:
             steps = await self._approvals(tin, amount, now) if tin.address else []
             swap = {"to": UNIVERSAL_ROUTER, "value": str(amount if tin.address is None else 0), "data": encode_swap(route, amount, minimum, now + DEADLINE_S)}
             steps.append(Step(f"Swap {tin.symbol} → {tout.symbol}", swap, GAS["swap1" if len(route.hops) == 1 else "swap2"]))
-            label = route_label(route)
-
-        def rows(fee_usd: float) -> list[dict]:
-            return swap_rows(self.ctx.address, tin, tout, amount, expected, minimum, label, impact, fee_usd, network=ETHEREUM.label)
-
-        return steps, rows, f" The price probably moved more than the {bps / 100:g}% slippage — ask again for a fresh quote.", None
+            label, via = route_label(route), "Uniswap v4"
+        hint = f" The price probably moved more than the {bps / 100:g}% slippage — ask again for a fresh quote."
+        return SwapPlan(steps, swap_rows(self.ctx.address, label, impact), hint, expected, via, impact)
 
     async def _dexalot_plan(self, net: Network, tin, tout, amount: int):
         if self.dexalot is None:
-            raise TransferError("Dexalot swaps aren't set up on this Sandbox.")
+            raise TransferError("Dexalot swaps aren't set up here.")
         quote = await self.dexalot.quote(asset_of(tin), asset_of(tout), amount, self.ctx.address)
         order = quote["order"]
         if (
@@ -357,17 +440,28 @@ class WalletTools:
             or order["taker"].lower() != self.ctx.address.lower()
             or order["maker"].lower() != quote["maker"].lower()
         ):
-            raise TransferError("The Sandbox quote didn't match your request — try again.")
+            raise TransferError("The Dexalot quote didn't match your request — try again.")
         allowance = 0
         if tin.address is not None:
             raw = await self.chains[net.key].call(tin.address, encode_erc20_allowance(self.ctx.address, quote["maker"]))
             allowance = int.from_bytes(raw[:32], "big")
         received = int(quote["order"]["makerAmount"])
+        rows = dexalot_rows(self.ctx.address, tin, tout, amount, received)
+        return SwapPlan(dexalot_steps(tin, tout, quote, allowance), rows, DEXALOT_REVERT_HINT, received, "Dexalot", None, exact=True)
 
-        def rows(fee_usd: float) -> list[dict]:
-            return dexalot_rows(self.ctx.address, tin, tout, amount, received, fee_usd, net.label)
-
-        return dexalot_steps(tin, tout, quote, allowance), rows, DEXALOT_REVERT_HINT, received
+    async def _swap_plan(self, net: Network, tin, tout, amount: int, bps: int, slippage: str | None) -> SwapPlan:
+        """The network's venue for built-in pairs it can quote; KyberSwap for custom tokens and everything else."""
+        if not (tin.custom or tout.custom):
+            try:
+                if net.swap_venue == "dexalot":
+                    return await self._dexalot_plan(net, tin, tout, amount)
+                return await self._uniswap_plan(tin, tout, amount, bps)
+            except NoRoute:
+                if self.kyber is None:
+                    raise
+        if self.kyber is None:
+            raise TransferError("Swaps for tokens outside the built-in list aren't set up here.")
+        return await kyber_plan(self.kyber, self.chains[net.key], net, tin, tout, amount, self.ctx.address, slippage)
 
     async def _approvals(self, token, amount: int, now: int) -> list[Step]:
         erc20 = int.from_bytes((await self.chain.call(token.address, encode_erc20_allowance(self.ctx.address, PERMIT2)))[:32], "big")
@@ -394,55 +488,56 @@ class WalletTools:
             balance = await self._balance_on(net, tin)
             if amount > balance:
                 raise TransferError(f"You only have {format_units(balance, tin.decimals)} {tin.symbol}.")
-            if net.swap_venue == "dexalot":
-                steps, rows, hint, exact = await self._dexalot_plan(net, tin, tout, amount)
-            else:
-                steps, rows, hint, exact = await self._uniswap_plan(tin, tout, amount, bps)
+            plan = await self._swap_plan(net, tin, tout, amount, bps, args.get("slippage_percent"))
+            steps = plan.steps
             reserve = gas_reserve(steps, await chain.gas_price())
             check_swap_funds(tin, amount, balance, native_balance, reserve, native=net.native.symbol)
             fee_usd = float(Decimal(reserve // FEE_HEADROOM).scaleb(-18)) * await chain.price_usd(net.native)
+            prices = (await self._price(net, tin), await self._price(net, tout))
             before = await self._snapshot(net, [tin, tout])
         except TransferError as e:
             return err(str(e))
         except Exception as e:
-            return err(f"The {net.name} Sandbox chain isn't reachable right now ({e}).")
+            return err(f"{net.name} isn't reachable right now ({e}).")
 
         human_in = f"{format_units(amount, tin.decimals)} {tin.symbol}"
         steps_json = self._steps_json([s.to_json() for s in steps], net)
-        pid, fut = self.proposals.new()
-        await self.send(
-            {
-                "type": "confirm",
-                "id": pid,
-                "tx": {"title": f"Swap {human_in} → {tout.symbol}", "from": self.ctx.address, "rows": rows(fee_usd), "steps": steps_json},
-            }
+        summary = swap_summary(
+            net.name, tin, tout, amount, plan.expected, via=plan.via, fee_usd=fee_usd, impact=plan.impact, prices=prices, exact=plan.exact
         )
+        tx = {"title": "Swap", "from": self.ctx.address, "summary": summary, "rows": plan.rows, "steps": steps_json}
+        if tout.custom:  # the wallet remembers it after the swap succeeds
+            tx["addToken"] = {"chainId": net.chain_id, "address": tout.address, "symbol": tout.symbol, "decimals": tout.decimals}
+            if tout.logo:
+                tx["addToken"]["logo"] = tout.logo
+        pid, fut = self.proposals.new()
+        await self.send({"type": "confirm", "id": pid, "tx": tx})
         result = await self.proposals.wait(pid, fut, self.approval_timeout)
         success = ""
         if _succeeded(result):
             after, change = await self._show_change(net, [tin, tout], before)
-            if exact is not None:  # a signed RFQ order pays exactly its makerAmount
-                received = exact
+            if plan.exact:  # a signed RFQ order pays exactly its makerAmount
+                received = plan.expected
             else:
                 received = max(after[tout.symbol] - before[tout.symbol], 0) if after else None
             if received is None:
                 got = f"{tout.symbol} (I couldn't read the received amount right now — don't swap again; check the balance instead)"
             else:
                 got = f"{display_units(received, tout.decimals)} {tout.symbol}"
-                got = f"about {got} (after network fees)" if tout.address is None and exact is None else got
+                got = f"about {got} (after network fees)" if tout.address is None and not plan.exact else got
             success = f"Swapped {human_in} for {got}. Confirmed on {net.label}, tx {result.get('hash')}.{change}"
-        return ok(outcome_text(result, steps_json, "swap", success, revert_hint=hint))
+        return ok(outcome_text(result, steps_json, "swap", success, revert_hint=plan.hint))
 
     async def _quote_out(self, net: Network, tin, tout, amount: int) -> int:
         """Today's output for one run, from the network's venue (wrapped legs quoted as native)."""
         a, b = routing_token(tin, net), routing_token(tout, net)
         if net.swap_venue == "dexalot":
             if self.dexalot is None:
-                raise TransferError("Dexalot swaps aren't set up on this Sandbox.")
+                raise TransferError("Dexalot swaps aren't set up here.")
             return int((await self.dexalot.quote(asset_of(a), asset_of(b), amount, self.ctx.address))["order"]["makerAmount"])
         found = await best_route(self.quoter, currency_of(a), currency_of(b), amount)
         if found is None:
-            raise TransferError(f"I couldn't find a Uniswap v4 route for {tin.symbol} → {tout.symbol} on Sandbox.")
+            raise TransferError(f"I couldn't find a Uniswap v4 route for {tin.symbol} → {tout.symbol}.")
         return found[1]
 
     async def propose_scheduled_swap(self, args: dict) -> dict:
@@ -503,7 +598,7 @@ class WalletTools:
         except TransferError as e:
             return err(str(e))
         except Exception as e:
-            return err(f"The {net.name} Sandbox chain isn't reachable right now ({e}).")
+            return err(f"{net.name} isn't reachable right now ({e}).")
 
         human = f"{format_units(amount, tin.decimals)} {tin.symbol}"
         steps_json = self._steps_json([s.to_json() for s in steps], net)
@@ -553,7 +648,7 @@ class WalletTools:
             order = decode_order(oid, await chain.call(SCHEDULER, encode_get_order(oid)))
             now = await chain.block_timestamp()
         except Exception as e:
-            return err(f"The {net.name} Sandbox chain isn't reachable right now ({e}).")
+            return err(f"{net.name} isn't reachable right now ({e}).")
         if order.owner.lower() != self.ctx.address.lower():
             return err(f"I can't find a scheduled swap #{oid} of yours on {net.name}.")
         if not order.active:
@@ -574,19 +669,143 @@ class WalletTools:
         if not self.ctx.address:
             return err("No wallet is active in the app.")
         if not await self.chain.is_sandbox():
-            return err("The faucet only works on Sandbox, and this network isn't Sandbox.")
+            return err("Adding funds isn't available on this network.")
         if self.fund is None:
             return err("The faucet isn't configured.")
         try:
             summary = await self.fund(self.ctx.address)
         except Exception as e:
-            return err(f"The Sandbox faucet isn't reachable ({e}). Start it with `pnpm dev:sandbox`.")
+            return err(f"The funds service isn't reachable ({e}). Start it with `pnpm dev:sandbox`.")
         balances = await self.get_balances({})
         return ok(f"Added {summary} to the wallet. {balances['content'][0]['text']}")
 
+    trending: TrendingTokens = TRENDING  # shared 60 s cache; tests assign their own
+
+    async def list_trending_tokens(self, args: dict) -> dict:
+        try:
+            card, reply = await trending_reply(self.trending, args)
+        except TrendingError as e:
+            return err(str(e))
+        if card:
+            await self.send(card)
+        return ok(reply)
+
+    airdrops: Airdrops = AIRDROPS  # shared 10 min cache; tests assign their own
+
+    async def list_airdrops(self, args: dict) -> dict:
+        try:
+            return ok(await airdrops_reply(self.airdrops, args, self.send))
+        except AirdropError as e:
+            return err(str(e))
+
+    unlocks: Unlocks = UNLOCKS  # shared 10 min cache; tests assign their own
+
+    async def list_unlocks(self, args: dict) -> dict:
+        try:
+            return ok(await unlocks_reply(self.unlocks, self.send))
+        except UnlockError as e:
+            return err(str(e))
+
+    async def _farm_swap(self, net: Network, dep: Deposit, usdc: Token, asset: Token, amount: int):
+        """USDC → the farm's token on the deposit's venue: the pinned Uniswap v4 pool first (V4_THEN_KYBER), else
+        KyberSwap with all of kyber.py's checks. Returns (steps, expected, minimum, via, route detail, price impact or None)."""
+        if dep.venue == V4_THEN_KYBER:
+            route = Route((currency_of(usdc), asset.address), (Hop(dep.fee, dep.tick_spacing),))
+            expected = await self.quoter.quote(route, amount)
+            if expected:
+                probe_in = max(amount // 1000, 1)
+                impact = price_impact(amount, expected, probe_in, await self.quoter.quote(route, probe_in) or 0)
+                minimum = min_out(expected, DEFAULT_SLIPPAGE_BPS)
+                now = await self.chain.block_timestamp()
+                steps = await self._approvals(usdc, amount, now)
+                swap = {"to": UNIVERSAL_ROUTER, "value": "0", "data": encode_swap(route, amount, minimum, now + DEADLINE_S)}
+                steps.append(Step(f"Swap {usdc.symbol} → {asset.symbol}", swap, GAS["swap1"]))
+                return steps, expected, minimum, "Uniswap v4", f"Uniswap v4 {dep.fee / 10_000:g}%", impact
+        if self.kyber is None:
+            raise TransferError(f"I couldn't get a quote for {usdc.symbol} → {asset.symbol} right now.")
+        k = await kyber_swap(self.kyber, self.chains[net.key], net, usdc, asset, amount, self.ctx.address, f"{DEFAULT_SLIPPAGE_BPS / 100:g}")
+        return k.steps, k.verified.expected, k.verified.minimum, k.label, k.label, k.impact
+
+    async def propose_deposit(self, args: dict) -> dict:
+        if not self.ctx.address:
+            return err("No wallet is active in the app.")
+        program = find_program(str(args.get("farm", "")))
+        if program is None:
+            return err("I don't know that program. Call list_airdrops for the ids.")
+        if program.deposit is None:
+            return err(f"I can list {program.name} but can't farm it from here yet.")
+        dep = program.deposit
+        net = next((n for n in self.networks if n.key == dep.network), None)
+        if net is None:
+            return err(f"{dep.name} farming isn't set up here.")
+        chain = self.chains[net.key]
+        usdc = find_token(dep.pay, net.tokens)
+        asset, vault = (Token(t.symbol, t.address, t.decimals, custom=True) for t in (dep.asset, dep.vault))
+        try:
+            amount = parse_amount(str(args.get("amount", "")), usdc.decimals)
+            balance = await self._balance_on(net, usdc)
+            if amount > balance:
+                raise TransferError(f"You only have {format_units(balance, usdc.decimals)} {usdc.symbol}.")
+            swap_steps, expected, minimum, via, route, impact = await self._farm_swap(net, dep, usdc, asset, amount)
+            if impact is not None and impact > MAX_PRICE_IMPACT:
+                raise TransferError(f"That trade would move the price by about {impact:.0%}. Try a smaller amount.")
+            plan = await deposit_plan(chain, dep, self.ctx.address, minimum)
+            steps = swap_steps + erc20_approval(asset, plan.allowance, minimum, vault.address) + [plan.step]
+            native_balance = await chain.eth_balance(self.ctx.address)
+            reserve = gas_reserve(steps, await chain.gas_price())
+            check_swap_funds(usdc, amount, balance, native_balance, reserve, native=net.native.symbol)
+            fee_usd = float(Decimal(reserve // FEE_HEADROOM).scaleb(-18)) * await chain.price_usd(net.native)
+            prices = (await self._price(net, usdc), await self._price(net, asset))
+            before = await self._snapshot(net, [usdc, asset, vault])
+        except TransferError as e:
+            return err(str(e))
+        except Exception as e:
+            return err(f"{net.name} isn't reachable right now ({e}).")
+
+        human_in = f"{format_units(amount, usdc.decimals)} {usdc.symbol}"
+        steps_json = self._steps_json([s.to_json() for s in steps], net)
+        rows = farm_rows(self.ctx.address, program, usdc, asset, vault, expected, minimum, plan.shares, route, impact)
+        summary = farm_summary(
+            dep, net.name, usdc, asset, vault, amount, expected, minimum, plan.shares, via=via, fee_usd=fee_usd, impact=impact, prices=prices
+        )
+        tx = {
+            "title": f"Farm {dep.name}",
+            "from": self.ctx.address,
+            "summary": summary,
+            "rows": rows,
+            "steps": steps_json,
+            "addTokens": [{"chainId": net.chain_id, "address": t.address, "symbol": t.symbol, "decimals": t.decimals} for t in (asset, vault)],
+        }
+        pid, fut = self.proposals.new()
+        await self.send({"type": "confirm", "id": pid, "tx": tx})
+        result = await self.proposals.wait(pid, fut, self.approval_timeout)
+        success = ""
+        if _succeeded(result):
+            after, change = await self._show_change(net, [usdc, asset, vault], before)
+            staked = f"Staked {display_units(minimum, asset.decimals)} {asset.symbol} into {vault.symbol}"
+            if after:
+                got = display_units(max(after[vault.symbol] - before[vault.symbol], 0), vault.decimals)
+                left = display_units(max(after[asset.symbol] - before[asset.symbol], 0), asset.decimals)
+                staked += f", got {got} {vault.symbol}; {left} {asset.symbol} left"
+            success = f"{staked}. Confirmed on {net.label}, tx {result.get('hash')}.{change}"
+        swap_at = next(i for i, s in enumerate(steps_json) if s["label"].startswith("Swap "))
+        failed = (result or {}).get("failed_step")
+        unsent = (result or {}).get("error")
+        if isinstance(failed, int) and swap_at < failed < len(steps_json) and not (unsent and result.get("hash")):
+            # The swap landed but the approve/stake after it didn't: the token is unstaked; a retry would swap again.
+            label = steps_json[failed]["label"]
+            what = f"failed before it was sent at step {failed + 1} ({label}): {unsent}" if unsent else f"reverted at step {failed + 1} ({label}) (tx {result.get('hash')})"
+            _, change = await self._show_change(net, [usdc, asset, vault], before)
+            return ok(
+                f"The deposit {what}. The swap went through, so your {asset.symbol} is in your wallet but wasn't staked. "
+                f"Don't swap again; ask the user whether to try staking later.{change}"
+            )
+        hint = f" The price probably moved more than the {DEFAULT_SLIPPAGE_BPS / 100:g}% slippage — ask again for a fresh quote."
+        return ok(outcome_text(result, steps_json, "deposit", success, revert_hint=hint))
+
     async def unsupported_action(self, args: dict) -> dict:
         action = str(args.get("action", "That"))
-        return ok(f"{action} is coming soon. Right now LazyWallet can check balances, send and swap on Sandbox ({self.supported()}).")
+        return ok(f"{action} is coming soon. Right now LazyWallet can check balances, send and swap ({self.supported()}).")
 
 
 def build_mcp_server(t: WalletTools):
@@ -594,7 +813,7 @@ def build_mcp_server(t: WalletTools):
         name=SERVER_NAME,
         version="0.1.0",
         tools=[
-            tool("get_balances", "Show the active wallet's balances (native coins and supported tokens on every Sandbox network) with USD values.", {"type": "object", "properties": {}})(t.get_balances),
+            tool("get_balances", "Show the active wallet's balances (native coins and supported tokens on every network) with USD values.", {"type": "object", "properties": {}})(t.get_balances),
             tool(
                 "resolve_recipient",
                 "Look up an address-book name or validate a 0x address.",
@@ -602,11 +821,11 @@ def build_mcp_server(t: WalletTools):
             )(t.resolve_recipient),
             tool(
                 "propose_transfer",
-                "Propose sending ETH or a supported token. Shows a confirmation card and waits for the user to approve or reject; returns the outcome.",
+                "Propose sending a native coin or any token. Shows a confirmation card and waits for the user to approve or reject; returns the outcome.",
                 {
                     "type": "object",
                     "properties": {
-                        "token": {"type": "string", "description": f"One of {t.supported()}"},
+                        "token": {"type": "string", "description": f"Symbol (built in: {t.supported()}; or a token the user bought) or the token's 0x contract address"},
                         "amount": {"type": "string", "description": "Decimal amount in whole tokens, e.g. '0.1'"},
                         "to": {"type": "string", "description": "Address-book name or 0x address"},
                         "network": {"type": "string", "description": "Only if the user named a network or answered a network choice: 'ethereum' or 'avalanche'"},
@@ -616,12 +835,12 @@ def build_mcp_server(t: WalletTools):
             )(t.propose_transfer),
             tool(
                 "propose_swap",
-                "Propose swapping one supported token for another on Uniswap v4 (exact input). Finds the best route, shows one confirmation card with any approval steps, waits for approve/reject, and returns the amount received.",
+                "Propose swapping one token for another (exact input): Uniswap v4 on Ethereum, Dexalot on Avalanche, KyberSwap for any other token or pair. Shows one confirmation card with any approval steps, waits for approve/reject, and returns the amount received.",
                 {
                     "type": "object",
                     "properties": {
-                        "token_in": {"type": "string", "description": f"Token to pay, one of {t.supported()}"},
-                        "token_out": {"type": "string", "description": f"Token to receive, one of {t.supported()}"},
+                        "token_in": {"type": "string", "description": f"Token to pay: symbol (built in: {t.supported()}) or 0x contract address"},
+                        "token_out": {"type": "string", "description": "Token to receive: symbol or 0x contract address (any token, e.g. a memecoin)"},
                         "amount": {"type": "string", "description": "Decimal amount of token_in, e.g. '100'"},
                         "slippage_percent": {"type": "string", "description": "Only if the user stated one, e.g. '0.5'"},
                         "network": {"type": "string", "description": "Only if the user named a network or answered a network choice: 'ethereum' or 'avalanche'"},
@@ -648,7 +867,7 @@ def build_mcp_server(t: WalletTools):
                     "required": ["token_in", "token_out", "amount"],
                 },
             )(t.propose_scheduled_swap),
-            tool("list_scheduled_swaps", "List the user's scheduled swaps on every Sandbox network with progress and next run.", {"type": "object", "properties": {}})(t.list_scheduled_swaps),
+            tool("list_scheduled_swaps", "List the user's scheduled swaps on every network with progress and next run.", {"type": "object", "properties": {}})(t.list_scheduled_swaps),
             tool(
                 "cancel_scheduled_swap",
                 "Propose cancelling one of the user's scheduled swaps (confirmation card). Use list_scheduled_swaps first to find its number and network.",
@@ -660,12 +879,16 @@ def build_mcp_server(t: WalletTools):
             )(t.cancel_scheduled_swap),
             tool(
                 "request_test_funds",
-                "Sandbox faucet: give the active wallet free test funds on every Sandbox network (100 ETH / 100 AVAX plus test tokens). Use when the user asks for test funds, the faucet, or ETH to get started.",
+                "Add funds to the active wallet on every network (100 ETH / 100 AVAX plus tokens). Use when the user asks to add or get funds, the faucet, or ETH to get started.",
                 {"type": "object", "properties": {}},
             )(t.request_test_funds),
+            tool(*TRENDING_TOOL)(t.list_trending_tokens),
+            tool(*AIRDROPS_TOOL)(t.list_airdrops),
+            tool(*DEPOSIT_TOOL)(t.propose_deposit),
+            tool(*UNLOCKS_TOOL)(t.list_unlocks),
             tool(
                 "unsupported_action",
-                "Use for bridging, price alerts, conditional actions, dApps or anything other than balances, sends, swaps, scheduled swaps and test funds.",
+                "Use for bridging, price alerts, conditional actions, other dApps, withdrawals/unstaking or anything other than balances, sends, swaps, scheduled swaps, adding funds, trending tokens, airdrops/farming and token unlocks.",
                 {"type": "object", "properties": {"action": {"type": "string"}}, "required": ["action"]},
             )(t.unsupported_action),
         ],

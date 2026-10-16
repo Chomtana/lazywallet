@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { AGENT_WS_URL } from '@/agent/protocol'
 
 type RecognitionResultList = ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }>
 interface Recognition {
@@ -18,14 +19,54 @@ export function getRecognitionCtor(w: object = window): RecognitionCtor | null {
   return g.SpeechRecognition ?? g.webkitSpeechRecognition ?? null
 }
 
-function canSpeak(): boolean {
-  return typeof globalThis.speechSynthesis !== 'undefined' && typeof globalThis.SpeechSynthesisUtterance !== 'undefined'
+// Spoken replies come from the agent's POST /tts (ElevenLabs; the key never reaches the browser).
+export function ttsUrl(wsUrl: string): string {
+  const u = new URL(wsUrl)
+  u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:'
+  u.pathname = '/tts'
+  return u.toString()
 }
 
+const TTS_URL = ttsUrl(AGENT_WS_URL)
+type Playing = { abort: AbortController; audio: HTMLAudioElement; url?: string }
+let playing: Playing | null = null
+
+// Stop any reply being fetched or played (a newer reply, or the mic starting).
+export function stopSpeaking(): void {
+  if (!playing) return
+  playing.abort.abort()
+  playing.audio.pause()
+  if (playing.url) URL.revokeObjectURL(playing.url)
+  playing = null
+}
+
+// Fire-and-forget; a failed request stays silent (no robotic fallback).
 export function speak(text: string, enabled: boolean): void {
-  if (!enabled || !text || !canSpeak()) return
-  globalThis.speechSynthesis.cancel()
-  globalThis.speechSynthesis.speak(new SpeechSynthesisUtterance(text))
+  if (!enabled || !text.trim()) return
+  stopSpeaking()
+  const current: Playing = { abort: new AbortController(), audio: new Audio() }
+  playing = current
+  void (async () => {
+    try {
+      const res = await fetch(TTS_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text }),
+        signal: current.abort.signal,
+      })
+      if (!res.ok) return
+      const blob = await res.blob()
+      if (playing !== current) return
+      current.url = URL.createObjectURL(blob)
+      current.audio.src = current.url
+      current.audio.onended = () => {
+        if (playing === current) stopSpeaking()
+      }
+      await current.audio.play()
+    } catch {
+      // aborted, offline or autoplay-blocked: stay silent
+    }
+  })()
 }
 
 export function useSpeechRecognition(onFinal: (text: string) => void) {
@@ -43,7 +84,7 @@ export function useSpeechRecognition(onFinal: (text: string) => void) {
 
   function start() {
     if (!Ctor || recRef.current) return
-    if (canSpeak()) globalThis.speechSynthesis.cancel()
+    stopSpeaking()
     const rec = new Ctor()
     rec.lang = 'en-US'
     rec.interimResults = true

@@ -200,7 +200,7 @@ def schedule_rows(sender: str, tin: Token, tout: Token, net: Network, amount_in:
         rows.append({"label": "You receive", "value": f"{get.symbol} (wrapped {tout.symbol})"})
     rows += [
         {"label": "Gas deposit", "value": f"{format_units(top_up, 18)} {net.native.symbol}" if top_up else "already covered"},
-        {"label": "Executed by", "value": "Anyone — the LazyWallet executor on Sandbox"},
+        {"label": "Executed by", "value": "Anyone — the LazyWallet executor"},
         {"label": "Contract", "value": short(SCHEDULER)},
         {"label": "Network", "value": net.label},
     ]

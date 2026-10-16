@@ -1,0 +1,11 @@
+{
+  "data": [
+    {"id": "avax_0x3c5560226ee5861a58707bbf9247c16cf90e0a8c", "type": "pool", "attributes": {"address": "0x3c5560226ee5861a58707bbf9247c16cf90e0a8c", "name": "GATOR / WAVAX", "base_token_price_usd": "0.00000282056862822005", "price_change_percentage": {"h24": "4.946"}, "volume_usd": {"h24": "523.7351283647"}, "reserve_in_usd": "11541.8039"}, "relationships": {"base_token": {"data": {"id": "avax_0x1a31a8fd8bacb64b32dbcdcf5b2215f58baf70c1", "type": "token"}}, "dex": {"data": {"id": "arena-dex", "type": "dex"}}}},
+    {"id": "avax_0x92f020fb0ae592bdca43ea4f4386aa3237f6e5d1", "type": "pool", "attributes": {"address": "0x92f020fb0ae592bdca43ea4f4386aa3237f6e5d1", "name": "NOCHILL / WAVAX", "base_token_price_usd": "0.000322432119406396", "price_change_percentage": {"h24": "0"}, "volume_usd": {"h24": "3.0235432146"}, "reserve_in_usd": "2049.9008"}, "relationships": {"base_token": {"data": {"id": "avax_0xacfb898cff266e53278cc0124fc2c7c94c8cb9a5", "type": "token"}}, "dex": {"data": {"id": "arena-dex", "type": "dex"}}}}
+  ],
+  "included": [
+    {"id": "arena-dex", "type": "dex", "attributes": {"name": "Arena DEX"}},
+    {"id": "avax_0x1a31a8fd8bacb64b32dbcdcf5b2215f58baf70c1", "type": "token", "attributes": {"address": "0x1a31a8fd8bacb64b32dbcdcf5b2215f58baf70c1", "name": "Gator Dont Play", "symbol": "GATOR"}},
+    {"id": "avax_0xacfb898cff266e53278cc0124fc2c7c94c8cb9a5", "type": "token", "attributes": {"address": "0xacfb898cff266e53278cc0124fc2c7c94c8cb9a5", "name": "AVAX HAS NO CHILL", "symbol": "NOCHILL"}}
+  ]
+}

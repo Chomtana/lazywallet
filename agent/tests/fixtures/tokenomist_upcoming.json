@@ -1,0 +1,149 @@
+{
+ "metadata": {
+  "queryDate": "2026-10-15T18:02:39Z",
+  "page": 1,
+  "totalPages": 1,
+  "pageSize": 200,
+  "total": 4
+ },
+ "status": true,
+ "data": [
+  {
+   "tokenId": "layerzero",
+   "tokenName": "LayerZero",
+   "tokenSymbol": "ZRO",
+   "marketCap": 727102630,
+   "releasedPercentage": 63.56250001202437,
+   "listedMethod": "INTERNAL",
+   "dataSource": "Whitepaper",
+   "upcomingEvent": {
+    "unlockDate": "2026-10-20T11:00:00Z",
+    "referencePrice": 2.1,
+    "referencePriceUpdatedTime": "2026-10-20T11:00:00Z",
+    "cliffUnlocks": {
+     "totalCliffAmount": 25708334,
+     "totalCliffValue": 53987501.400000006,
+     "valueToMarketCap": 7.425018033561508,
+     "allocationBreakdown": [
+      {
+       "allocationName": "Core Contributors",
+       "standardAllocationName": "Founder / Team",
+       "cliffAmount": 10625000,
+       "cliffValue": 22312500,
+       "unlockPrecision": "month"
+      },
+      {
+       "allocationName": "Strategic Partners",
+       "standardAllocationName": "Private Investors",
+       "cliffAmount": 13416667,
+       "cliffValue": 28175000.700000003,
+       "unlockPrecision": "month"
+      },
+      {
+       "allocationName": "Tokens Repurchased",
+       "standardAllocationName": "Community",
+       "cliffAmount": 1666667,
+       "cliffValue": 3500000.7,
+       "unlockPrecision": "month"
+      }
+     ]
+    },
+    "latestUpdateDate": "2026-10-06T07:31:47Z"
+   }
+  },
+  {
+   "tokenId": "bitway",
+   "tokenName": "Bitway",
+   "tokenSymbol": "BTW",
+   "marketCap": 2829055898,
+   "releasedPercentage": 30.13027642169869,
+   "listedMethod": "INTERNAL",
+   "dataSource": "Whitepaper",
+   "upcomingEvent": {
+    "unlockDate": "2026-11-02T08:00:00Z",
+    "referencePrice": 1.86,
+    "referencePriceUpdatedTime": "2026-11-02T08:00:00Z",
+    "cliffUnlocks": {
+     "totalCliffAmount": 101628455.6,
+     "totalCliffValue": 189028927.416,
+     "valueToMarketCap": 6.6816964468476545,
+     "allocationBreakdown": [
+      {
+       "allocationName": "Community",
+       "standardAllocationName": "Community",
+       "cliffAmount": 60165041,
+       "cliffValue": 111906976.26,
+       "unlockPrecision": "month"
+      },
+      {
+       "allocationName": "Ecosystem",
+       "standardAllocationName": "Community",
+       "cliffAmount": 41463414.6,
+       "cliffValue": 77121951.156,
+       "unlockPrecision": "month"
+      }
+     ]
+    },
+    "latestUpdateDate": "2026-10-06T08:35:43Z"
+   }
+  },
+  {
+   "tokenId": "hyperliquid",
+   "tokenName": "Hyperliquid",
+   "tokenSymbol": "HYPE",
+   "marketCap": 17546883584,
+   "releasedPercentage": 48.47444795152555,
+   "listedMethod": "INTERNAL",
+   "dataSource": "Whitepaper",
+   "upcomingEvent": {
+    "unlockDate": "2026-11-06T00:00:00Z",
+    "referencePrice": 81.68,
+    "referencePriceUpdatedTime": "2026-11-06T00:00:00Z",
+    "cliffUnlocks": {
+     "totalCliffAmount": 9916667,
+     "totalCliffValue": 809993360.5600001,
+     "valueToMarketCap": 4.616166492941155,
+     "allocationBreakdown": [
+      {
+       "allocationName": "Core Contributors",
+       "standardAllocationName": "Founder / Team",
+       "cliffAmount": 9916667,
+       "cliffValue": 809993360.5600001,
+       "unlockPrecision": "month"
+      }
+     ]
+    },
+    "latestUpdateDate": "2026-10-15T12:18:36Z"
+   }
+  },
+  {
+   "tokenId": "avalanche-2",
+   "tokenName": "Avalanche",
+   "tokenSymbol": "AVAX",
+   "marketCap": 4263544387,
+   "releasedPercentage": 77.22279076646089,
+   "listedMethod": "INTERNAL",
+   "dataSource": "Whitepaper",
+   "upcomingEvent": {
+    "unlockDate": "2026-11-08T00:00:00Z",
+    "referencePrice": 9.97,
+    "referencePriceUpdatedTime": "2026-11-08T00:00:00Z",
+    "cliffUnlocks": {
+     "totalCliffAmount": 1666800,
+     "totalCliffValue": 16617996.000000002,
+     "valueToMarketCap": 0.3897695084556886,
+     "allocationBreakdown": [
+      {
+       "allocationName": "Foundation",
+       "standardAllocationName": "Reserve",
+       "cliffAmount": 1666800,
+       "cliffValue": 16617996.000000002,
+       "unlockPrecision": "day"
+      }
+     ]
+    },
+    "latestUpdateDate": "2026-10-06T07:31:16Z"
+   }
+  }
+ ]
+}

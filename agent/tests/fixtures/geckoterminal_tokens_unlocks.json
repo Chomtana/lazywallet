@@ -1,0 +1,155 @@
+{
+ "data": [
+  {
+   "id": "eth_0x6985884c4392d348587b19cb9eaaf157f13271cd",
+   "type": "token",
+   "attributes": {
+    "address": "0x6985884c4392d348587b19cb9eaaf157f13271cd",
+    "name": "LayerZero",
+    "symbol": "ZRO",
+    "decimals": 18,
+    "image_url": "https://coin-images.coingecko.com/coins/images/28206/large/ftxG9_TJ_400x400.jpeg?1696527208",
+    "coingecko_coin_id": "layerzero",
+    "total_supply": "951090080270536000000000000.0",
+    "normalized_total_supply": "951090080.270536",
+    "price_usd": "2.0853973754",
+    "fdv_usd": "1983400756.49213",
+    "total_reserve_in_usd": "367360.308573629355593841831637009600136241858004950473469049660194823572199978771477538835999321766047873652613088",
+    "volume_usd": {
+     "h24": "80290.2113050438"
+    },
+    "market_cap_usd": "834109166.978424"
+   },
+   "relationships": {
+    "top_pools": {
+     "data": [
+      {
+       "id": "eth_0x360acf12e72044ba3eaaa654e51e4725c699dcb1",
+       "type": "pool"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "eth_0x3a63de3572c69a1307ff08394f3ee7702c16d25d",
+   "type": "token",
+   "attributes": {
+    "address": "0x3a63de3572c69a1307ff08394f3ee7702c16d25d",
+    "name": "Bitway",
+    "symbol": "btw",
+    "decimals": 18,
+    "image_url": "https://coin-images.coingecko.com/coins/images/71205/large/BTW_Token_200x200.png?1786291907",
+    "coingecko_coin_id": "bitway",
+    "total_supply": "7291857720000000000000000000.0",
+    "normalized_total_supply": "7291857720.0",
+    "price_usd": null,
+    "fdv_usd": null,
+    "total_reserve_in_usd": null,
+    "volume_usd": {
+     "h24": null
+    },
+    "market_cap_usd": null
+   },
+   "relationships": {
+    "top_pools": {
+     "data": []
+    }
+   }
+  }
+ ],
+ "included": [
+  {
+   "id": "eth_0x360acf12e72044ba3eaaa654e51e4725c699dcb1",
+   "type": "pool",
+   "attributes": {
+    "base_token_price_usd": "2.08539737537882",
+    "base_token_price_native_currency": "0.000854743455651779",
+    "quote_token_price_usd": "2443.88",
+    "quote_token_price_native_currency": "1.0",
+    "base_token_price_quote_token": "0.0008547434557",
+    "quote_token_price_base_token": "1169.941686465",
+    "address": "0x360acf12e72044ba3eaaa654e51e4725c699dcb1",
+    "name": "ZRO / WETH 0.3%",
+    "pool_created_at": "2024-06-20T07:52:23Z",
+    "fdv_usd": "1983400756.51227",
+    "market_cap_usd": "833964417.469671",
+    "price_change_percentage": {
+     "m5": "-0.167",
+     "m15": "-0.669",
+     "m30": "-0.062",
+     "h1": "1.434",
+     "h6": "14.883",
+     "h24": "9.83"
+    },
+    "transactions": {
+     "m5": {
+      "buys": 0,
+      "sells": 2,
+      "buyers": 0,
+      "sellers": 2
+     },
+     "m15": {
+      "buys": 0,
+      "sells": 5,
+      "buyers": 0,
+      "sellers": 4
+     },
+     "m30": {
+      "buys": 5,
+      "sells": 6,
+      "buyers": 2,
+      "sellers": 4
+     },
+     "h1": {
+      "buys": 14,
+      "sells": 12,
+      "buyers": 5,
+      "sellers": 6
+     },
+     "h6": {
+      "buys": 73,
+      "sells": 61,
+      "buyers": 28,
+      "sellers": 21
+     },
+     "h24": {
+      "buys": 238,
+      "sells": 224,
+      "buyers": 62,
+      "sellers": 51
+     }
+    },
+    "volume_usd": {
+     "m5": "250.067658833",
+     "m15": "560.4603898146",
+     "m30": "1170.6984552144",
+     "h1": "3296.9282788511",
+     "h6": "26512.8361501767",
+     "h24": "67695.6798609603"
+    },
+    "reserve_in_usd": "72141.5664"
+   },
+   "relationships": {
+    "base_token": {
+     "data": {
+      "id": "eth_0x6985884c4392d348587b19cb9eaaf157f13271cd",
+      "type": "token"
+     }
+    },
+    "quote_token": {
+     "data": {
+      "id": "eth_0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+      "type": "token"
+     }
+    },
+    "dex": {
+     "data": {
+      "id": "uniswap_v3",
+      "type": "dex"
+     }
+    }
+   }
+  }
+ ]
+}
