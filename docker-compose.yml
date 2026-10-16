@@ -1,4 +1,5 @@
 # No host ports: everything is reached through Caddy on the external "caddy" network, one domain, a path per service.
+#   https://$DOMAIN/                -> wallet (static build; its VITE_* URLs are derived from DOMAIN)
 #   https://$DOMAIN/lazy-agent      -> agent      (ws: wss://$DOMAIN/lazy-agent/ws, tts: /lazy-agent/tts)
 #   https://$DOMAIN/sandbox-eth     -> Ethereum fork RPC
 #   https://$DOMAIN/sandbox-avax    -> Avalanche fork RPC
@@ -6,9 +7,20 @@
 # Routing uses caddy-docker-proxy labels; handle_path strips the prefix before proxying.
 
 services:
+  wallet:
+    build: { context: ., dockerfile: apps/wallet/Dockerfile, args: { DOMAIN: "${DOMAIN}" } }
+    restart: unless-stopped
+    networks: [caddy]
+    labels:
+      caddy: ${DOMAIN}
+      # No matcher: Caddy orders it after the path routes, so it only gets what they don't.
+      caddy.handle_4.reverse_proxy: "{{upstreams 80}}"
+
   sandbox:
     build: { context: ., dockerfile: anvil/Dockerfile }
     env_file: .env
+    environment:
+      WALLET_ORIGINS: ${WALLET_ORIGINS:-https://${DOMAIN}}
     restart: unless-stopped
     networks: [caddy, default]
     labels:
@@ -32,6 +44,7 @@ services:
       SANDBOX_RPC_URL: http://sandbox:8545
       SANDBOX_AVAX_RPC_URL: http://sandbox:8546
       FAUCET_URL: http://sandbox:8547
+      WALLET_ORIGINS: ${WALLET_ORIGINS:-https://${DOMAIN}}
     restart: unless-stopped
     depends_on: { sandbox: { condition: service_healthy } }
     networks: [caddy, default]
