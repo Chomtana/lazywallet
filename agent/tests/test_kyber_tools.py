@@ -245,3 +245,79 @@ async def test_scheduling_a_custom_token_sale_quotes_through_kyber():
     assert args[3] == OUT * 5000 // 10_000
     proposals.resolve(confirm["id"], {"outcome": "rejected"})
     await task
+
+
+async def nth_confirm(out, n):
+    for _ in range(400):
+        if len(out.of_type("confirm")) >= n:
+            return out.of_type("confirm")[n - 1]
+        await asyncio.sleep(0)
+    raise AssertionError(f"no confirm #{n}")
+
+
+async def test_buy_then_sell_sends_the_sale_card_after_the_buy():
+    tools, out, proposals, avax, kyber = make()
+    task = asyncio.create_task(
+        tools.propose_swap({"token_in": "AVAX", "token_out": COQ_ADDR, "amount": "1", "sell_after_seconds": "86400"})
+    )
+    buy = await nth_confirm(out, 1)
+    avax.tokens["COQ"] = OUT  # what the buy delivered
+    proposals.resolve(buy["id"], {"outcome": "approved", "status": "success", "hash": "0xb"})
+    sale = await nth_confirm(out, 2)
+    assert [s["label"] for s in sale["tx"]["steps"]] == ["Allow COQ", "Schedule swap"]
+    args = decode(["address", "address", "uint256", "uint256", "uint64", "uint64", "uint32"], bytes.fromhex(sale["tx"]["steps"][-1]["request"]["data"][10:]))
+    assert args[0].lower() == COQ_ADDR.lower() and args[1].lower() == wrapped_token(AVALANCHE).address.lower()
+    assert args[2] == OUT and args[3] == OUT * 5000 // 10_000
+    assert args[4:] == (avax.now + 86400, 0, 1)
+    proposals.resolve(sale["id"], {"outcome": "approved", "status": "success", "hash": "0xs"})
+    result = text(await task)
+    assert "Swapped 1 AVAX for 8000000 COQ" in result and "Scheduled" in result
+
+
+async def test_rejected_buy_sends_no_sale_card():
+    tools, out, proposals, _, _ = make()
+    task = asyncio.create_task(tools.propose_swap({"token_in": "AVAX", "token_out": COQ_ADDR, "amount": "1", "sell_after_seconds": 86400}))
+    buy = await nth_confirm(out, 1)
+    proposals.resolve(buy["id"], {"outcome": "rejected"})
+    assert "rejected" in text(await task)
+    assert len(out.of_type("confirm")) == 1
+
+
+async def test_rejected_sale_card_says_the_buy_went_through():
+    tools, out, proposals, avax, _ = make()
+    task = asyncio.create_task(tools.propose_swap({"token_in": "AVAX", "token_out": COQ_ADDR, "amount": "1", "sell_after_seconds": 86400}))
+    buy = await nth_confirm(out, 1)
+    avax.tokens["COQ"] = OUT
+    proposals.resolve(buy["id"], {"outcome": "approved", "status": "success", "hash": "0xb"})
+    sale = await nth_confirm(out, 2)
+    proposals.resolve(sale["id"], {"outcome": "rejected"})
+    result = text(await task)
+    assert "Swapped 1 AVAX for" in result and "The buy went through" in result and "rejected the scheduled swap" in result
+
+
+async def test_unreadable_received_amount_schedules_nothing():
+    tools, out, proposals, _, _ = make()
+    task = asyncio.create_task(tools.propose_swap({"token_in": "AVAX", "token_out": COQ_ADDR, "amount": "1", "sell_after_seconds": 86400}))
+    buy = await nth_confirm(out, 1)
+    proposals.resolve(buy["id"], {"outcome": "approved", "status": "success", "hash": "0xb"})  # balance never changed
+    assert "didn't schedule the sale" in text(await task)
+    assert len(out.of_type("confirm")) == 1
+
+
+async def test_buy_ok_but_sale_cannot_be_scheduled_reports_both():
+    tools, out, proposals, avax, _ = make()
+    task = asyncio.create_task(tools.propose_swap({"token_in": "AVAX", "token_out": COQ_ADDR, "amount": "1", "sell_after_seconds": 86400}))
+    buy = await nth_confirm(out, 1)
+    avax.tokens["COQ"] = OUT
+    avax.eth = 0  # nothing left for the sale's gas deposit and fees
+    proposals.resolve(buy["id"], {"outcome": "approved", "status": "success", "hash": "0xb"})
+    result = text(await task)
+    assert "Swapped 1 AVAX for" in result and "didn't schedule the sale" in result and "Not enough AVAX" in result
+    assert len(out.of_type("confirm")) == 1
+
+
+async def test_sell_after_under_a_minute_is_refused_before_any_card():
+    tools, out, _, _, _ = make()
+    result = await tools.propose_swap({"token_in": "AVAX", "token_out": COQ_ADDR, "amount": "1", "sell_after_seconds": 30})
+    assert result.get("is_error") and "at least 1 minute" in text(result)
+    assert not out.of_type("confirm")

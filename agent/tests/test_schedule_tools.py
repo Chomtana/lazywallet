@@ -234,3 +234,26 @@ async def test_immediate_single_run_keeps_the_five_percent_floor():
     assert schedule_args(confirm)[3] == expected * 9500 // 10_000
     proposals.resolve(confirm["id"], {"outcome": "rejected"})
     await task
+
+
+async def test_buy_eth_then_sale_wraps_the_received_eth():
+    tools, out, proposals, chain = make()
+    task = asyncio.create_task(tools.propose_swap({"token_in": "USDC", "token_out": "ETH", "amount": "10", "sell_after_seconds": 3600}))
+    for _ in range(200):
+        if out.of_type("confirm"):
+            break
+        await asyncio.sleep(0)
+    buy = out.of_type("confirm")[0]
+    received = 4 * 10**15
+    chain.eth += received
+    chain.tokens["USDC"] -= 10 * 10**6
+    proposals.resolve(buy["id"], {"outcome": "approved", "status": "success", "hash": "0xb"})
+    for _ in range(400):
+        if len(out.of_type("confirm")) >= 2:
+            break
+        await asyncio.sleep(0)
+    sale = out.of_type("confirm")[1]
+    assert [s["label"] for s in sale["tx"]["steps"]] == ["Wrap ETH → WETH", "Allow WETH", "Schedule swap"]
+    assert sale["tx"]["steps"][0]["request"]["value"] == str(received)
+    proposals.resolve(sale["id"], {"outcome": "rejected"})
+    await task

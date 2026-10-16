@@ -28,6 +28,7 @@ from .networks import ETHEREUM, NETWORKS, Choice, Network, candidates, find_netw
 from .outcome import outcome_text
 from .proposals import Proposals
 from .scheduler import (
+    MIN_INTERVAL_S,
     MIN_OUT_DISCOUNT_BPS,
     floor_bps,
     SCHEDULER,
@@ -477,6 +478,16 @@ class WalletTools:
         sym_in, sym_out = str(args.get("token_in", "")).strip(), str(args.get("token_out", "")).strip()
         if sym_in.upper() == sym_out.upper():
             return err("Pick two different tokens to swap.")
+        sell_after = args.get("sell_after_seconds")
+        if sell_after not in (None, ""):
+            try:
+                sell_after = int(sell_after)
+            except (TypeError, ValueError):
+                return err("sell_after_seconds has to be a whole number of seconds.")
+            if sell_after < MIN_INTERVAL_S:
+                return err("The sale needs to be at least 1 minute after the buy.")
+        else:
+            sell_after = None
         net = await self._resolve(args, [sym_in, sym_out], str(args.get("amount", "")), "swap")
         if isinstance(net, dict):
             return net
@@ -527,7 +538,20 @@ class WalletTools:
                 got = f"{display_units(received, tout.decimals)} {tout.symbol}"
                 got = f"about {got} (after network fees)" if tout.address is None and not plan.exact else got
             success = f"Swapped {human_in} for {got}. Confirmed on {net.label}, tx {result.get('hash')}.{change}"
-        return ok(outcome_text(result, steps_json, "swap", success, revert_hint=plan.hint))
+        reply = outcome_text(result, steps_json, "swap", success, revert_hint=plan.hint)
+        if sell_after is not None and _succeeded(result):
+            reply += await self._sell_later(net, tout, tin, received, sell_after)
+        return ok(reply)
+
+    async def _sell_later(self, net: Network, bought, paid, received: int | None, delay: int) -> str:
+        """After a confirmed buy: the scheduled-sale card for exactly what arrived, back to the token that was paid."""
+        if not received:
+            return " I couldn't read how much you received, so I didn't schedule the sale — check the balance, then ask again."
+        sale = await self._propose_schedule(net, bought, paid, received, 0, 1, delay, None)
+        reason = sale["content"][0]["text"]
+        if sale.get("is_error"):
+            return f" The buy went through, but I didn't schedule the sale: {reason}"
+        return f" The buy went through. For the sale: {reason}"
 
     async def _quote_out(self, net: Network, tin, tout, amount: int) -> int:
         """Today's output for one run: the network's venue for built-in pairs (wrapped legs quoted as native), else KyberSwap."""
@@ -868,6 +892,7 @@ def build_mcp_server(t: WalletTools):
                         "amount": {"type": "string", "description": "Decimal amount of token_in, e.g. '100'"},
                         "slippage_percent": {"type": "string", "description": "Only if the user stated one, e.g. '0.5'"},
                         "network": {"type": "string", "description": "Only if the user named a network or answered a network choice: 'ethereum' or 'avalanche'"},
+                        "sell_after_seconds": {"type": "integer", "description": "Only when the user also wants to sell what they buy later ('sell it tomorrow' = 86400): seconds after the buy, at least 60. The sale card appears by itself once the buy is confirmed."},
                     },
                     "required": ["token_in", "token_out", "amount"],
                 },
