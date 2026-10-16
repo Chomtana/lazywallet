@@ -19,6 +19,7 @@ FIXED_GAS = 300_000
 MIN_INTERVAL_S = 60
 MAX_COUNT = 100
 MIN_OUT_DISCOUNT_BPS = 500
+DELAYED_SALE_DISCOUNT_BPS = 5000  # "sell it tomorrow" must still sell after a drop; only a collapse or a bad route stops it
 MAX_LISTED = 200
 GAS = {"wrap": 60_000, "approve": 60_000, "schedule": 220_000, "cancel": 60_000}
 WRAPPED = {1: "WETH", 43114: "WAVAX"}
@@ -96,6 +97,11 @@ async def gas_balance(chain, owner: str) -> int:
 
 def gas_top_up(gas_price: int, count: int, balance: int) -> int:
     return max(0, FIXED_GAS * gas_price * count * 2 - balance)
+
+
+def floor_bps(count: int, delay: int) -> int:
+    """How far below today's quote a run may fill: wide for one run that waits, 5% for recurring or immediate orders."""
+    return DELAYED_SALE_DISCOUNT_BPS if count == 1 and delay > 0 else MIN_OUT_DISCOUNT_BPS
 
 
 def parse_schedule(interval, count, delay) -> tuple[int, int, int]:
@@ -188,13 +194,18 @@ def schedule_steps(
     return steps
 
 
-def schedule_rows(sender: str, tin: Token, tout: Token, net: Network, amount_in: int, min_out: int, label: str, top_up: int) -> list[dict]:
+def schedule_rows(
+    sender: str, tin: Token, tout: Token, net: Network, amount_in: int, min_out: int, label: str, top_up: int, wide_floor: bool = False
+) -> list[dict]:
     get = order_token(tout, net)
+    floor = f"{display_units(min_out, get.decimals)} {get.symbol}"
+    if wide_floor:
+        floor += f" (sells even after a drop of up to {DELAYED_SALE_DISCOUNT_BPS // 100}%)"
     rows = [
         {"label": "From", "value": short(sender)},
         {"label": "Each run", "value": f"{format_units(amount_in, tin.decimals)} {tin.symbol} → {get.symbol}"},
         {"label": "Schedule", "value": label},
-        {"label": "Min received per run", "value": f"{display_units(min_out, get.decimals)} {get.symbol}"},
+        {"label": "Min received per run", "value": floor},
     ]
     if tout.address is None:
         rows.append({"label": "You receive", "value": f"{get.symbol} (wrapped {tout.symbol})"})

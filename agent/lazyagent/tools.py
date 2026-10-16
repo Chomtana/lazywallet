@@ -29,6 +29,7 @@ from .outcome import outcome_text
 from .proposals import Proposals
 from .scheduler import (
     MIN_OUT_DISCOUNT_BPS,
+    floor_bps,
     SCHEDULER,
     decode_order,
     describe_order,
@@ -529,7 +530,20 @@ class WalletTools:
         return ok(outcome_text(result, steps_json, "swap", success, revert_hint=plan.hint))
 
     async def _quote_out(self, net: Network, tin, tout, amount: int) -> int:
-        """Today's output for one run, from the network's venue (wrapped legs quoted as native)."""
+        """Today's output for one run: the network's venue for built-in pairs (wrapped legs quoted as native), else KyberSwap."""
+        if not (tin.custom or tout.custom):
+            try:
+                return await self._venue_quote(net, tin, tout, amount)
+            except NoRoute:
+                if self.kyber is None:
+                    raise
+        if self.kyber is None:
+            raise TransferError("Swaps for tokens outside the built-in list aren't set up here.")
+        pay, get = order_token(tin, net), order_token(tout, net)
+        route = await self.kyber.route(net.key, pay.address, get.address, amount)
+        return int(route["routeSummary"]["amountOut"])
+
+    async def _venue_quote(self, net: Network, tin, tout, amount: int) -> int:
         a, b = routing_token(tin, net), routing_token(tout, net)
         if net.swap_venue == "dexalot":
             if self.dexalot is None:
@@ -537,7 +551,7 @@ class WalletTools:
             return int((await self.dexalot.quote(asset_of(a), asset_of(b), amount, self.ctx.address))["order"]["makerAmount"])
         found = await best_route(self.quoter, currency_of(a), currency_of(b), amount)
         if found is None:
-            raise TransferError(f"I couldn't find a Uniswap v4 route for {tin.symbol} → {tout.symbol}.")
+            raise NoRoute(f"I couldn't find a Uniswap v4 route for {tin.symbol} → {tout.symbol}.")
         return found[1]
 
     async def propose_scheduled_swap(self, args: dict) -> dict:
@@ -550,13 +564,20 @@ class WalletTools:
         if isinstance(net, dict):
             return net
         tin, tout = find_token(sym_in, net.tokens), find_token(sym_out, net.tokens)
+        try:
+            amount = parse_amount(str(args.get("amount", "")), tin.decimals)
+            interval, count, delay = parse_schedule(args.get("interval_seconds"), args.get("count"), args.get("start_delay_seconds"))
+        except TransferError as e:
+            return err(str(e))
+        return await self._propose_schedule(net, tin, tout, amount, interval, count, delay, args.get("min_received"))
+
+    async def _propose_schedule(self, net: Network, tin, tout, amount: int, interval: int, count: int, delay: int, min_received) -> dict:
+        """One schedule card for tokens already resolved — used by propose_scheduled_swap and by propose_swap's sale."""
         pay, get = order_token(tin, net), order_token(tout, net)
         chain = self.chains[net.key]
         try:
             if pay.address == get.address:
                 raise TransferError(f"{tin.symbol} and {tout.symbol} are the same token once wrapped — pick two different tokens.")
-            amount = parse_amount(str(args.get("amount", "")), tin.decimals)
-            interval, count, delay = parse_schedule(args.get("interval_seconds"), args.get("count"), args.get("start_delay_seconds"))
             total = amount * count
             # Remaining runs of the user's other active orders on this token draw on the same allowance and balance.
             committed = sum(
@@ -575,12 +596,12 @@ class WalletTools:
                 )
             if tin.address is None and committed and await self._balance_on(net, pay) < committed:
                 raise TransferError(f"Your other scheduled swaps still need {format_units(committed, pay.decimals)} {pay.symbol}, which you don't hold.")
-            if args.get("min_received"):
-                minimum = parse_amount(str(args["min_received"]), get.decimals)
+            if min_received:
+                minimum = parse_amount(str(min_received), get.decimals)
                 if minimum == 0:
                     raise TransferError("The minimum to receive has to be more than 0.")
             else:
-                minimum = min_out(await self._quote_out(net, tin, tout, amount), MIN_OUT_DISCOUNT_BPS)
+                minimum = min_out(await self._quote_out(net, tin, tout, amount), floor_bps(count, delay))
             start = await chain.block_timestamp() + delay
             allowance = int.from_bytes((await chain.call(pay.address, encode_erc20_allowance(self.ctx.address, SCHEDULER)))[:32], "big")
             gas_price = await chain.gas_price()
@@ -594,7 +615,10 @@ class WalletTools:
                     "Try fewer runs or get test funds."
                 )
             label = schedule_label(interval, count, delay)
-            rows = schedule_rows(self.ctx.address, tin, tout, net, amount, minimum, label, top_up)
+            rows = schedule_rows(
+                self.ctx.address, tin, tout, net, amount, minimum, label, top_up,
+                wide_floor=not min_received and floor_bps(count, delay) != MIN_OUT_DISCOUNT_BPS,
+            )
         except TransferError as e:
             return err(str(e))
         except Exception as e:

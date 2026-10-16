@@ -1,11 +1,13 @@
 import asyncio
 
-from eth_abi import encode
+from eth_abi import decode, encode
 from fakes import FakeChain, FakeKyber, FakeQuoter, FakeSearch, Outbox, assert_friendly
 from test_custom_tokens import COQ_ADDR, COQ_LOGO, COQ_SAVED, GT_COQ
 
 from lazyagent.kyber import NATIVE, ROUTER
+from lazyagent.networks import AVALANCHE
 from lazyagent.proposals import Proposals
+from lazyagent.scheduler import SCHEDULER, wrapped_token
 from lazyagent.tools import WalletContext, WalletTools
 from lazyagent.uniswap import UNIVERSAL_ROUTER, Hop
 
@@ -225,3 +227,21 @@ async def test_saved_token_posing_as_a_builtin_is_ignored():
     assert confirm["tx"]["steps"][0]["request"]["to"] == AVAX_USDC
     assert "USDC address" not in rows_of(confirm)
     task.cancel()
+
+
+async def test_scheduling_a_custom_token_sale_quotes_through_kyber():
+    avax = coq_chain(COQ=10**24)
+    tools, out, proposals, _, kyber = make(avax=avax, saved=[COQ_SAVED])
+    task = asyncio.create_task(
+        tools.propose_scheduled_swap({"token_in": "COQ", "token_out": "AVAX", "amount": "1000000", "start_delay_seconds": 86400})
+    )
+    confirm = await confirm_of(out)
+    wavax = wrapped_token(AVALANCHE).address
+    network, token_in, token_out, amount = kyber.routes[-1]
+    assert (network, token_in.lower(), token_out.lower(), amount) == ("avalanche", COQ_ADDR.lower(), wavax.lower(), 10**24)
+    schedule = confirm["tx"]["steps"][-1]["request"]
+    assert schedule["to"] == SCHEDULER
+    args = decode(["address", "address", "uint256", "uint256", "uint64", "uint64", "uint32"], bytes.fromhex(schedule["data"][10:]))
+    assert args[3] == OUT * 5000 // 10_000
+    proposals.resolve(confirm["id"], {"outcome": "rejected"})
+    await task
