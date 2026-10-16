@@ -1,12 +1,15 @@
+import pytest
 from eth_abi import decode
 from eth_abi import encode as abi_encode
-from fakes import FakeChain
+from fakes import FakeChain, FakeKyber, FakeQuoter
 
-from lazyagent.executor import Executor, Target, dexalot_calls, uniswap_calls
+from lazyagent.executor import Executor, ExecutorError, Target, dexalot_calls, uniswap_calls
+from lazyagent.kyber import ROUTER
 from lazyagent.networks import AVALANCHE, ETHEREUM
 from lazyagent.scheduler import NEXT_ID, SWAPPER, Order, encode_get_order, wrapped_token
 from lazyagent.tokens import find_token
-from lazyagent.uniswap import PERMIT2, UNIVERSAL_ROUTER, WETH_DEPOSIT, ZERO, Hop, Route
+from lazyagent.transfers import TransferError
+from lazyagent.uniswap import PERMIT2, UNIVERSAL_ROUTER, WETH_DEPOSIT, ZERO, Hop, Route, encode_erc20_approve
 
 USDC = find_token("USDC", ETHEREUM.tokens)
 USDT = find_token("USDT", ETHEREUM.tokens)
@@ -14,6 +17,7 @@ WETH = wrapped_token(ETHEREUM)
 WAVAX = wrapped_token(AVALANCHE)
 AUSDC = find_token("USDC", AVALANCHE.tokens)
 MAKER = "0x1111111111111111111111111111111111111111"
+COQ = "0x420FcA0121DC28039145009570975747295f2329"
 
 
 def order(token_in, token_out, amount=10**6, min_out=5):
@@ -109,3 +113,38 @@ async def test_tick_survives_unreachable_chain():
     down.block_timestamp = boom
     ex = FakeExecutor([Target(ETHEREUM, down, None, None), Target(AVALANCHE, OrdersChain(), None, None)])
     assert await ex.tick() == ["0x0", "0x1"]
+
+
+async def test_custom_token_order_goes_through_kyberswap_with_the_swapper_as_receiver():
+    kyber = FakeKyber(out=10**18)
+    calls = await Executor([], None, kyber=kyber).build_calls(Target(AVALANCHE, FakeChain(), None, None), order(COQ, WAVAX.address, amount=10**24), 0)
+    assert kyber.routes == [("avalanche", COQ, WAVAX.address, 10**24)]
+    assert kyber.builds[0][1] == SWAPPER
+    assert [c[0] for c in calls] == [COQ, ROUTER]
+    assert calls[0] == (COQ, 0, encode_erc20_approve(ROUTER, 10**24))
+    assert calls[1][1] == 0 and calls[1][2].startswith("0xe21fd0e9")
+
+
+async def test_kyber_build_paying_someone_else_is_refused():
+    kyber = FakeKyber(out=10**18, tamper=lambda d: d[:6] + ("0x" + "11" * 20,) + d[7:])
+    with pytest.raises(TransferError, match="wrong recipient"):
+        await Executor([], None, kyber=kyber).build_calls(Target(AVALANCHE, FakeChain(), None, None), order(COQ, WAVAX.address), 0)
+
+
+async def test_custom_token_without_kyber_is_refused():
+    with pytest.raises(ExecutorError, match="KyberSwap"):
+        await Executor([], None).build_calls(Target(AVALANCHE, FakeChain(), None, None), order(COQ, WAVAX.address), 0)
+
+
+async def test_builtin_pair_with_a_venue_route_keeps_uniswap():
+    kyber = FakeKyber()
+    quoter = FakeQuoter(lambda route, amount: 5 if route.hops == (Hop(500, 10),) and len(route.currencies) == 2 else None)
+    calls = await Executor([], None, kyber=kyber).build_calls(Target(ETHEREUM, FakeChain(), None, quoter), order(USDC.address, WETH.address), 0)
+    assert calls[-1][0] == UNIVERSAL_ROUTER and kyber.routes == []
+
+
+async def test_builtin_pair_without_a_venue_route_falls_back_to_kyber():
+    kyber = FakeKyber(out=10**18)
+    t = Target(ETHEREUM, FakeChain(), None, FakeQuoter(lambda route, amount: None))
+    calls = await Executor([], None, kyber=kyber).build_calls(t, order(USDC.address, WETH.address), 0)
+    assert calls[-1][0] == ROUTER and kyber.routes[0][0] == "ethereum"
