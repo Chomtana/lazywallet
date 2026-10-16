@@ -1,5 +1,6 @@
 import asyncio
 
+import pytest
 from conftest import deploy_scheduler
 from eth_abi import encode
 from eth_account import Account
@@ -10,13 +11,16 @@ from lazyagent.chain import RpcChain
 from lazyagent.devsigner import execute_steps
 from lazyagent.dexalot import SandboxQuotes
 from lazyagent.executor import Executor, Target
+from lazyagent.kyber import NATIVE, KyberClient, usd_price
 from lazyagent.networks import AVALANCHE, ETHEREUM
 from lazyagent.proposals import Proposals
 from lazyagent.scheduler import gas_balance, read_orders, wrapped_token
-from lazyagent.tokens import find_token
+from lazyagent.tokens import Token, find_token
 from lazyagent.tools import WalletContext, WalletTools
+from lazyagent.transfers import TransferError
 from lazyagent.uniswap import ChainQuoter
 
+COQ = "0x420FcA0121DC28039145009570975747295f2329"
 USDC_SLOT = 9  # both mainnet USDC and Avalanche native USDC
 
 
@@ -114,3 +118,33 @@ async def test_ethereum_usdc_to_eth_pays_weth(fork_rpc):
 async def test_ethereum_eth_to_usdc(fork_rpc):
     chain, account, order = await ethereum_run(fork_rpc, {"token_in": "ETH", "token_out": "USDC", "amount": "0.1"})
     assert await balance_of(chain, find_token("USDC"), account.address) >= order.min_out
+
+
+async def test_buy_coq_then_the_scheduled_sale_runs_through_kyberswap(avax_sandbox):
+    rpc, url = avax_sandbox
+    kyber = KyberClient()
+    try:
+        await kyber.route("avalanche", NATIVE, COQ, 10**18)
+    except TransferError as e:
+        pytest.skip(f"KyberSwap API not reachable: {e}")
+    deploy_scheduler(rpc)
+    chain = RpcChain(rpc, poa=True, custom_price=usd_price(kyber, AVALANCHE))
+    account = await setup_account(chain.w3)  # a random address: Kyber rejects Anvil's well-known ones
+    proposals = Proposals()
+    tools = WalletTools(FakeChain(), auto_approve(chain.w3, account, proposals), WalletContext(address=account.address), proposals,
+                        approval_timeout=120, avalanche=chain, dexalot=SandboxQuotes(url), kyber=kyber)
+    result = await tools.propose_swap({"token_in": "AVAX", "token_out": COQ, "amount": "1", "sell_after_seconds": 60})
+    text = result["content"][0]["text"]
+    assert "Swapped 1 AVAX for" in text and "Scheduled" in text, text
+
+    coq = Token("COQ", COQ, 18, custom=True)
+    [order] = await read_orders(chain, account.address)
+    assert order.amount_in == await chain.token_balance(coq, account.address)  # exactly what the buy delivered
+
+    await warp(chain.w3, 61)
+    wavax = wrapped_token(AVALANCHE)
+    before = await balance_of(chain, wavax, account.address)
+    ex = Executor([Target(AVALANCHE, chain, chain.w3, None)], SandboxQuotes(url), kyber=kyber)
+    assert len(await ex.tick()) == 1
+    assert await chain.token_balance(coq, account.address) == 0
+    assert await balance_of(chain, wavax, account.address) - before >= order.min_out

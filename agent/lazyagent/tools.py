@@ -28,7 +28,9 @@ from .networks import ETHEREUM, NETWORKS, Choice, Network, candidates, find_netw
 from .outcome import outcome_text
 from .proposals import Proposals
 from .scheduler import (
+    MIN_INTERVAL_S,
     MIN_OUT_DISCOUNT_BPS,
+    floor_bps,
     SCHEDULER,
     decode_order,
     describe_order,
@@ -476,6 +478,16 @@ class WalletTools:
         sym_in, sym_out = str(args.get("token_in", "")).strip(), str(args.get("token_out", "")).strip()
         if sym_in.upper() == sym_out.upper():
             return err("Pick two different tokens to swap.")
+        sell_after = args.get("sell_after_seconds")
+        if sell_after not in (None, ""):
+            try:
+                sell_after = int(sell_after)
+            except (TypeError, ValueError):
+                return err("sell_after_seconds has to be a whole number of seconds.")
+            if sell_after < MIN_INTERVAL_S:
+                return err("The sale needs to be at least 1 minute after the buy.")
+        else:
+            sell_after = None
         net = await self._resolve(args, [sym_in, sym_out], str(args.get("amount", "")), "swap")
         if isinstance(net, dict):
             return net
@@ -526,10 +538,36 @@ class WalletTools:
                 got = f"{display_units(received, tout.decimals)} {tout.symbol}"
                 got = f"about {got} (after network fees)" if tout.address is None and not plan.exact else got
             success = f"Swapped {human_in} for {got}. Confirmed on {net.label}, tx {result.get('hash')}.{change}"
-        return ok(outcome_text(result, steps_json, "swap", success, revert_hint=plan.hint))
+        reply = outcome_text(result, steps_json, "swap", success, revert_hint=plan.hint)
+        if sell_after is not None and _succeeded(result):
+            reply += await self._sell_later(net, tout, tin, received, sell_after)
+        return ok(reply)
+
+    async def _sell_later(self, net: Network, bought, paid, received: int | None, delay: int) -> str:
+        """After a confirmed buy: the scheduled-sale card for exactly what arrived, back to the token that was paid."""
+        if not received:
+            return " I couldn't read how much you received, so I didn't schedule the sale — check the balance, then ask again."
+        sale = await self._propose_schedule(net, bought, paid, received, 0, 1, delay, None)
+        reason = sale["content"][0]["text"]
+        if sale.get("is_error"):
+            return f" The buy went through, but I didn't schedule the sale: {reason}"
+        return f" The buy went through. For the sale: {reason}"
 
     async def _quote_out(self, net: Network, tin, tout, amount: int) -> int:
-        """Today's output for one run, from the network's venue (wrapped legs quoted as native)."""
+        """Today's output for one run: the network's venue for built-in pairs (wrapped legs quoted as native), else KyberSwap."""
+        if not (tin.custom or tout.custom):
+            try:
+                return await self._venue_quote(net, tin, tout, amount)
+            except NoRoute:
+                if self.kyber is None:
+                    raise
+        if self.kyber is None:
+            raise TransferError("Swaps for tokens outside the built-in list aren't set up here.")
+        pay, get = order_token(tin, net), order_token(tout, net)
+        route = await self.kyber.route(net.key, pay.address, get.address, amount)
+        return int(route["routeSummary"]["amountOut"])
+
+    async def _venue_quote(self, net: Network, tin, tout, amount: int) -> int:
         a, b = routing_token(tin, net), routing_token(tout, net)
         if net.swap_venue == "dexalot":
             if self.dexalot is None:
@@ -537,7 +575,7 @@ class WalletTools:
             return int((await self.dexalot.quote(asset_of(a), asset_of(b), amount, self.ctx.address))["order"]["makerAmount"])
         found = await best_route(self.quoter, currency_of(a), currency_of(b), amount)
         if found is None:
-            raise TransferError(f"I couldn't find a Uniswap v4 route for {tin.symbol} → {tout.symbol}.")
+            raise NoRoute(f"I couldn't find a Uniswap v4 route for {tin.symbol} → {tout.symbol}.")
         return found[1]
 
     async def propose_scheduled_swap(self, args: dict) -> dict:
@@ -550,13 +588,20 @@ class WalletTools:
         if isinstance(net, dict):
             return net
         tin, tout = find_token(sym_in, net.tokens), find_token(sym_out, net.tokens)
+        try:
+            amount = parse_amount(str(args.get("amount", "")), tin.decimals)
+            interval, count, delay = parse_schedule(args.get("interval_seconds"), args.get("count"), args.get("start_delay_seconds"))
+        except TransferError as e:
+            return err(str(e))
+        return await self._propose_schedule(net, tin, tout, amount, interval, count, delay, args.get("min_received"))
+
+    async def _propose_schedule(self, net: Network, tin, tout, amount: int, interval: int, count: int, delay: int, min_received) -> dict:
+        """One schedule card for tokens already resolved — used by propose_scheduled_swap and by propose_swap's sale."""
         pay, get = order_token(tin, net), order_token(tout, net)
         chain = self.chains[net.key]
         try:
             if pay.address == get.address:
                 raise TransferError(f"{tin.symbol} and {tout.symbol} are the same token once wrapped — pick two different tokens.")
-            amount = parse_amount(str(args.get("amount", "")), tin.decimals)
-            interval, count, delay = parse_schedule(args.get("interval_seconds"), args.get("count"), args.get("start_delay_seconds"))
             total = amount * count
             # Remaining runs of the user's other active orders on this token draw on the same allowance and balance.
             committed = sum(
@@ -575,12 +620,12 @@ class WalletTools:
                 )
             if tin.address is None and committed and await self._balance_on(net, pay) < committed:
                 raise TransferError(f"Your other scheduled swaps still need {format_units(committed, pay.decimals)} {pay.symbol}, which you don't hold.")
-            if args.get("min_received"):
-                minimum = parse_amount(str(args["min_received"]), get.decimals)
+            if min_received:
+                minimum = parse_amount(str(min_received), get.decimals)
                 if minimum == 0:
                     raise TransferError("The minimum to receive has to be more than 0.")
             else:
-                minimum = min_out(await self._quote_out(net, tin, tout, amount), MIN_OUT_DISCOUNT_BPS)
+                minimum = min_out(await self._quote_out(net, tin, tout, amount), floor_bps(count, delay))
             start = await chain.block_timestamp() + delay
             allowance = int.from_bytes((await chain.call(pay.address, encode_erc20_allowance(self.ctx.address, SCHEDULER)))[:32], "big")
             gas_price = await chain.gas_price()
@@ -594,7 +639,10 @@ class WalletTools:
                     "Try fewer runs or get test funds."
                 )
             label = schedule_label(interval, count, delay)
-            rows = schedule_rows(self.ctx.address, tin, tout, net, amount, minimum, label, top_up)
+            rows = schedule_rows(
+                self.ctx.address, tin, tout, net, amount, minimum, label, top_up,
+                wide_floor=not min_received and floor_bps(count, delay) != MIN_OUT_DISCOUNT_BPS,
+            )
         except TransferError as e:
             return err(str(e))
         except Exception as e:
@@ -844,6 +892,7 @@ def build_mcp_server(t: WalletTools):
                         "amount": {"type": "string", "description": "Decimal amount of token_in, e.g. '100'"},
                         "slippage_percent": {"type": "string", "description": "Only if the user stated one, e.g. '0.5'"},
                         "network": {"type": "string", "description": "Only if the user named a network or answered a network choice: 'ethereum' or 'avalanche'"},
+                        "sell_after_seconds": {"type": "integer", "description": "Only when the user also wants to sell what they buy later ('sell it tomorrow' = 86400): seconds after the buy, at least 60. The sale card appears by itself once the buy is confirmed."},
                     },
                     "required": ["token_in", "token_out", "amount"],
                 },

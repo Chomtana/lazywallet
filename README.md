@@ -43,6 +43,7 @@ Create a wallet, then say or type:
 - "Swap 0.5 ETH to USDC"
 - "Swap 100 USDC to ETH with 0.5% slippage"
 - "Swap 0.01 ETH to LIT"
+- "Buy 1 AVAX of COQ and sell it tomorrow" (buy card, then the scheduled-sale card)
 
 To try the (still mocked) dApp flow: QR button → Connect dApp → paste any WalletConnect v2 link (`wc:…@2?relay-protocol=…&symKey=…`).
 

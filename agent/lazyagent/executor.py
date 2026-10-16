@@ -11,10 +11,13 @@ from web3 import AsyncWeb3
 from .chain import Chain, RpcChain
 from .config import load_settings
 from .dexalot import Quotes, SandboxQuotes, asset_of, encode_simple_swap
+from .kyber import ROUTER as KYBER_ROUTER
+from .kyber import SANDBOX_KYBER_SLIPPAGE_BPS, Kyber, KyberClient, SwapRequest, Verified, verify
 from .networks import AVALANCHE, ETHEREUM, Network
 from .scheduler import SCHEDULER, SWAPPER, Call, Order, encode_execute, read_orders, routing_token, token_at, wrapped_token
 from .swaps import DEADLINE_S, PERMIT2_EXPIRY_S
 from .tokens import Token
+from .transfers import TransferError
 from .uniswap import (
     PERMIT2,
     UNIVERSAL_ROUTER,
@@ -68,6 +71,11 @@ def dexalot_calls(order: Order, quote: dict, wrapped: str) -> list[Call]:
     return calls
 
 
+def kyber_calls(order: Order, v: Verified) -> list[Call]:
+    """The order's ERC-20 input (WETH/WAVAX included — no unwrap) straight into Kyber's router; the Swapper sweeps the output."""
+    return [(order.token_in, 0, encode_erc20_approve(KYBER_ROUTER, order.amount_in)), (KYBER_ROUTER, 0, v.data)]
+
+
 class ExecutorError(Exception):
     pass
 
@@ -81,16 +89,29 @@ class Target:
 
 
 class Executor:
-    def __init__(self, targets: list[Target], dexalot: Quotes | None, key: str = EXECUTOR_KEY):
+    def __init__(self, targets: list[Target], dexalot: Quotes | None, kyber: Kyber | None = None, key: str = EXECUTOR_KEY):
         self.targets = targets
         self.dexalot = dexalot
+        self.kyber = kyber
         self.account = Account.from_key(key)
 
     async def build_calls(self, t: Target, order, now: int) -> list:
+        """The network's venue for built-in pairs it can route; KyberSwap for custom tokens and everything else."""
         net = t.net
         pay, get = token_at(net, order.token_in), token_at(net, order.token_out)
-        if pay is None or get is None:
-            raise ExecutorError("order uses a token this executor doesn't route")
+        if pay is not None and get is not None:
+            try:
+                return await self._venue_calls(t, order, pay, get, now)
+            except (ExecutorError, TransferError) as e:
+                if self.kyber is None:
+                    raise
+                log.info("%s: order #%d falls back to KyberSwap (%s)", net.name, order.id, e)
+        if self.kyber is None:
+            raise ExecutorError("order needs KyberSwap (custom token or no venue route), which isn't configured")
+        return await self._kyber_route(net, order)
+
+    async def _venue_calls(self, t: Target, order, pay, get, now: int) -> list:
+        net = t.net
         wrapped = wrapped_token(net).address
         a, b = routing_token(pay, net), routing_token(get, net)
         if net.swap_venue == "dexalot":
@@ -105,6 +126,13 @@ class Executor:
         if found is None:
             raise ExecutorError(f"no Uniswap v4 route {pay.symbol} → {get.symbol}")
         return uniswap_calls(order, pay, found[0], now, wrapped)
+
+    async def _kyber_route(self, net: Network, order) -> list:
+        req = SwapRequest(order.token_in, order.token_out, order.amount_in, SWAPPER, SANDBOX_KYBER_SLIPPAGE_BPS)
+        summary = (await self.kyber.route(net.key, req.token_in, req.token_out, req.amount))["routeSummary"]
+        built = await self.kyber.build(net.key, summary, SWAPPER, req.slippage_bps)
+        # verify(): pinned router, exact input, the Swapper as receiver, no fee receivers. The contract's minOut is the real guard.
+        return kyber_calls(order, verify(built, req, int(summary.get("amountOut") or 0)))
 
     async def _send(self, t: Target, order_id: int, calls: list) -> str:
         w3 = t.w3
@@ -159,4 +187,4 @@ def main() -> None:
     s = load_settings()
     eth, avax = RpcChain(s.rpc_url), RpcChain(s.avax_rpc_url, poa=True)
     targets = [Target(ETHEREUM, eth, eth.w3, ChainQuoter(eth)), Target(AVALANCHE, avax, avax.w3, None)]
-    asyncio.run(Executor(targets, SandboxQuotes(s.faucet_url)).run_forever())
+    asyncio.run(Executor(targets, SandboxQuotes(s.faucet_url), kyber=KyberClient()).run_forever())

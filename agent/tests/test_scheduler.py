@@ -8,6 +8,9 @@ from web3 import Web3
 from lazyagent.config import ROOT
 from lazyagent.networks import AVALANCHE, ETHEREUM
 from lazyagent.scheduler import (
+    DELAYED_SALE_DISCOUNT_BPS,
+    MIN_OUT_DISCOUNT_BPS,
+    floor_bps,
     FIXED_GAS,
     NEXT_ID,
     SCHEDULER,
@@ -150,3 +153,14 @@ def test_schedule_rows_mention_wrapped_output_and_contract():
     assert rows["You receive"] == "WETH (wrapped ETH)"
     assert rows["Gas deposit"] == "already covered"
     assert rows["Contract"].startswith(SCHEDULER[:6])
+
+
+def test_floor_is_wide_only_for_a_delayed_single_run():
+    assert floor_bps(1, 86400) == DELAYED_SALE_DISCOUNT_BPS == 5000
+    assert floor_bps(1, 0) == MIN_OUT_DISCOUNT_BPS
+    assert floor_bps(3, 86400) == MIN_OUT_DISCOUNT_BPS
+
+
+def test_schedule_rows_explain_the_wide_floor():
+    rows = {r["label"]: r["value"] for r in schedule_rows(ME, USDC, ETHEREUM.native, ETHEREUM, 10 * 10**6, 2 * 10**15, "once, in 1 d", 0, wide_floor=True)}
+    assert rows["Min received per run"] == "0.002 WETH (sells even after a drop of up to 50%)"

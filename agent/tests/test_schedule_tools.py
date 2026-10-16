@@ -207,3 +207,53 @@ async def test_schedule_rejects_zero_min_received():
     result = await tools.propose_scheduled_swap({"token_in": "USDC", "token_out": "ETH", "amount": "10", "min_received": "0"})
     assert result.get("is_error") and "more than 0" in text(result)
     assert not out.of_type("confirm")
+
+
+def schedule_args(confirm):
+    return decode(["address", "address", "uint256", "uint256", "uint64", "uint64", "uint32"], bytes.fromhex(confirm["tx"]["steps"][-1]["request"]["data"][10:]))
+
+
+async def test_delayed_single_run_uses_the_wide_floor():
+    tools, out, proposals, chain = make()
+    task = asyncio.create_task(tools.propose_scheduled_swap({"token_in": "USDC", "token_out": "ETH", "amount": "10", "start_delay_seconds": "86400"}))
+    confirm = await confirm_of(out)
+    expected = 10 * 10**6 * 10**12 // USDC_PER_ETH
+    args = schedule_args(confirm)
+    assert args[3] == expected * 5000 // 10_000
+    assert args[4:] == (chain.now + 86400, 0, 1)
+    assert "drop of up to 50%" in {r["label"]: r["value"] for r in confirm["tx"]["rows"]}["Min received per run"]
+    proposals.resolve(confirm["id"], {"outcome": "rejected"})
+    await task
+
+
+async def test_immediate_single_run_keeps_the_five_percent_floor():
+    tools, out, proposals, chain = make()
+    task = asyncio.create_task(tools.propose_scheduled_swap({"token_in": "USDC", "token_out": "ETH", "amount": "10"}))
+    confirm = await confirm_of(out)
+    expected = 10 * 10**6 * 10**12 // USDC_PER_ETH
+    assert schedule_args(confirm)[3] == expected * 9500 // 10_000
+    proposals.resolve(confirm["id"], {"outcome": "rejected"})
+    await task
+
+
+async def test_buy_eth_then_sale_wraps_the_received_eth():
+    tools, out, proposals, chain = make()
+    task = asyncio.create_task(tools.propose_swap({"token_in": "USDC", "token_out": "ETH", "amount": "10", "sell_after_seconds": 3600}))
+    for _ in range(200):
+        if out.of_type("confirm"):
+            break
+        await asyncio.sleep(0)
+    buy = out.of_type("confirm")[0]
+    received = 4 * 10**15
+    chain.eth += received
+    chain.tokens["USDC"] -= 10 * 10**6
+    proposals.resolve(buy["id"], {"outcome": "approved", "status": "success", "hash": "0xb"})
+    for _ in range(400):
+        if len(out.of_type("confirm")) >= 2:
+            break
+        await asyncio.sleep(0)
+    sale = out.of_type("confirm")[1]
+    assert [s["label"] for s in sale["tx"]["steps"]] == ["Wrap ETH → WETH", "Allow WETH", "Schedule swap"]
+    assert sale["tx"]["steps"][0]["request"]["value"] == str(received)
+    proposals.resolve(sale["id"], {"outcome": "rejected"})
+    await task
