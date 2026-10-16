@@ -1,0 +1,13 @@
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/dist
+.env
+.env.*
+.git
+.superpowers
+contracts/out
+contracts/cache
+contracts/broadcast
+anvil/.test-wallet.json

@@ -1,0 +1,54 @@
+# No host ports: everything is reached through Caddy on the external "caddy" network, one domain, a path per service.
+#   https://$DOMAIN/lazy-agent      -> agent      (ws: wss://$DOMAIN/lazy-agent/ws, tts: /lazy-agent/tts)
+#   https://$DOMAIN/sandbox-eth     -> Ethereum fork RPC
+#   https://$DOMAIN/sandbox-avax    -> Avalanche fork RPC
+#   https://$DOMAIN/sandbox-faucet  -> faucet ("Add funds" / "Get funds" call it from the browser)
+# Routing uses caddy-docker-proxy labels; handle_path strips the prefix before proxying.
+
+services:
+  sandbox:
+    build: { context: ., dockerfile: anvil/Dockerfile }
+    env_file: .env
+    restart: unless-stopped
+    networks: [caddy, default]
+    labels:
+      caddy: ${DOMAIN}
+      caddy.handle_path_0: /sandbox-eth*
+      caddy.handle_path_0.reverse_proxy: "{{upstreams 8545}}"
+      caddy.handle_path_1: /sandbox-avax*
+      caddy.handle_path_1.reverse_proxy: "{{upstreams 8546}}"
+      caddy.handle_path_2: /sandbox-faucet*
+      caddy.handle_path_2.reverse_proxy: "{{upstreams 8547}}"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "-H", "content-type: application/json", "-d", '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}', "http://127.0.0.1:8546"]
+      interval: 5s
+      retries: 60
+      start_period: 30s
+
+  agent:
+    build: { context: ., dockerfile: agent/Dockerfile }
+    env_file: .env
+    environment: &sandbox_urls
+      SANDBOX_RPC_URL: http://sandbox:8545
+      SANDBOX_AVAX_RPC_URL: http://sandbox:8546
+      FAUCET_URL: http://sandbox:8547
+    restart: unless-stopped
+    depends_on: { sandbox: { condition: service_healthy } }
+    networks: [caddy, default]
+    labels:
+      caddy: ${DOMAIN}
+      caddy.handle_path_3: /lazy-agent*
+      caddy.handle_path_3.reverse_proxy: "{{upstreams 8787}}"
+
+  # Runs due scheduled swaps; internal only.
+  executor:
+    build: { context: ., dockerfile: agent/Dockerfile }
+    command: ["uv", "run", "--directory", "agent", "--no-sync", "executor"]
+    env_file: .env
+    environment: *sandbox_urls
+    restart: unless-stopped
+    depends_on: { sandbox: { condition: service_healthy } }
+
+networks:
+  caddy:
+    external: true

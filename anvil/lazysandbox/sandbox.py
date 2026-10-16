@@ -20,9 +20,10 @@ def main() -> None:
         sys.exit("ETH_RPC_URL is missing — add a mainnet archive RPC to .env (see .env.example).")
     avax_url = os.environ.get("AVAX_RPC_URL") or AVAX_PUBLIC_RPC
     origins = os.environ.get("WALLET_ORIGINS", "http://localhost:5174").split(",")
+    host = os.environ.get("BIND_HOST") or "127.0.0.1"  # 0.0.0.0 in Docker
     procs = [
-        subprocess.Popen(anvil_command(fork_url, os.environ.get("FORK_BLOCK") or None, ANVIL_PORT)),
-        subprocess.Popen(anvil_command(avax_url, None, AVAX_PORT, AVAX_CHAIN_ID)),
+        subprocess.Popen(anvil_command(fork_url, os.environ.get("FORK_BLOCK") or None, ANVIL_PORT) + ["--host", host]),
+        subprocess.Popen(anvil_command(avax_url, None, AVAX_PORT, AVAX_CHAIN_ID) + ["--host", host]),
     ]
     rpc = f"http://127.0.0.1:{ANVIL_PORT}"
     avax_rpc = f"http://127.0.0.1:{AVAX_PORT}"
@@ -40,7 +41,7 @@ def main() -> None:
             f"faucet http://127.0.0.1:{FAUCET_PORT}",
             flush=True,
         )
-        uvicorn.run(create_app(rpc, origins, avax_rpc), host="127.0.0.1", port=FAUCET_PORT)
+        uvicorn.run(create_app(rpc, origins, avax_rpc), host=host, port=FAUCET_PORT)
     finally:
         for p in procs:
             p.terminate()

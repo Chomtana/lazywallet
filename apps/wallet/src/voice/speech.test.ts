@@ -19,6 +19,7 @@ describe('ttsUrl', () => {
   it('derives the agent HTTP endpoint from its WebSocket URL', () => {
     expect(ttsUrl('ws://localhost:8787/ws')).toBe('http://localhost:8787/tts')
     expect(ttsUrl('wss://agent.example/ws')).toBe('https://agent.example/tts')
+    expect(ttsUrl('wss://lazy.example/lazy-agent/ws')).toBe('https://lazy.example/lazy-agent/tts')
   })
 })
 

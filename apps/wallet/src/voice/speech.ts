@@ -23,7 +23,7 @@ export function getRecognitionCtor(w: object = window): RecognitionCtor | null {
 export function ttsUrl(wsUrl: string): string {
   const u = new URL(wsUrl)
   u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:'
-  u.pathname = '/tts'
+  u.pathname = u.pathname.replace(/\/ws$/, '') + '/tts' // keeps a path prefix (e.g. /lazy-agent behind Caddy)
   return u.toString()
 }
 

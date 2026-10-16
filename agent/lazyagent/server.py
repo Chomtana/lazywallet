@@ -1,4 +1,5 @@
 import logging
+import os
 
 import uvicorn
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -107,4 +108,4 @@ def main() -> None:
         f"Ethereum {settings.rpc_url}, Avalanche {settings.avax_rpc_url})",
         flush=True,
     )
-    uvicorn.run(app, host="127.0.0.1", port=settings.port)
+    uvicorn.run(app, host=os.environ.get("BIND_HOST") or "127.0.0.1", port=settings.port)  # 0.0.0.0 in Docker

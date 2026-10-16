@@ -8,7 +8,8 @@ APPROVAL_TOOL_TIMEOUT_MS = "360000"  # > the 300 s approval wait in propose_tran
 
 
 async def connect_claude(tools: WalletTools, settings: Settings) -> ClaudeSDKClient:
-    """Start a Claude Code session (uses the developer's Claude Code login) with only the wallet tools."""
+    """Start a Claude Code session with only the wallet tools. Auth: ANTHROPIC_API_KEY from the root .env when set
+    (the CLI inherits os.environ), otherwise the developer's Claude Code login."""
     options = ClaudeAgentOptions(
         model=settings.model,
         system_prompt=SYSTEM_PROMPT,
